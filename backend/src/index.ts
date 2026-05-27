@@ -230,8 +230,9 @@ app.post('/api/users/jefe-servicio', authenticateToken, isGerente, async (req: R
   }
 
   try {
+    const sId = Number(servicioId);
     // Validar que el servicio pertenece al hospital del gerente
-    const servicio = await prisma.servicios.findFirst({ where: { Id: servicioId, HospitalId: hospitalId } });
+    const servicio = await prisma.servicios.findFirst({ where: { Id: sId, HospitalId: hospitalId } });
     if (!servicio) {
       res.status(403).json({ error: 'Servicio no encontrado o no pertenece a su hospital' });
       return;
@@ -244,13 +245,17 @@ app.post('/api/users/jefe-servicio', authenticateToken, isGerente, async (req: R
         ContrasenaHash: hashedPassword,
         RolId: 3, // JEFE_SERVICIO
         HospitalId: hospitalId,
-        ServicioId: servicioId
+        ServicioId: sId
       }
     });
     res.json({ message: 'Jefe de Servicio creado exitosamente', userId: user.Id });
-  } catch (error) {
+  } catch (error: any) {
     console.error(error);
-    res.status(500).json({ error: 'Error al crear usuario' });
+    if (error.code === 'P2002') {
+      res.status(400).json({ error: 'Ese nombre de usuario ya está en uso. Por favor, elige otro (ej. pediatria_padilla).' });
+    } else {
+      res.status(500).json({ error: 'Error al crear usuario' });
+    }
   }
 });
 
@@ -275,12 +280,12 @@ app.post('/api/staff/import', authenticateToken, isJefeServicio, upload.single('
 
   const results: any[] = [];
   fs.createReadStream(req.file.path)
-    .pipe(csv())
+    .pipe(csv({ separator: ';' }))
     .on('data', (data) => results.push(data))
     .on('end', async () => {
       try {
         for (const row of results) {
-          const { DNI, Nombre, Apellido, Horario, PeriodoInicio, PeriodoFin } = row;
+          const { ID_Personal, DNI, Nombre, Apellido, Horario, PeriodoInicio, PeriodoFin } = row;
           
           if (!DNI || !Nombre || !Apellido || !Horario || !PeriodoInicio || !PeriodoFin) {
              continue; // Saltar filas inválidas
@@ -290,6 +295,7 @@ app.post('/api/staff/import', authenticateToken, isJefeServicio, upload.single('
           await prisma.personal.upsert({
             where: { DNI },
             update: {
+               IdPersonal: ID_Personal,
                Nombre,
                Apellido,
                HospitalId: userHospitalId,
@@ -301,6 +307,7 @@ app.post('/api/staff/import', authenticateToken, isJefeServicio, upload.single('
             },
             create: {
                DNI,
+               IdPersonal: ID_Personal,
                Nombre,
                Apellido,
                HospitalId: userHospitalId,
@@ -524,6 +531,63 @@ app.get('/api/reports', authenticateToken, async (req: Request, res: Response): 
     res.json(filteredReport);
   } catch (error) {
     res.status(500).json({ error: 'Error al generar el reporte' });
+  }
+});
+
+// --- RRHH / ADMIN ENDPOINTS ---
+
+app.post('/api/hospitals', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  if (req.user?.roleId !== 1) {
+    res.status(403).json({ error: 'No autorizado. Solo RRHH/Admin.' });
+    return;
+  }
+  const { nombre, codigo } = req.body;
+  try {
+    const hospital = await prisma.hospitales.create({
+      data: { Nombre: nombre, Codigo: codigo || nombre.substring(0,5).toUpperCase() }
+    });
+    res.json({ message: 'Hospital creado', hospital });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear hospital' });
+  }
+});
+
+app.get('/api/hospitals', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  try {
+    const hospitales = await prisma.hospitales.findMany({
+      include: {
+        Servicios: true,
+        Usuarios: {
+          where: { RolId: 2 }, // Gerentes
+          select: { Id: true, NombreUsuario: true }
+        }
+      }
+    });
+    res.json(hospitales);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener hospitales' });
+  }
+});
+
+app.post('/api/users/gerente', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  if (req.user?.roleId !== 1) {
+    res.status(403).json({ error: 'No autorizado. Solo RRHH/Admin.' });
+    return;
+  }
+  const { username, password, hospitalId } = req.body;
+  try {
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const user = await prisma.usuarios.create({
+      data: {
+        NombreUsuario: username,
+        ContrasenaHash: hashedPassword,
+        RolId: 2, // GERENTE
+        HospitalId: Number(hospitalId),
+      }
+    });
+    res.json({ message: 'Gerente creado exitosamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear gerente' });
   }
 });
 

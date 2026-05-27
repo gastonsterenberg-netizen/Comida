@@ -34,6 +34,7 @@ model Personal {
   Apellido      String          @db.NVarChar(100)
   HospitalId    Int
   ServicioId    Int
+  IdPersonal    String?         @db.NVarChar(50)
   Horario       String          @db.NVarChar(50)
   PeriodoInicio DateTime        @db.Date
   PeriodoFin    DateTime        @db.Date
