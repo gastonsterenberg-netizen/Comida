@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model Hospitales {
+  Id         Int         @id @default(autoincrement())
+  Nombre     String      @db.NVarChar(100)
+  Codigo     String      @unique @db.NVarChar(20)
+  Servicios  Servicios[]
+  Personal   Personal[]
+  Usuarios   Usuarios[]
+}
+
+model Servicios {
+  Id         Int         @id @default(autoincrement())
+  HospitalId Int
+  Nombre     String      @db.NVarChar(100)
+  Hospital   Hospitales  @relation(fields: [HospitalId], references: [Id])
+  Personal   Personal[]
+  Usuarios   Usuarios[]
+
+  @@unique([HospitalId, Nombre])
+}
+
+model Personal {
+  Id            Int             @id @default(autoincrement())
+  DNI           String          @unique @db.NVarChar(20)
+  Nombre        String          @db.NVarChar(100)
+  Apellido      String          @db.NVarChar(100)
+  HospitalId    Int
+  ServicioId    Int
+  Horario       String          @db.NVarChar(50)
+  PeriodoInicio DateTime        @db.Date
+  PeriodoFin    DateTime        @db.Date
+  Activo        Boolean         @default(true)
+  Hospital      Hospitales      @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Servicio      Servicios       @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  PedidosComida PedidosComida[]
+}
+
+model Roles {
+  Id       Int        @id
+  Nombre   String     @db.NVarChar(50)
+  Usuarios Usuarios[]
+}
+
+model Usuarios {
+  Id                  Int             @id @default(autoincrement())
+  NombreUsuario       String          @unique @db.NVarChar(50)
+  ContrasenaHash      String          @db.NVarChar(255)
+  RolId               Int
+  HospitalId          Int?
+  ServicioId          Int?
+  TwoFactorSecret     String?         @db.NVarChar(128)
+  TwoFactorHabilitado Boolean         @default(false)
+  Rol                 Roles           @relation(fields: [RolId], references: [Id])
+  Hospital            Hospitales?     @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Servicio            Servicios?      @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  PedidosSolicitados  PedidosComida[] @relation("PedidosSolicitados")
+  PedidosEvaluados    PedidosComida[] @relation("PedidosEvaluados")
+}
+
+model PedidosComida {
+  Id                      Int        @id @default(autoincrement())
+  FechaPedido             DateTime   @db.Date
+  TipoComida              String     @db.NVarChar(20)
+  TipoDieta               String     @default("Normal") @db.NVarChar(30)
+  PersonalId              Int?
+  SolicitadoPorUsuarioId  Int
+  Estado                  String     @default("Aprobado") @db.NVarChar(20)
+  EmergenciaNombre        String?    @db.NVarChar(100)
+  EmergenciaApellido      String?    @db.NVarChar(100)
+  EmergenciaDNI           String?    @db.NVarChar(20)
+  EmergenciaPeriodoInicio DateTime?  @db.Date
+  EmergenciaPeriodoFin    DateTime?  @db.Date
+  JustificacionSolicitud  String?    @db.NVarChar(500)
+  JustificacionResolucion String?    @db.NVarChar(500)
+  EvaluadoPorUsuarioId    Int?
+  Personal                Personal?  @relation(fields: [PersonalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  SolicitadoPor           Usuarios   @relation("PedidosSolicitados", fields: [SolicitadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  EvaluadoPor             Usuarios?  @relation("PedidosEvaluados", fields: [EvaluadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+}
