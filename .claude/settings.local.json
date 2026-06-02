@@ -8,7 +8,10 @@
       "Bash(Write-Host \"Limpieza completada\")",
       "PowerShell(netstat *)",
       "PowerShell(sqlcmd *)",
-      "Bash(openspec list *)"
+      "Bash(openspec list *)",
+      "Bash(git -C frontend status --short)",
+      "Bash(git -C frontend add src/app/page.tsx public/plantilla_personal.csv)",
+      "Bash(git *)"
     ]
   }
 }
