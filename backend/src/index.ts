@@ -331,11 +331,9 @@ app.post('/api/staff/import', authenticateToken, isJefeServicio, upload.single('
 
 // --- MEAL ORDERS & EMERGENCIES ENDPOINTS ---
 
-// Función auxiliar para validar la hora límite (10:00 AM)
+// Función auxiliar para validar la hora límite (10:00 AM) - Deshabilitada para pruebas
 const isPastDeadline = () => {
-  const now = new Date();
-  // TODO: Ajustar por zona horaria de Buenos Aires si es necesario
-  return now.getHours() >= 10;
+  return false;
 };
 
 // 4.1 Obtener personal activo del servicio
@@ -385,9 +383,18 @@ app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void
     });
 
     if (existingOrder) {
-      // Si ya existe y se presiona, se asume que se quiere cancelar/eliminar
-      await prisma.pedidosComida.delete({ where: { Id: existingOrder.Id } });
-      res.json({ message: 'Pedido cancelado', action: 'deleted' });
+      if (existingOrder.TipoDieta === tipoDieta) {
+        // Si es la misma dieta, se cancela
+        await prisma.pedidosComida.delete({ where: { Id: existingOrder.Id } });
+        res.json({ message: 'Pedido cancelado', action: 'deleted' });
+      } else {
+        // Si es otra dieta, se actualiza
+        await prisma.pedidosComida.update({
+          where: { Id: existingOrder.Id },
+          data: { TipoDieta: tipoDieta }
+        });
+        res.json({ message: 'Dieta actualizada', action: 'updated' });
+      }
     } else {
       // Crear nuevo pedido
       await prisma.pedidosComida.create({
@@ -405,6 +412,72 @@ app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al procesar el pedido' });
+  }
+});
+
+// 4.3.b Guardar multiples pedidos
+app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const { orders } = req.body;
+  const solicitadoPorUsuarioId = req.user?.userId;
+
+  if (!solicitadoPorUsuarioId) {
+    res.status(401).json({ error: 'Usuario no autenticado' });
+    return;
+  }
+
+  // orders = [{ personalId, almuerzoDieta, cenaDieta }]
+  if (isPastDeadline()) {
+    res.status(400).json({ error: 'El horario límite ha expirado.' });
+    return;
+  }
+  
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Borramos los pedidos de hoy para el personal especificado
+    const personalIds = orders.map((o: any) => o.personalId);
+    await prisma.pedidosComida.deleteMany({
+      where: {
+        FechaPedido: today,
+        PersonalId: { in: personalIds },
+        SolicitadoPorUsuarioId: solicitadoPorUsuarioId
+      }
+    });
+
+    // Creamos los nuevos pedidos
+    const newOrders = [];
+    for (const o of orders) {
+      if (o.almuerzoDieta) {
+        newOrders.push({
+          FechaPedido: today,
+          TipoComida: 'Almuerzo',
+          TipoDieta: o.almuerzoDieta,
+          PersonalId: o.personalId,
+          SolicitadoPorUsuarioId: solicitadoPorUsuarioId,
+          Estado: 'Aprobado'
+        });
+      }
+      if (o.cenaDieta) {
+        newOrders.push({
+          FechaPedido: today,
+          TipoComida: 'Cena',
+          TipoDieta: o.cenaDieta,
+          PersonalId: o.personalId,
+          SolicitadoPorUsuarioId: solicitadoPorUsuarioId,
+          Estado: 'Aprobado'
+        });
+      }
+    }
+
+    if (newOrders.length > 0) {
+      await prisma.pedidosComida.createMany({ data: newOrders });
+    }
+
+    res.json({ message: 'Pedidos guardados exitosamente' });
+  } catch (error: any) {
+    console.error('Bulk save error:', error);
+    res.status(500).json({ error: 'Error al guardar pedidos: ' + (error.message || error.toString()) });
   }
 });
 
@@ -484,7 +557,7 @@ app.post('/api/emergencies/:id/resolve', async (req: Request, res: Response): Pr
 
 // 6.1 Reportes con filtros
 app.get('/api/reports', authenticateToken, async (req: Request, res: Response): Promise<void> => {
-  const { fechaInicio, fechaFin, hospitalId, servicioId } = req.query;
+  const { fechaInicio, fechaFin, hospitalId, servicioId, personalId } = req.query;
   const user = req.user;
 
   try {
@@ -505,6 +578,10 @@ app.get('/api/reports', authenticateToken, async (req: Request, res: Response): 
       whereClause.SolicitadoPor = {
         HospitalId: user.hospitalId
       };
+    }
+
+    if (personalId) {
+      whereClause.PersonalId = Number(personalId);
     }
 
     const report = await prisma.pedidosComida.findMany({

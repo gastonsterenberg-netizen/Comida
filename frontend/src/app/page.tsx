@@ -16,7 +16,7 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
-  const isPastDeadline = currentTime ? currentTime.getHours() >= 10 : false;
+  const isPastDeadline = false; // Deshabilitado para pruebas
 
   const handleLogin = (jwtToken: string, userRole: number, id: number) => {
     setToken(jwtToken);
@@ -185,7 +185,13 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
   const [emgDieta, setEmgDieta] = useState("Normal");
   const [emgJustificacion, setEmgJustificacion] = useState("");
   
-  const dietas = ["Normal", "Gástrica", "Diabética", "Hepática", "Vegetariano", "Celíaca"];
+  // Reportes
+  const [repDesde, setRepDesde] = useState("");
+  const [repHasta, setRepHasta] = useState("");
+  const [repFiltroEmpleado, setRepFiltroEmpleado] = useState("");
+  const [reportes, setReportes] = useState<any[]>([]);
+
+  const dietas = ["Normal", "Gastrica", "Diabetica", "Hepatico", "Vegetariano", "Celiaca"];
 
   const fetchStaff = async () => {
     try {
@@ -234,27 +240,57 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
     }
   };
 
-  const handleOrder = async (personalId: number, tipoComida: string, tipoDieta: string) => {
+  const [selections, setSelections] = useState<{ [id: number]: { almuerzo: string | null, cena: string | null } }>({});
+
+  const toggleSelection = (personalId: number, tipoComida: "almuerzo" | "cena", tipoDieta: string) => {
+    setSelections(prev => {
+      const current = prev[personalId] || { almuerzo: null, cena: null };
+      // Si hace click en la misma dieta, la deselecciona (toggle off), sino la selecciona
+      const isSame = current[tipoComida] === tipoDieta;
+      return {
+        ...prev,
+        [personalId]: {
+          ...current,
+          [tipoComida]: isSame ? null : tipoDieta
+        }
+      };
+    });
+  };
+
+  const handleGuardarPedidos = async () => {
+    // Transform selections state into the bulk format
+    const ordersToSave = Object.keys(selections).map(id => ({
+      personalId: Number(id),
+      almuerzoDieta: selections[Number(id)].almuerzo,
+      cenaDieta: selections[Number(id)].cena
+    })).filter(o => o.almuerzoDieta !== null || o.cenaDieta !== null);
+
+    if (ordersToSave.length === 0) {
+      alert("No hay ningún pedido seleccionado para guardar.");
+      return;
+    }
+
     try {
-      const res = await fetch("http://localhost:3001/api/orders/toggle", {
+      const res = await fetch("http://localhost:3001/api/orders/bulk", {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}` 
         },
         body: JSON.stringify({
-          personalId,
-          tipoComida,
-          tipoDieta,
+          orders: ordersToSave,
           solicitadoPorUsuarioId: userId
         })
       });
       if (res.ok) {
-        // Ideally fetch staff or orders again to show visual feedback
-        alert(`Pedido de ${tipoComida} (${tipoDieta}) registrado/cancelado`);
+        alert("Todos los pedidos se guardaron exitosamente.");
+        // Opcionalmente: limpiar selección o recargar (en este caso lo dejamos como está)
+      } else {
+        const data = await res.json();
+        alert("Error: " + data.error);
       }
     } catch (e) {
-      alert("Error al procesar el pedido");
+      alert("Error al guardar los pedidos");
     }
   };
 
@@ -291,6 +327,20 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
     }
   };
 
+  const generarReporte = async () => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/reports?fechaInicio=${repDesde}&fechaFin=${repHasta}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReportes(data);
+      }
+    } catch (e) {
+      alert("Error al generar reporte");
+    }
+  };
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -299,7 +349,12 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
             <h2 className="text-lg font-semibold text-gray-900">Planilla de Personal - Guardia Médica</h2>
             <p className="text-sm text-gray-500 mt-1">Selecciona el menú deseado para el personal activo hoy.</p>
           </div>
-          <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full">Activos: {staff.length}</span>
+          <div className="flex items-center space-x-4">
+            <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full">Activos: {staff.length}</span>
+            <button onClick={handleGuardarPedidos} disabled={isPastDeadline} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm">
+              Guardar Todos los Pedidos
+            </button>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -311,34 +366,43 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {staff.map((p) => (
-                <tr key={p.Id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex flex-col">
-                      <span className="text-sm font-medium text-gray-900">{p.Nombre} {p.Apellido}</span>
-                      <span className="text-xs text-gray-500">DNI: {p.DNI} • {p.Horario}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-2">
-                      {dietas.map(d => (
-                        <button key={`alm-${d}`} onClick={() => handleOrder(p.Id, "Almuerzo", d)} disabled={isPastDeadline} className="px-3 py-1.5 text-xs rounded-md border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                          {d}
-                        </button>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4">
-                    <div className="flex flex-wrap gap-2">
-                      {dietas.map(d => (
-                        <button key={`cen-${d}`} onClick={() => handleOrder(p.Id, "Cena", d)} disabled={isPastDeadline} className="px-3 py-1.5 text-xs rounded-md border border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all focus:ring-2 focus:ring-blue-500 focus:outline-none">
-                          {d}
-                        </button>
-                      ))}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+              {staff.map((p) => {
+                const pSelections = selections[p.Id] || { almuerzo: null, cena: null };
+                return (
+                  <tr key={p.Id} className="hover:bg-gray-50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex flex-col">
+                        <span className="text-sm font-medium text-gray-900">{p.Nombre} {p.Apellido}</span>
+                        <span className="text-xs text-gray-500">DNI: {p.DNI} • {p.Horario}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-2">
+                        {dietas.map(d => {
+                          const isSelected = pSelections.almuerzo === d;
+                          return (
+                            <button key={`alm-${d}`} onClick={() => toggleSelection(p.Id, "almuerzo", d)} disabled={isPastDeadline} className={`px-3 py-1.5 text-xs rounded-md border transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700'}`}>
+                              {d}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-2">
+                        {dietas.map(d => {
+                          const isSelected = pSelections.cena === d;
+                          return (
+                            <button key={`cen-${d}`} onClick={() => toggleSelection(p.Id, "cena", d)} disabled={isPastDeadline} className={`px-3 py-1.5 text-xs rounded-md border transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700'}`}>
+                              {d}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -404,6 +468,64 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
           <p className="text-xs text-gray-500 mt-1">Actualizar base de personal activo</p>
         </div>
       </div>
+
+      {/* Reportes Section for Jefe */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="px-6 py-5 border-b border-gray-200 bg-gray-50/50">
+          <h2 className="text-lg font-semibold text-gray-900">Reportes de mi Servicio</h2>
+        </div>
+        <div className="p-6 border-b border-gray-200 flex flex-wrap gap-4 items-end">
+          <div className="w-48">
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Fecha Desde</label>
+            <input type="date" value={repDesde} onChange={e => setRepDesde(e.target.value)} className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
+          </div>
+          <div className="w-48">
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Fecha Hasta</label>
+            <input type="date" value={repHasta} onChange={e => setRepHasta(e.target.value)} className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
+          </div>
+          <button onClick={generarReporte} className="bg-gray-800 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-900 shadow-sm transition-colors">
+            Generar Reporte
+          </button>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Empleado (DNI o Nombre)</label>
+            <input type="text" value={repFiltroEmpleado} onChange={e => setRepFiltroEmpleado(e.target.value)} placeholder="Ej. Juan Perez" className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
+          </div>
+        </div>
+        <div className="p-8 text-gray-700 text-sm overflow-x-auto">
+          {reportes.length === 0 ? (
+            <div className="text-center text-gray-500">Vista previa del reporte (Selecciona fechas y haz clic en Generar Reporte)</div>
+          ) : (
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left">Fecha</th>
+                  <th className="px-4 py-2 text-left">Tipo</th>
+                  <th className="px-4 py-2 text-left">Personal / Paciente</th>
+                  <th className="px-4 py-2 text-left">DNI</th>
+                  <th className="px-4 py-2 text-left">Estado</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {reportes.filter(r => {
+                  if (!repFiltroEmpleado) return true;
+                  const term = repFiltroEmpleado.toLowerCase();
+                  const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+                  const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+                  return name.includes(term) || dni.includes(term);
+                }).map((r) => (
+                  <tr key={r.Id}>
+                    <td className="px-4 py-2">{r.FechaPedido.split('T')[0].split('-').reverse().join('/')}</td>
+                    <td className="px-4 py-2">{r.TipoComida} ({r.TipoDieta})</td>
+                    <td className="px-4 py-2">{r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`}</td>
+                    <td className="px-4 py-2">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
+                    <td className="px-4 py-2">{r.Estado}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -424,6 +546,7 @@ function GerentePanel({ token }: { token: string }) {
   // Reportes
   const [repDesde, setRepDesde] = useState("");
   const [repHasta, setRepHasta] = useState("");
+  const [repFiltroEmpleado, setRepFiltroEmpleado] = useState("");
   const [reportes, setReportes] = useState<any[]>([]);
 
   const fetchEmergencias = async () => {
@@ -655,6 +778,10 @@ function GerentePanel({ token }: { token: string }) {
           <button onClick={generarReporte} className="bg-gray-800 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-900 shadow-sm transition-colors">
             Generar Reporte
           </button>
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Empleado (DNI o Nombre)</label>
+            <input type="text" value={repFiltroEmpleado} onChange={e => setRepFiltroEmpleado(e.target.value)} placeholder="Ej. Juan Perez" className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
+          </div>
         </div>
         <div className="p-8 text-gray-700 text-sm overflow-x-auto">
           {reportes.length === 0 ? (
@@ -666,15 +793,23 @@ function GerentePanel({ token }: { token: string }) {
                   <th className="px-4 py-2 text-left">Fecha</th>
                   <th className="px-4 py-2 text-left">Tipo</th>
                   <th className="px-4 py-2 text-left">Personal / Paciente</th>
+                  <th className="px-4 py-2 text-left">DNI</th>
                   <th className="px-4 py-2 text-left">Estado</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {reportes.map((r) => (
+                {reportes.filter(r => {
+                  if (!repFiltroEmpleado) return true;
+                  const term = repFiltroEmpleado.toLowerCase();
+                  const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+                  const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+                  return name.includes(term) || dni.includes(term);
+                }).map((r) => (
                   <tr key={r.Id}>
-                    <td className="px-4 py-2">{new Date(r.FechaPedido).toLocaleDateString()}</td>
+                    <td className="px-4 py-2">{r.FechaPedido.split('T')[0].split('-').reverse().join('/')}</td>
                     <td className="px-4 py-2">{r.TipoComida} ({r.TipoDieta})</td>
                     <td className="px-4 py-2">{r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`}</td>
+                    <td className="px-4 py-2">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
                     <td className="px-4 py-2">{r.Estado}</td>
                   </tr>
                 ))}
