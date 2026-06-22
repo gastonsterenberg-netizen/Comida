@@ -11,7 +11,8 @@
       "Bash(openspec list *)",
       "Bash(git -C frontend status --short)",
       "Bash(git -C frontend add src/app/page.tsx public/plantilla_personal.csv)",
-      "Bash(git *)"
+      "Bash(git *)",
+      "Bash(node -e ' *)"
     ]
   }
 }
