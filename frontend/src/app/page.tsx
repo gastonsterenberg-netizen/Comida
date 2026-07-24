@@ -1,6 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTheme } from "next-themes";
+import Swal from 'sweetalert2';
+import { 
+  LogOut, Sun, Moon, AlertTriangle, FileText, Settings, 
+  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, CheckCircle, Search, Save, Utensils
+} from "lucide-react";
 
 type Role = "Jefe" | "Gerente" | "RRHH";
 
@@ -9,14 +15,35 @@ export default function Home() {
   const [token, setToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setCurrentTime(new Date());
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
     return () => clearInterval(timer);
   }, []);
 
-  const isPastDeadline = false; // Deshabilitado para pruebas
+  const [limiteAlmuerzo, setLimiteAlmuerzo] = useState("09:00");
+  const [limiteCena, setLimiteCena] = useState("17:00");
+
+  useEffect(() => {
+    if (token) {
+      fetch("http://localhost:3001/api/hospital/config", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.LimiteAlmuerzo) setLimiteAlmuerzo(d.LimiteAlmuerzo);
+        if (d && d.LimiteCena) setLimiteCena(d.LimiteCena);
+      }).catch(console.error);
+    }
+  }, [token]);
+
+  const currentTotalMins = currentTime ? (currentTime.getHours() * 60 + currentTime.getMinutes()) : 0;
+  const [lAh, lAm] = limiteAlmuerzo.split(':').map(Number);
+  const isPastAlmuerzo = currentTotalMins >= (lAh * 60 + lAm);
+  const [lCh, lCm] = limiteCena.split(':').map(Number);
+  const isPastCena = currentTotalMins >= (lCh * 60 + lCm);
 
   const handleLogin = (jwtToken: string, userRole: number, id: number) => {
     setToken(jwtToken);
@@ -27,9 +54,24 @@ export default function Home() {
   };
 
   const handleLogout = () => {
-    setToken(null);
-    setRole(null);
-    setUserId(null);
+    Swal.fire({
+      title: '¿Cerrar sesión?',
+      text: "Saldrás de tu cuenta actual.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#3b82f6',
+      cancelButtonColor: '#ef4444',
+      confirmButtonText: 'Sí, salir',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then((result) => {
+      if (result.isConfirmed) {
+        setToken(null);
+        setRole(null);
+        setUserId(null);
+      }
+    });
   };
 
   if (!token || !role) {
@@ -37,49 +79,65 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-sans selection:bg-blue-200">
-      <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-10">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-sans transition-colors duration-300 selection:bg-blue-200 dark:selection:bg-blue-900">
+      <header className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-lg shadow-sm border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="bg-blue-600 p-2 rounded-lg">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
+            <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2.5 rounded-xl shadow-md">
+              <Utensils className="w-5 h-5 text-white" />
             </div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">Comida Control Entrega</h1>
+            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
+              SisAC - Sistema de Administración de Comida
+            </h1>
           </div>
           
           <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2 bg-gray-100 px-3 py-1.5 rounded-full">
-              <span className="text-sm font-medium text-gray-700">Rol: {role}</span>
-              <button onClick={handleLogout} className="ml-4 text-xs text-red-600 hover:text-red-800 font-semibold">Cerrar Sesión</button>
+            <div className={`hidden md:flex flex-col text-xs border-l-4 ${isPastAlmuerzo && isPastCena ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'} px-3 py-1.5 rounded-r-lg`}>
+              <div className="font-bold mb-0.5">Límites Pedido</div>
+              <div>Alm: {limiteAlmuerzo} {isPastAlmuerzo && <span className="font-bold text-red-600 dark:text-red-400">(!)</span>}</div>
+              <div>Cen: {limiteCena} {isPastCena && <span className="font-bold text-red-600 dark:text-red-400">(!)</span>}</div>
             </div>
-            <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-full border ${isPastDeadline ? 'bg-red-50 border-red-200 text-red-600' : 'bg-green-50 border-green-200 text-green-600'}`}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <span className="text-sm font-semibold">
-                {currentTime ? currentTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "..."}
-              </span>
+
+            <div className="flex items-center space-x-3 bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-full border border-gray-200 dark:border-gray-700">
+              <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{role}</span>
+              
+              <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-2"></div>
+              
+              {mounted && (
+                <button 
+                  onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                  className="p-1 rounded-full text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors focus:outline-none"
+                  title="Cambiar tema"
+                >
+                  {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                </button>
+              )}
+
+              <button 
+                onClick={handleLogout} 
+                className="ml-2 p-1 rounded-full text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors focus:outline-none"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {isPastDeadline && (
-          <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg shadow-sm flex items-start">
-            <svg className="w-5 h-5 text-red-500 mt-0.5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-            </svg>
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+        {(isPastAlmuerzo || isPastCena) && (
+          <div className="mb-6 bg-red-50 dark:bg-red-900/10 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm flex items-start">
+            <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
             <div>
-              <h3 className="text-sm font-medium text-red-800">Cierre de Pedidos</h3>
-              <p className="text-sm text-red-700 mt-1">El horario límite (10:00 AM) ha pasado. Ya no se pueden realizar solicitudes normales ni de emergencia para el día de hoy.</p>
+              <h3 className="text-sm font-bold text-red-800 dark:text-red-400">Cierre de Pedidos Activo</h3>
+              <p className="text-sm text-red-700 dark:text-red-300 mt-1">Algunos horarios límite han pasado. Ya no se pueden realizar solicitudes normales para los turnos vencidos.</p>
             </div>
           </div>
         )}
 
-        {role === "Jefe" && <JefePanel isPastDeadline={isPastDeadline} token={token} userId={userId} />}
+        {role === "Jefe" && <JefePanel isPastAlmuerzo={isPastAlmuerzo} isPastCena={isPastCena} limiteAlmuerzo={limiteAlmuerzo} limiteCena={limiteCena} token={token} userId={userId} />}
         {role === "Gerente" && <GerentePanel token={token} />}
         {role === "RRHH" && <RRHHPanel token={token} />}
       </main>
@@ -95,9 +153,13 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
   const [tempToken, setTempToken] = useState("");
   const [totp, setTotp] = useState("");
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const { theme } = useTheme();
 
   const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
+    setError("");
     try {
       const res = await fetch("http://localhost:3001/api/auth/login", {
         method: "POST",
@@ -105,7 +167,7 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
         body: JSON.stringify({ username, password })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error de login");
+      if (!res.ok) throw new Error(data.error || "Error de credenciales");
       
       if (data.require2FA) {
         setTempToken(data.tempToken);
@@ -113,14 +175,20 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
           setQrCodeUrl(data.qrCode);
         }
         setStep(2);
+      } else if (data.token) {
+        onLogin(data.token, data.user.roleId, data.user.id);
       }
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const do2FA = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoading(true);
+    setError("");
     try {
       const res = await fetch("http://localhost:3001/api/auth/2fa/verify", {
         method: "POST",
@@ -133,40 +201,99 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
       onLogin(data.token, data.user.roleId, data.user.id);
     } catch (err: any) {
       setError(err.message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-200 w-full max-w-md">
-        <h2 className="text-2xl font-bold text-center mb-6 text-gray-900">Iniciar Sesión</h2>
-        {error && <div className="mb-4 text-sm text-red-600 bg-red-50 p-3 rounded-md">{error}</div>}
+    <div className="min-h-screen flex items-center justify-center bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-blue-50 via-gray-50 to-white dark:from-gray-900 dark:via-gray-950 dark:to-black">
+      <div className="w-full max-w-md p-8 bg-white/80 dark:bg-gray-900/80 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 dark:border-gray-800/50 animate-in zoom-in-95 duration-500">
+        <div className="flex flex-col items-center mb-8">
+          <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-3 rounded-2xl shadow-lg mb-4">
+            <Utensils className="w-8 h-8 text-white" />
+          </div>
+          <h2 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">SisAC</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sistema de Administración de Comida</p>
+        </div>
+        
+        {error && (
+          <div className="mb-6 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-lg flex items-center">
+            <AlertTriangle className="w-4 h-4 mr-2 flex-shrink-0" /> {error}
+          </div>
+        )}
         
         {step === 1 ? (
-          <form onSubmit={doLogin} className="space-y-4">
+          <form onSubmit={doLogin} className="space-y-5">
             <div>
-              <label className="block text-sm font-medium text-gray-700">Usuario</label>
-              <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" required />
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Usuario</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <User className="h-5 w-5 text-gray-400" />
+                </div>
+                <input 
+                  type="text" 
+                  value={username} 
+                  onChange={e => setUsername(e.target.value)} 
+                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
+                  placeholder="Ingrese su usuario"
+                  required 
+                />
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700">Contraseña</label>
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" required />
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Contraseña</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input 
+                  type="password" 
+                  value={password} 
+                  onChange={e => setPassword(e.target.value)} 
+                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
+                  placeholder="••••••••"
+                  required 
+                />
+              </div>
             </div>
-            <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-md font-medium hover:bg-blue-700">Continuar</button>
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-95"
+            >
+              {isLoading ? 'Autenticando...' : 'Iniciar Sesión'}
+            </button>
           </form>
         ) : (
-          <form onSubmit={do2FA} className="space-y-4">
+          <form onSubmit={do2FA} className="space-y-5">
             {qrCodeUrl && (
-              <div className="flex flex-col items-center justify-center p-4 bg-gray-50 rounded-lg border border-gray-200 mb-4">
-                <p className="text-sm text-gray-700 font-medium mb-2 text-center">Escanea este código con tu app de Autenticación (Google Authenticator, Authy, etc.)</p>
-                <img src={qrCodeUrl} alt="QR Code 2FA" className="w-48 h-48 bg-white p-2 rounded-md shadow-sm" />
+              <div className="flex flex-col items-center justify-center p-5 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 mb-4">
+                <p className="text-sm text-gray-700 dark:text-gray-300 font-medium mb-4 text-center">Escanea este código con tu app Authenticator</p>
+                <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100">
+                  <img src={qrCodeUrl} alt="QR Code 2FA" className="w-48 h-48" />
+                </div>
               </div>
             )}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Código 2FA</label>
-              <input type="text" value={totp} onChange={e => setTotp(e.target.value)} className="mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" required />
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Código 2FA</label>
+              <input 
+                type="text" 
+                value={totp} 
+                onChange={e => setTotp(e.target.value)} 
+                className="block w-full text-center tracking-widest font-mono text-xl py-3 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-shadow" 
+                placeholder="000000"
+                maxLength={6}
+                required 
+              />
             </div>
-            <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded-md font-medium hover:bg-blue-700">Verificar</button>
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-95"
+            >
+              {isLoading ? 'Verificando...' : 'Verificar Código'}
+            </button>
           </form>
         )}
       </div>
@@ -174,9 +301,17 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
   );
 }
 
-function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean, token: string, userId: number | null }) {
+function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, token, userId }: { isPastAlmuerzo: boolean, isPastCena: boolean, limiteAlmuerzo: string, limiteCena: string, token: string, userId: number | null }) {
+  const [activeTab, setActiveTab] = useState("Planilla");
+  const [planillaTab, setPlanillaTab] = useState<"almuerzo" | "cena">("almuerzo");
   const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // Padron & Plantel Builder
+  const [padron, setPadron] = useState<any[]>([]);
+  const [plantelDraft, setPlantelDraft] = useState<any[]>([]);
+  const [expandedServices, setExpandedServices] = useState<{ [key: string]: boolean }>({});
+  const [padronSearchTerm, setPadronSearchTerm] = useState("");
 
   // Emergency form state
   const [emgNombre, setEmgNombre] = useState("");
@@ -186,10 +321,44 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
   const [emgJustificacion, setEmgJustificacion] = useState("");
   
   // Reportes
-  const [repDesde, setRepDesde] = useState("");
-  const [repHasta, setRepHasta] = useState("");
+  const getTodayStr = () => {
+    const today = new Date();
+    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+    return today.toISOString().split('T')[0];
+  };
+  const [repDesde, setRepDesde] = useState(getTodayStr());
+  const [repHasta, setRepHasta] = useState(getTodayStr());
   const [repFiltroEmpleado, setRepFiltroEmpleado] = useState("");
   const [reportes, setReportes] = useState<any[]>([]);
+  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc'|'desc'}>({key: 'fecha', direction: 'desc'});
+  const [historialEmergencias, setHistorialEmergencias] = useState<any[]>([]);
+  const { theme } = useTheme();
+  
+  const handleSort = (key: string) => {
+    let direction: 'asc'|'desc' = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+  
+  const sortedReportes = [...reportes].sort((a, b) => {
+    let valA = '';
+    let valB = '';
+    if (sortConfig.key === 'fecha') { valA = a.FechaPedido; valB = b.FechaPedido; }
+    if (sortConfig.key === 'tipo') { valA = a.TipoComida; valB = b.TipoComida; }
+    if (sortConfig.key === 'nombre') {
+      valA = a.Personal ? `${a.Personal.Apellido} ${a.Personal.Nombre}` : `${a.EmergenciaApellido} ${a.EmergenciaNombre}`;
+      valB = b.Personal ? `${b.Personal.Apellido} ${b.Personal.Nombre}` : `${b.EmergenciaApellido} ${b.EmergenciaNombre}`;
+    }
+    if (sortConfig.key === 'dni') {
+      valA = a.Personal ? a.Personal.DNI : a.EmergenciaDNI;
+      valB = b.Personal ? b.Personal.DNI : b.EmergenciaDNI;
+    }
+    if (sortConfig.key === 'estado') { valA = a.Estado; valB = b.Estado; }
+    
+    if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
 
   const dietas = ["Normal", "Gastrica", "Diabetica", "Hepatico", "Vegetariano", "Celiaca"];
 
@@ -200,52 +369,168 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
       });
       if (res.ok) {
         const data = await res.json();
-        setStaff(data);
+        const activeData = data.filter((p: any) => !p.bajaDefinitivaHoy);
+        setStaff(activeData);
+        // Pre-fill right side list with current active staff
+        setPlantelDraft(activeData.map((p: any) => ({
+          DNI: p.DNI,
+          NombreCompleto: `${p.Apellido}, ${p.Nombre}`,
+          Horario: p.Horario === "24h" ? "Guardia 24h" : "Guardia 12h"
+        })));
       }
     } catch (e) {
       console.error("Error fetching staff:", e);
     }
   };
 
-  useEffect(() => {
-    fetchStaff();
-  }, []);
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const formData = new FormData();
-    formData.append('file', file);
-    setLoading(true);
-
+  const fetchHistorialEmergencias = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/staff/import", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData
-      });
-      if (res.ok) {
-        alert("Personal importado exitosamente");
-        fetchStaff();
-      } else {
-        const data = await res.json();
-        alert("Error: " + data.error);
-      }
+      const res = await fetch("http://localhost:3001/api/emergencies/history", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setHistorialEmergencias(await res.json());
     } catch (e) {
-      alert("Error de conexión");
-    } finally {
-      setLoading(false);
-      e.target.value = ""; // reset
+      console.error(e);
     }
   };
 
+  const fetchPadron = async () => {
+    try {
+      const res = await fetch("http://localhost:3001/api/staff/padron", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setPadron(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchStaff();
+    fetchHistorialEmergencias();
+    fetchPadron();
+  }, []);
+
+  const filteredPadron = padron.filter(p => 
+    p.NombreCompleto.toLowerCase().includes(padronSearchTerm.toLowerCase()) || 
+    p.DNI.includes(padronSearchTerm)
+  );
+
+  const padronByService = filteredPadron.reduce((acc, p) => {
+    const sName = p.Servicio?.Nombre || "Sin Servicio";
+    if (!acc[sName]) acc[sName] = [];
+    acc[sName].push(p);
+    return acc;
+  }, {} as Record<string, any[]>);
+
+  const toggleService = (sName: string) => {
+    setExpandedServices(prev => ({ ...prev, [sName]: !prev[sName] }));
+  };
+
+  const addAgent = (p: any, horario: string) => {
+    const existing = plantelDraft.find(x => x.DNI === p.DNI);
+    if (existing) {
+      if (existing.Horario !== horario) {
+        setPlantelDraft(plantelDraft.map(x => x.DNI === p.DNI ? { ...x, Horario: horario } : x));
+      }
+    } else {
+      setPlantelDraft([...plantelDraft, { 
+        DNI: p.DNI, 
+        NombreCompleto: p.NombreCompleto, 
+        Horario: horario 
+      }]);
+    }
+  };
+
+  const removeAgent = (dni: string) => {
+    setPlantelDraft(plantelDraft.filter(x => x.DNI !== dni));
+  };
+
+  const handleGuardarPlantel = async () => {
+    // Convertir el Horario de la BD al formato del Draft para comparar
+    const getDraftHorario = (dbHorario: string) => dbHorario === "24h" ? "Guardia 24h" : "Guardia 12h";
+
+    const agentsToAdd = plantelDraft.filter(p => !staff.some(s => s.DNI === p.DNI && getDraftHorario(s.Horario) === p.Horario));
+    const agentsToRemove = staff.filter(s => !plantelDraft.some(p => p.DNI === s.DNI && p.Horario === getDraftHorario(s.Horario)));
+
+    if (agentsToAdd.length === 0 && agentsToRemove.length === 0) {
+      Swal.fire({ title: "Sin cambios", text: "No hay modificaciones en el plantel", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    try {
+      // 1. Process Removals / Updates (Bajas)
+      for (const s of agentsToRemove) {
+        const bajaRes = await fetch(`http://localhost:3001/api/staff/${s.Id}/baja`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ tipo: "DEFINITIVA", motivo: "Reconfiguración de Plantel" })
+        });
+        if (!bajaRes.ok) {
+           const data = await bajaRes.json().catch(()=>({}));
+           console.error("Error en baja:", data);
+           Swal.fire({ title: "Error removiendo", text: data.error || "No se pudo remover al agente", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+           fetchStaff();
+           return;
+        }
+      }
+
+      // 2. Process Additions
+      if (agentsToAdd.length > 0) {
+        const res = await fetch("http://localhost:3001/api/staff/plantel", {
+           method: "POST",
+           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+           body: JSON.stringify({ plantel: agentsToAdd })
+        });
+        if (!res.ok) {
+           const data = await res.json();
+           Swal.fire({ title: "Error agregando", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+           fetchStaff();
+           return;
+        }
+      }
+
+      Swal.fire({ title: "Éxito", text: "Plantel actualizado correctamente", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      fetchStaff();
+    } catch (e) {
+      Swal.fire({ title: "Error", text: "Error de conexión al actualizar", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
+
+
+
   const [selections, setSelections] = useState<{ [id: number]: { almuerzo: string | null, cena: string | null } }>({});
+  const [savedSelections, setSavedSelections] = useState<{ [id: number]: { almuerzo: string | null, cena: string | null } }>({});
+
+  useEffect(() => {
+    const today = new Date().toISOString().split('T')[0];
+    fetch(`http://localhost:3001/api/reports?fechaInicio=${today}&fechaFin=${today}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+    .then(r => r.json())
+    .then(data => {
+      const newSelections: { [id: number]: { almuerzo: string | null, cena: string | null } } = {};
+      data.forEach((r: any) => {
+        if (r.PersonalId) {
+          if (!newSelections[r.PersonalId]) {
+            newSelections[r.PersonalId] = { almuerzo: null, cena: null };
+          }
+          if (r.TipoComida.toLowerCase() === 'almuerzo') {
+            newSelections[r.PersonalId].almuerzo = r.TipoDieta;
+          } else if (r.TipoComida.toLowerCase() === 'cena') {
+            newSelections[r.PersonalId].cena = r.TipoDieta;
+          }
+        }
+      });
+      setSelections(newSelections);
+      // Hacemos una copia profunda (deep copy) para que no compartan referencia
+      setSavedSelections(JSON.parse(JSON.stringify(newSelections)));
+    })
+    .catch(console.error);
+  }, [token]);
 
   const toggleSelection = (personalId: number, tipoComida: "almuerzo" | "cena", tipoDieta: string) => {
+    const isDeadline = tipoComida === "almuerzo" ? isPastAlmuerzo : isPastCena;
+    if (isDeadline) return;
+
     setSelections(prev => {
       const current = prev[personalId] || { almuerzo: null, cena: null };
-      // Si hace click en la misma dieta, la deselecciona (toggle off), sino la selecciona
       const isSame = current[tipoComida] === tipoDieta;
       return {
         ...prev,
@@ -258,15 +543,14 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
   };
 
   const handleGuardarPedidos = async () => {
-    // Transform selections state into the bulk format
     const ordersToSave = Object.keys(selections).map(id => ({
       personalId: Number(id),
-      almuerzoDieta: selections[Number(id)].almuerzo,
-      cenaDieta: selections[Number(id)].cena
-    })).filter(o => o.almuerzoDieta !== null || o.cenaDieta !== null);
+      almuerzoDieta: planillaTab === "almuerzo" ? selections[Number(id)].almuerzo : undefined,
+      cenaDieta: planillaTab === "cena" ? selections[Number(id)].cena : undefined
+    })).filter(o => (planillaTab === "almuerzo" && o.almuerzoDieta !== undefined) || (planillaTab === "cena" && o.cenaDieta !== undefined));
 
     if (ordersToSave.length === 0) {
-      alert("No hay ningún pedido seleccionado para guardar.");
+      Swal.fire({ title: "Aviso", text: "No hay ningún pedido seleccionado para guardar.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
 
@@ -279,18 +563,31 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
         },
         body: JSON.stringify({
           orders: ordersToSave,
-          solicitadoPorUsuarioId: userId
+          solicitadoPorUsuarioId: userId,
+          tipoComida: planillaTab === "almuerzo" ? "Almuerzo" : "Cena"
         })
       });
       if (res.ok) {
-        alert("Todos los pedidos se guardaron exitosamente.");
-        // Opcionalmente: limpiar selección o recargar (en este caso lo dejamos como está)
+        Swal.fire({ title: "Guardado", text: "Todos los pedidos se guardaron exitosamente.", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        setSavedSelections(prev => {
+          const next = JSON.parse(JSON.stringify(prev));
+          Object.keys(selections).forEach(idStr => {
+            const id = Number(idStr);
+            if (!next[id]) next[id] = { almuerzo: null, cena: null };
+            if (planillaTab === 'almuerzo') {
+              next[id].almuerzo = selections[id].almuerzo;
+            } else {
+              next[id].cena = selections[id].cena;
+            }
+          });
+          return next;
+        });
       } else {
         const data = await res.json();
-        alert("Error: " + data.error);
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch (e) {
-      alert("Error al guardar los pedidos");
+      Swal.fire({ title: "Error", text: "Error al guardar los pedidos", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
@@ -305,7 +602,7 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
         },
         body: JSON.stringify({
           nombre: emgNombre,
-          apellido: "", // We just use full name in the same field for MVP
+          apellido: "", 
           dni: emgDni,
           periodoInicio: new Date().toISOString(),
           periodoFin: new Date().toISOString(),
@@ -316,14 +613,129 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
         })
       });
       if (res.ok) {
-        alert("Solicitud de emergencia creada");
+        Swal.fire({ title: "Enviado", text: "Solicitud de emergencia creada", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         setEmgNombre(""); setEmgDni(""); setEmgJustificacion("");
+        fetchHistorialEmergencias();
       } else {
         const data = await res.json();
-        alert("Error: " + data.error);
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch (e) {
-      alert("Error al crear emergencia");
+      Swal.fire({ title: "Error", text: "Error al crear emergencia", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
+
+  const handleInhabilitar = async (p: any) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const { value: formValues } = await Swal.fire({
+      title: 'Inhabilitar Agente',
+      html: `
+        <div class="text-sm text-gray-500 mb-4">Configura la inhabilitación para ${p.Nombre} ${p.Apellido}.</div>
+        
+        <div class="flex flex-col gap-4 text-left">
+          
+          <div>
+            <label class="block text-xs font-bold mb-2">Duración</label>
+            <div class="flex gap-4">
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="swal-duracion" value="hoy" checked class="accent-red-500" onchange="document.getElementById('swal-fechas').style.display='none'">
+                <span class="text-sm">Solo por hoy</span>
+              </label>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="swal-duracion" value="rango" class="accent-red-500" onchange="document.getElementById('swal-fechas').style.display='flex'">
+                <span class="text-sm">Rango de fechas</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="swal-fechas" style="display: none;" class="flex-col gap-3 p-3 bg-gray-50 dark:bg-gray-800/50 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div>
+              <label class="block text-xs font-bold mb-1">Desde</label>
+              <input id="swal-desde" type="date" value="${todayStr}" class="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-2 rounded shadow-sm">
+            </div>
+            <div>
+              <label class="block text-xs font-bold mb-1">Hasta</label>
+              <input id="swal-hasta" type="date" value="${todayStr}" class="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-2 rounded shadow-sm">
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold mb-1">Motivo</label>
+            <select id="swal-motivo" class="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-2 rounded shadow-sm">
+              <option value="Licencia">Licencia</option>
+              <option value="Enfermedad">Enfermedad</option>
+              <option value="Maternidad">Maternidad</option>
+              <option value="Enfermedad Familiar">Enfermedad Familiar</option>
+            </select>
+          </div>
+          
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Inhabilitar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#ef4444',
+      background: theme === 'dark' ? '#1f2937' : '#fff', 
+      color: theme === 'dark' ? '#fff' : '#000',
+      preConfirm: () => {
+        const duracion = (document.querySelector('input[name="swal-duracion"]:checked') as HTMLInputElement).value;
+        const motivo = (document.getElementById('swal-motivo') as HTMLSelectElement).value;
+        if (duracion === 'hoy') {
+          return { desde: todayStr, hasta: todayStr, motivo };
+        } else {
+          return {
+            desde: (document.getElementById('swal-desde') as HTMLInputElement).value,
+            hasta: (document.getElementById('swal-hasta') as HTMLInputElement).value,
+            motivo
+          };
+        }
+      }
+    });
+
+    if (formValues) {
+      try {
+        const res = await fetch(`http://localhost:3001/api/staff/${p.Id}/baja`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ tipo: "PROVISORIA", desde: formValues.desde, hasta: formValues.hasta, motivo: formValues.motivo })
+        });
+        if (res.ok) {
+          Swal.fire({ title: "Inhabilitado", text: "El agente ha sido inhabilitado.", icon: "success", timer: 2000, showConfirmButton: false, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          setSelections(prev => {
+            const next = { ...prev };
+            delete next[p.Id];
+            return next;
+          });
+          setSavedSelections(prev => {
+            const next = { ...prev };
+            delete next[p.Id];
+            return next;
+          });
+          fetchStaff();
+        } else {
+          Swal.fire({ title: "Error", text: "No se pudo inhabilitar al agente", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      } catch (e) {
+        Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    }
+  };
+
+  const handleRevertir = async (p: any) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/staff/${p.Id}/revertir-baja`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        Swal.fire({ title: "Revertido", text: "El agente vuelve a estar habilitado.", icon: "success", timer: 2000, showConfirmButton: false, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        fetchStaff();
+      } else {
+        Swal.fire({ title: "Error", text: "No se pudo revertir", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    } catch (e) {
+      Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
@@ -337,68 +749,219 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
         setReportes(data);
       }
     } catch (e) {
-      alert("Error al generar reporte");
+      Swal.fire({ title: "Error", text: "Error al generar reporte", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
+  const exportExcel = () => {
+    if (reportes.length === 0) return Swal.fire({ title: "Aviso", text: "No hay reportes para exportar.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    let csv = "Fecha,Tipo,Personal/Paciente,DNI,Dieta,Estado\n";
+    const filtered = sortedReportes.filter(r => {
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+    filtered.forEach(r => {
+      const fecha = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
+      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`;
+      const dni = r.Personal ? r.Personal.DNI : r.EmergenciaDNI;
+      csv += `${fecha},${r.TipoComida},"${name}",${dni},${r.TipoDieta},${r.Estado}\n`;
+    });
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: 'text/csv;charset=utf-8;' }); // BOM for Excel
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `Reporte_${repDesde}_al_${repHasta}.csv`;
+    link.click();
+  };
+
+  const exportPDF = () => {
+    if (reportes.length === 0) return Swal.fire({ title: "Aviso", text: "No hay reportes para exportar.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    const printWindow = window.open('', '', 'width=800,height=600');
+    if (!printWindow) return;
+    const filtered = sortedReportes.filter(r => {
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+    let html = `<html><head><title>Reporte de Comidas</title><style>
+      body { font-family: sans-serif; padding: 20px; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+      th { background-color: #f2f2f2; -webkit-print-color-adjust: exact; }
+    </style></head><body>
+      <h2>Reporte de Comidas (${repDesde.split('-').reverse().join('/')} al ${repHasta.split('-').reverse().join('/')})</h2>
+      <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Personal / Paciente</th><th>DNI</th><th>Dieta</th><th>Estado</th></tr></thead><tbody>`;
+    filtered.forEach(r => {
+      const fecha = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
+      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`;
+      const dni = r.Personal ? r.Personal.DNI : r.EmergenciaDNI;
+      html += `<tr><td>${fecha}</td><td>${r.TipoComida}</td><td>${name}</td><td>${dni}</td><td>${r.TipoDieta}</td><td>${r.Estado}</td></tr>`;
+    });
+    html += `</tbody></table></body></html>`;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+  };
+
+  const tabs = [
+    { id: "Planilla", label: "Planilla", icon: <Users className="w-4 h-4 mr-2" /> },
+    { id: "Emergencias", label: "Emergencias", icon: <AlertTriangle className="w-4 h-4 mr-2" /> },
+    { id: "Plantel", label: "Configurar Plantel", icon: <Users className="w-4 h-4 mr-2" /> },
+    { id: "Reportes", label: "Reportes", icon: <Search className="w-4 h-4 mr-2" /> }
+  ];
+
+  const hasUnsavedChanges = Object.keys(selections).some(idStr => {
+    const id = Number(idStr);
+    const current = selections[id];
+    const saved = savedSelections[id] || { almuerzo: null, cena: null };
+    if (planillaTab === 'almuerzo') {
+      return (current.almuerzo || null) !== (saved.almuerzo || null);
+    } else {
+      return (current.cena || null) !== (saved.cena || null);
+    }
+  });
+
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Planilla de Personal - Guardia Médica</h2>
-            <p className="text-sm text-gray-500 mt-1">Selecciona el menú deseado para el personal activo hoy.</p>
+    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+      
+      {/* TABS NAVIGATION */}
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-1.5 flex flex-wrap gap-1">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === tab.id 
+                ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm' 
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* SECCION: PLANILLA PERSONAL */}
+      {activeTab === "Planilla" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden transition-colors animate-in fade-in zoom-in-95 duration-300">
+        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                <Users className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" /> Planilla de Personal
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Selecciona la dieta deseada para el personal activo.</p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-xs font-bold px-3 py-1.5 rounded-full border border-blue-200 dark:border-blue-800">
+                Activos: {staff.length}
+              </span>
+              <button 
+                onClick={handleGuardarPedidos} 
+                disabled={(planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena) || !hasUnsavedChanges} 
+                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-95 flex items-center"
+              >
+                <Save className="w-4 h-4 mr-2" /> Guardar {planillaTab === 'almuerzo' ? 'Almuerzo' : 'Cena'}
+              </button>
+            </div>
           </div>
-          <div className="flex items-center space-x-4">
-            <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-3 py-1 rounded-full">Activos: {staff.length}</span>
-            <button onClick={handleGuardarPedidos} disabled={isPastDeadline} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm">
-              Guardar Todos los Pedidos
+          
+          <div className="flex gap-2">
+            <button
+              onClick={() => setPlanillaTab("almuerzo")}
+              className={`flex-1 py-2 text-sm font-bold rounded-t-lg transition-colors ${planillaTab === 'almuerzo' ? 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-t border-l border-r border-gray-200 dark:border-gray-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-b border-transparent'}`}
+            >
+              ALMUERZO {isPastAlmuerzo && <span className="text-red-500 font-normal text-[10px] sm:text-xs ml-1 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded">(Fuera de Hora)</span>}
+            </button>
+            <button
+              onClick={() => setPlanillaTab("cena")}
+              className={`flex-1 py-2 text-sm font-bold rounded-t-lg transition-colors ${planillaTab === 'cena' ? 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-t border-l border-r border-gray-200 dark:border-gray-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-b border-transparent'}`}
+            >
+              CENA {isPastCena && <span className="text-red-500 font-normal text-[10px] sm:text-xs ml-1 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded">(Fuera de Hora)</span>}
             </button>
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+            <thead className="bg-gray-50 dark:bg-gray-800/50">
               <tr>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Personal</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Almuerzo</th>
-                <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cena</th>
+                <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky left-0 bg-gray-50 dark:bg-gray-800/90 z-10">Personal</th>
+                {dietas.map(d => (
+                  <th key={d} scope="col" className="px-4 py-4 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{d}</th>
+                ))}
+                <th scope="col" className="px-4 py-4 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky right-0 bg-gray-50 dark:bg-gray-800/90 z-10">Estado</th>
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
+            <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800/50">
               {staff.map((p) => {
                 const pSelections = selections[p.Id] || { almuerzo: null, cena: null };
+                const currentSelection = planillaTab === 'almuerzo' ? pSelections.almuerzo : pSelections.cena;
+                const isDisabled = planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena;
                 return (
-                  <tr key={p.Id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap">
+                  <tr key={p.Id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white dark:bg-gray-900 z-10 border-r border-gray-100 dark:border-gray-800">
                       <div className="flex flex-col">
-                        <span className="text-sm font-medium text-gray-900">{p.Nombre} {p.Apellido}</span>
-                        <span className="text-xs text-gray-500">DNI: {p.DNI} • {p.Horario}</span>
+                        <div className="flex items-center">
+                          <span className={`text-sm font-bold ${p.bajaProvisoriaHoy ? 'text-red-500 line-through' : 'text-gray-900 dark:text-gray-100'}`}>{p.Nombre} {p.Apellido}</span>
+                          {p.bajaProvisoriaHoy && p.bajaMotivo && (
+                            <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded ml-2 border border-red-200 dark:border-red-800">
+                              {p.bajaMotivo}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">DNI: {p.DNI} • {p.Horario}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        {dietas.map(d => {
-                          const isSelected = pSelections.almuerzo === d;
-                          return (
-                            <button key={`alm-${d}`} onClick={() => toggleSelection(p.Id, "almuerzo", d)} disabled={isPastDeadline} className={`px-3 py-1.5 text-xs rounded-md border transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700'}`}>
-                              {d}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-2">
-                        {dietas.map(d => {
-                          const isSelected = pSelections.cena === d;
-                          return (
-                            <button key={`cen-${d}`} onClick={() => toggleSelection(p.Id, "cena", d)} disabled={isPastDeadline} className={`px-3 py-1.5 text-xs rounded-md border transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed ${isSelected ? 'bg-blue-600 text-white border-blue-600 shadow-sm' : 'border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-300 hover:text-blue-700'}`}>
-                              {d}
-                            </button>
-                          );
-                        })}
-                      </div>
+                    {dietas.map(d => {
+                      const isSelected = currentSelection === d;
+                      const cellDisabled = isDisabled || p.bajaProvisoriaHoy;
+                      const handleClick = () => {
+                        if (cellDisabled) {
+                          const msg = p.bajaProvisoriaHoy ? "Este agente está inhabilitado por hoy." : `El horario límite para solicitar ${planillaTab} (${planillaTab === 'almuerzo' ? limiteAlmuerzo : limiteCena}hs) ya ha pasado.`;
+                          Swal.fire({
+                            title: p.bajaProvisoriaHoy ? "Agente Inhabilitado" : "Horario Vencido",
+                            text: msg,
+                            icon: "warning",
+                            toast: true,
+                            position: 'top-end',
+                            showConfirmButton: false,
+                            timer: 3000,
+                            background: theme === 'dark' ? '#1f2937' : '#fff', 
+                            color: theme === 'dark' ? '#fff' : '#000'
+                          });
+                          return;
+                        }
+                        toggleSelection(p.Id, planillaTab, d);
+                      };
+                      return (
+                        <td key={`${p.Id}-${d}`} className={`px-4 py-4 text-center ${cellDisabled ? 'cursor-not-allowed bg-gray-50 dark:bg-gray-800/40 opacity-70' : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors'}`} onClick={handleClick}>
+                          <input 
+                            type="radio" 
+                            name={`dieta-${p.Id}`} 
+                            checked={isSelected}
+                            readOnly
+                            disabled={cellDisabled}
+                            className={`w-5 h-5 accent-blue-600 ${cellDisabled ? 'cursor-not-allowed grayscale' : 'cursor-pointer'}`}
+                          />
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-4 text-center whitespace-nowrap sticky right-0 bg-white dark:bg-gray-900 z-10 border-l border-gray-100 dark:border-gray-800">
+                      {p.bajaProvisoriaHoy ? (
+                        <button onClick={() => handleRevertir(p)} title="Revertir Inhabilitación" className="px-3 py-1.5 bg-green-50 text-green-600 hover:bg-green-100 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 rounded-lg text-xs font-bold transition-colors">
+                          ♻️ Revertir
+                        </button>
+                      ) : (
+                        <button onClick={() => handleInhabilitar(p)} title="Inhabilitar Agente" className="px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 rounded-lg text-xs font-bold transition-colors">
+                          🛑 Inhabilitar
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );
@@ -407,118 +970,291 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
           </table>
         </div>
       </div>
+      )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 bg-orange-50/50">
-          <h2 className="text-lg font-semibold text-gray-900">Solicitud de Emergencia</h2>
-          <p className="text-sm text-gray-500 mt-1">Para personal no listado en la planilla mensual.</p>
+      {/* SECCION: EMERGENCIA */}
+      {activeTab === "Emergencias" && (
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-orange-200 dark:border-orange-900/30 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-orange-200 dark:border-orange-900/30 bg-orange-50/50 dark:bg-orange-900/10">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+              <AlertTriangle className="w-5 h-5 mr-2 text-orange-500" /> Solicitud de Emergencia
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Para personal o pacientes no listados en la planilla mensual.</p>
+          </div>
+          <div className="p-6">
+            <form className="grid grid-cols-1 md:grid-cols-2 gap-5" onSubmit={submitEmergency}>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Nombre y Apellido</label>
+                <input type="text" value={emgNombre} onChange={e => setEmgNombre(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" placeholder="Ej. Carlos Ruiz" required />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">DNI</label>
+                <input type="text" value={emgDni} onChange={e => setEmgDni(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" placeholder="Ej. 11223344" required />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Tipo de Comida y Dieta</label>
+                <div className="flex space-x-3">
+                  <select value={emgComida} onChange={e => setEmgComida(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="flex-1 rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                    {!isPastAlmuerzo && <option value="Almuerzo">Almuerzo</option>}
+                    {!isPastCena && <option value="Cena">Cena</option>}
+                    {(!isPastAlmuerzo && !isPastCena) && <option value="Ambos">Ambos</option>}
+                  </select>
+                  <select value={emgDieta} onChange={e => setEmgDieta(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="flex-1 rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                    {dietas.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Justificación Obligatoria</label>
+                <textarea value={emgJustificacion} onChange={e => setEmgJustificacion(e.target.value)} disabled={isPastAlmuerzo && isPastCena} rows={2} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" placeholder="Motivo de la solicitud..." required></textarea>
+              </div>
+              <div className="md:col-span-2 flex justify-end mt-2">
+                <button type="submit" disabled={isPastAlmuerzo && isPastCena} className="inline-flex items-center justify-center py-2.5 px-6 border border-transparent shadow-sm text-sm font-bold rounded-lg text-white bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-95">
+                  <CheckCircle className="w-4 h-4 mr-2" /> Enviar Solicitud
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-        <div className="p-6">
-          <form className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" onSubmit={submitEmergency}>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nombre y Apellido</label>
-              <input type="text" value={emgNombre} onChange={e => setEmgNombre(e.target.value)} disabled={isPastDeadline} className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed px-3 py-2 border" placeholder="Ej. Carlos Ruiz" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">DNI</label>
-              <input type="text" value={emgDni} onChange={e => setEmgDni(e.target.value)} disabled={isPastDeadline} className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-100 px-3 py-2 border" placeholder="Ej. 11223344" required />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Comida y Dieta</label>
-              <div className="flex space-x-2">
-                <select value={emgComida} onChange={e => setEmgComida(e.target.value)} disabled={isPastDeadline} className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-100 px-3 py-2 border bg-white">
-                  <option value="Almuerzo">Almuerzo</option>
-                  <option value="Cena">Cena</option>
-                </select>
-                <select value={emgDieta} onChange={e => setEmgDieta(e.target.value)} disabled={isPastDeadline} className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-100 px-3 py-2 border bg-white">
-                  {dietas.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
+      )}
+
+      {/* SECCION: ARCHIVO (AHORA DUAL LIST) */}
+      {activeTab === "Plantel" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+              <Users className="w-5 h-5 mr-2 text-blue-500" /> Configuración de Plantel
+            </h2>
+            <button 
+              onClick={handleGuardarPlantel}
+              className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:from-blue-700 hover:to-indigo-700 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center"
+            >
+              <Save className="w-4 h-4 mr-2" /> Guardar Plantel
+            </button>
+          </div>
+          
+          <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 min-h-[500px]">
+            {/* IZQUIERDA: Padrón General */}
+            <div className="border border-gray-200 dark:border-gray-800 rounded-xl flex flex-col bg-gray-50/30 dark:bg-gray-800/10">
+              <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50">
+                <h3 className="font-bold text-gray-700 dark:text-gray-300">Padrón de Agentes</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Click para agregar al plantel</p>
+                <div className="mt-3 relative">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar por DNI o Apellido..."
+                    value={padronSearchTerm}
+                    onChange={e => setPadronSearchTerm(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                  />
+                </div>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[500px] space-y-3">
+                {Object.keys(padronByService).sort((a, b) => a.localeCompare(b)).map(sName => {
+                  const isExpanded = padronSearchTerm.trim() !== "" || expandedServices[sName];
+                  return (
+                  <div key={sName} className="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden">
+                    <button 
+                      onClick={() => toggleService(sName)}
+                      className="w-full flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                    >
+                      <span className="font-bold text-sm text-gray-800 dark:text-gray-200">{sName}</span>
+                      <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+                    {isExpanded && (
+                      <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {padronByService[sName].sort((a, b) => a.NombreCompleto.localeCompare(b.NombreCompleto)).map(p => {
+                          const draftEntry = plantelDraft.find(draft => draft.DNI === p.DNI);
+                          const isSelected = !!draftEntry;
+                          const dbAssigned = staff.find(s => s.DNI === p.DNI);
+                          
+                          // Global assignments from backend excluding THIS service's DB state
+                          const externalHas24h = dbAssigned?.Horario.includes('24h') ? false : p.has24h;
+                          const externalCount12h = p.count12h - (dbAssigned?.Horario.includes('12h') ? 1 : 0);
+
+                          const isAssignedElsewhere = !isSelected && (externalHas24h || externalCount12h > 0);
+                          const disable12h = externalHas24h || externalCount12h >= 2;
+                          const disable24h = externalHas24h || externalCount12h > 0;
+
+                          // For selected agents, disable the button of their CURRENT draft shift
+                          const isDraft12h = draftEntry?.Horario?.includes('12h');
+                          const isDraft24h = draftEntry?.Horario?.includes('24h');
+
+                          // Color classes
+                          let containerClass = "p-3 text-sm flex justify-between items-center transition-colors group ";
+                          if (isSelected) {
+                            containerClass += "bg-gray-50/80 dark:bg-gray-800/80"; // Removed grayscale so buttons retain color
+                          } else if (isAssignedElsewhere) {
+                            containerClass += "bg-blue-50/50 dark:bg-blue-900/10 border-l-2 border-blue-300 dark:border-blue-700";
+                          } else {
+                            containerClass += "hover:bg-blue-50 dark:hover:bg-blue-900/20";
+                          }
+
+                          let textClass = "font-semibold ";
+                          if (isSelected) textClass += "text-gray-500 opacity-60";
+                          else if (isAssignedElsewhere) textClass += "text-blue-700 dark:text-blue-300";
+                          else textClass += "text-gray-900 dark:text-gray-100";
+
+                          return (
+                          <div key={p.DNI} className={containerClass}>
+                            <div>
+                              <p className={textClass}>{p.NombreCompleto}</p>
+                              <p className={`text-xs ${isSelected ? 'text-gray-400 opacity-60' : 'text-gray-500 dark:text-gray-400'}`}>
+                                DNI: {p.DNI}
+                                {isAssignedElsewhere && <span className="ml-2 text-blue-500 text-[10px] uppercase font-bold tracking-wider">Otro Servicio</span>}
+                              </p>
+                            </div>
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => addAgent(p, "Guardia 12h")}
+                                disabled={disable12h || isDraft12h}
+                                className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable12h || isDraft12h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300'}`}
+                                title="Asignar Guardia 12h"
+                              >
+                                {isDraft12h ? '✓ 12h' : '12h'}
+                              </button>
+                              <button
+                                onClick={() => addAgent(p, "Guardia 24h")}
+                                disabled={disable24h || isDraft24h}
+                                className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable24h || isDraft24h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300'}`}
+                                title="Asignar Guardia 24h"
+                              >
+                                {isDraft24h ? '✓ 24h' : '24h'}
+                              </button>
+                            </div>
+                          </div>
+                        )})}
+                      </div>
+                    )}
+                  </div>
+                )})}
               </div>
             </div>
-            <div className="md:col-span-2 lg:col-span-3">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Justificación Obligatoria</label>
-              <textarea value={emgJustificacion} onChange={e => setEmgJustificacion(e.target.value)} disabled={isPastDeadline} rows={2} className="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm disabled:bg-gray-100 px-3 py-2 border" placeholder="Motivo de la solicitud de emergencia..." required></textarea>
-            </div>
-            <div className="md:col-span-2 lg:col-span-3 flex justify-end">
-              <button type="submit" disabled={isPastDeadline} className="inline-flex justify-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                Enviar Solicitud
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 bg-gray-50/50 flex justify-between items-center">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Importación de Plantel Mensual</h2>
-            <p className="text-sm text-gray-500 mt-1">Sube un archivo CSV con el personal autorizado para tu servicio.</p>
+            {/* DERECHA: Plantel Seleccionado */}
+            <div className="border border-indigo-200 dark:border-indigo-900/30 rounded-xl flex flex-col bg-white dark:bg-gray-900 shadow-sm">
+              <div className="p-4 border-b border-indigo-200 dark:border-indigo-900/30 bg-indigo-50/50 dark:bg-indigo-900/10 flex justify-between items-center">
+                <div>
+                  <h3 className="font-bold text-indigo-900 dark:text-indigo-100">Agentes del Plantel</h3>
+                  <p className="text-xs text-indigo-500 dark:text-indigo-400">Define el horario para cada uno</p>
+                </div>
+                <span className="bg-indigo-200 dark:bg-indigo-800 text-indigo-800 dark:text-indigo-200 text-xs font-bold px-3 py-1 rounded-full">
+                  {plantelDraft.length}
+                </span>
+              </div>
+              <div className="p-4 overflow-y-auto max-h-[500px] space-y-2">
+                {plantelDraft.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400 dark:text-gray-500">
+                    <Users className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                    <p>Agrega agentes desde el padrón izquierdo</p>
+                  </div>
+                ) : (
+                  [...plantelDraft].sort((a, b) => a.NombreCompleto.localeCompare(b.NombreCompleto)).map(p => (
+                    <div key={p.DNI} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 border border-indigo-100 dark:border-indigo-800 rounded-lg bg-indigo-50/30 dark:bg-indigo-900/20 gap-3 hover:border-indigo-300 transition-colors">
+                      <div className="flex-1">
+                        <p className="font-bold text-sm text-gray-900 dark:text-gray-100 truncate">{p.NombreCompleto}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">DNI: {p.DNI}</p>
+                      </div>
+                      <div className="flex items-center space-x-3">
+                        <span className="text-xs font-bold px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-md">
+                          {p.Horario}
+                        </span>
+                        <button 
+                          onClick={() => removeAgent(p.DNI)}
+                          className="text-red-400 hover:text-red-600 dark:hover:text-red-300 p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors bg-white dark:bg-gray-800 shadow-sm"
+                          title="Quitar del plantel"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
-          <a href="/plantilla_personal.csv" download className="text-sm text-blue-600 font-medium hover:text-blue-800 flex items-center bg-blue-50 px-3 py-1.5 rounded-md border border-blue-200 transition-colors">
-            <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-            Descargar Plantilla
-          </a>
         </div>
-        <div className="p-6 border-dashed border-2 border-blue-300 rounded-lg m-6 flex flex-col items-center justify-center text-center hover:bg-blue-50 cursor-pointer transition-colors relative">
-          <input type="file" accept=".csv" onChange={handleFileUpload} disabled={loading} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed" />
-          <div className="text-blue-600 mb-2 bg-blue-100 p-3 rounded-full">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-          </div>
-          <h3 className="text-sm font-bold text-blue-700">{loading ? "Subiendo..." : "Importar Plantel (CSV)"}</h3>
-          <p className="text-xs text-gray-500 mt-1">Actualizar base de personal activo</p>
-        </div>
-      </div>
+      )}
 
-      {/* Reportes Section for Jefe */}
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 bg-gray-50/50">
-          <h2 className="text-lg font-semibold text-gray-900">Reportes de mi Servicio</h2>
+      {/* SECCION: REPORTES */}
+      {activeTab === "Reportes" && (
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+            <Search className="w-5 h-5 mr-2 text-indigo-500" /> Reportes y Consultas
+          </h2>
         </div>
-        <div className="p-6 border-b border-gray-200 flex flex-wrap gap-4 items-end">
-          <div className="w-48">
-            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Fecha Desde</label>
-            <input type="date" value={repDesde} onChange={e => setRepDesde(e.target.value)} className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
+        <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-wrap gap-4 items-end bg-white dark:bg-gray-900">
+          <div className="w-full sm:w-48">
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Fecha Desde</label>
+            <input type="date" value={repDesde} onChange={e => setRepDesde(e.target.value)} className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" />
           </div>
-          <div className="w-48">
-            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Fecha Hasta</label>
-            <input type="date" value={repHasta} onChange={e => setRepHasta(e.target.value)} className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
+          <div className="w-full sm:w-48">
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Fecha Hasta</label>
+            <input type="date" value={repHasta} onChange={e => setRepHasta(e.target.value)} className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" />
           </div>
-          <button onClick={generarReporte} className="bg-gray-800 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-900 shadow-sm transition-colors">
-            Generar Reporte
-          </button>
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Empleado (DNI o Nombre)</label>
-            <input type="text" value={repFiltroEmpleado} onChange={e => setRepFiltroEmpleado(e.target.value)} placeholder="Ej. Juan Perez" className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
+          <div className="flex gap-2 w-full sm:w-auto">
+            <button onClick={generarReporte} className="flex-1 sm:flex-none flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg shadow-sm font-bold transition-colors">
+              <Search className="w-4 h-4 mr-2" /> Buscar
+            </button>
+            <button onClick={exportExcel} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="Exportar a Excel (CSV)">
+              EXCEL
+            </button>
+            <button onClick={exportPDF} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 text-white'}`} title="Exportar a PDF">
+              PDF
+            </button>
+          </div>
+          <div className="w-full lg:flex-1">
+            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Filtro rápido (DNI o Nombre)</label>
+            <div className="relative">
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <Search className="h-4 w-4 text-gray-400" />
+              </div>
+              <input type="text" value={repFiltroEmpleado} onChange={e => setRepFiltroEmpleado(e.target.value)} placeholder="Ej. Juan Perez..." className="block w-full pl-9 pr-3 py-2.5 text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" />
+            </div>
           </div>
         </div>
-        <div className="p-8 text-gray-700 text-sm overflow-x-auto">
+        <div className="p-0 overflow-x-auto">
           {reportes.length === 0 ? (
-            <div className="text-center text-gray-500">Vista previa del reporte (Selecciona fechas y haz clic en Generar Reporte)</div>
+            <div className="text-center text-gray-500 dark:text-gray-400 py-12 flex flex-col items-center">
+              <FileText className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
+              Vista previa del reporte (Selecciona fechas y presiona Buscar)
+            </div>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+              <thead className="bg-gray-50 dark:bg-gray-800/50">
                 <tr>
-                  <th className="px-4 py-2 text-left">Fecha</th>
-                  <th className="px-4 py-2 text-left">Tipo</th>
-                  <th className="px-4 py-2 text-left">Personal / Paciente</th>
-                  <th className="px-4 py-2 text-left">DNI</th>
-                  <th className="px-4 py-2 text-left">Estado</th>
+                  <th onClick={() => handleSort('fecha')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Fecha {sortConfig.key==='fecha' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                  <th onClick={() => handleSort('tipo')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Tipo {sortConfig.key==='tipo' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                  <th onClick={() => handleSort('nombre')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Personal / Paciente {sortConfig.key==='nombre' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                  <th onClick={() => handleSort('dni')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">DNI {sortConfig.key==='dni' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                  <th onClick={() => handleSort('estado')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Estado {sortConfig.key==='estado' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {reportes.filter(r => {
+              <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
+                {sortedReportes.filter(r => {
                   if (!repFiltroEmpleado) return true;
                   const term = repFiltroEmpleado.toLowerCase();
                   const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
                   const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
                   return name.includes(term) || dni.includes(term);
                 }).map((r) => (
-                  <tr key={r.Id}>
-                    <td className="px-4 py-2">{r.FechaPedido.split('T')[0].split('-').reverse().join('/')}</td>
-                    <td className="px-4 py-2">{r.TipoComida} ({r.TipoDieta})</td>
-                    <td className="px-4 py-2">{r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`}</td>
-                    <td className="px-4 py-2">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
-                    <td className="px-4 py-2">{r.Estado}</td>
+                  <tr key={r.Id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">{r.FechaPedido.split('T')[0].split('-').reverse().join('/')}</td>
+                    <td className="px-6 py-4 text-sm">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.TipoComida.toLowerCase() === 'almuerzo' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'}`}>
+                        {r.TipoComida}
+                      </span>
+                      <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{r.TipoDieta}</span>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-bold text-gray-900 dark:text-gray-100">{r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`}</td>
+                    <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
+                    <td className="px-6 py-4 text-sm">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.Estado === 'Aprobado' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : r.Estado === 'Rechazado' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
+                        {r.Estado}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -526,6 +1262,7 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
           )}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -533,7 +1270,8 @@ function JefePanel({ isPastDeadline, token, userId }: { isPastDeadline: boolean,
 function GerentePanel({ token }: { token: string }) {
   const [emergencias, setEmergencias] = useState<any[]>([]);
   const [resolucionTxt, setResolucionTxt] = useState<{ [id: number]: string }>({});
-
+  const [activeTab, setActiveTab] = useState("Bandeja");
+  
   // ABM Servicios
   const [servicios, setServicios] = useState<any[]>([]);
   const [nuevoServicio, setNuevoServicio] = useState("");
@@ -543,11 +1281,14 @@ function GerentePanel({ token }: { token: string }) {
   const [jefePassword, setJefePassword] = useState("");
   const [jefeServicioId, setJefeServicioId] = useState("");
 
-  // Reportes
+  // Reportes & Config
   const [repDesde, setRepDesde] = useState("");
   const [repHasta, setRepHasta] = useState("");
   const [repFiltroEmpleado, setRepFiltroEmpleado] = useState("");
   const [reportes, setReportes] = useState<any[]>([]);
+  const [configAlmuerzo, setConfigAlmuerzo] = useState("09:00");
+  const [configCena, setConfigCena] = useState("17:00");
+  const { theme } = useTheme();
 
   const fetchEmergencias = async () => {
     try {
@@ -568,10 +1309,7 @@ function GerentePanel({ token }: { token: string }) {
       const res = await fetch("http://localhost:3001/api/services", {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.ok) {
-        const data = await res.json();
-        setServicios(data);
-      }
+      if (res.ok) setServicios(await res.json());
     } catch (e) {
       console.error(e);
     }
@@ -580,53 +1318,55 @@ function GerentePanel({ token }: { token: string }) {
   useEffect(() => {
     fetchEmergencias();
     fetchServicios();
-  }, []);
+    fetch("http://localhost:3001/api/hospital/config", { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.LimiteAlmuerzo) setConfigAlmuerzo(d.LimiteAlmuerzo);
+        if (d && d.LimiteCena) setConfigCena(d.LimiteCena);
+      })
+      .catch(console.error);
+  }, [token]);
 
   const resolveEmergency = async (id: number, estado: string) => {
     const justificacion = resolucionTxt[id];
     if (!justificacion) {
-      alert("La justificación es obligatoria");
+      Swal.fire({ title: "Atención", text: "La justificación es obligatoria", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
 
     try {
       const res = await fetch(`http://localhost:3001/api/emergencies/${id}/resolve`, {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` 
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ estado, justificacionResolucion: justificacion })
       });
       if (res.ok) {
-        alert(`Emergencia ${estado}`);
+        Swal.fire({ title: "Éxito", text: `Emergencia ${estado}`, icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         fetchEmergencias();
       } else {
         const data = await res.json();
-        alert(data.error);
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch (e) {
-      alert("Error al resolver emergencia");
+      Swal.fire({ title: "Error", text: "Error al resolver emergencia", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
   const crearServicio = async () => {
+    if (!nuevoServicio) return;
     try {
       const res = await fetch("http://localhost:3001/api/services", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` 
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ nombre: nuevoServicio })
       });
       if (res.ok) {
-        alert("Servicio creado");
+        Swal.fire({ title: "Éxito", text: "Servicio creado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         setNuevoServicio("");
         fetchServicios();
       }
     } catch (e) {
-      alert("Error al crear servicio");
+      Swal.fire({ title: "Error", text: "Error al crear servicio", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
@@ -634,25 +1374,18 @@ function GerentePanel({ token }: { token: string }) {
     try {
       const res = await fetch("http://localhost:3001/api/users/jefe-servicio", {
         method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}` 
-        },
-        body: JSON.stringify({ 
-          username: jefeUsername, 
-          password: jefePassword, 
-          servicioId: Number(jefeServicioId) 
-        })
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ username: jefeUsername, password: jefePassword, servicioId: Number(jefeServicioId) })
       });
       if (res.ok) {
-        alert("Jefe asignado exitosamente");
+        Swal.fire({ title: "Éxito", text: "Jefe asignado exitosamente", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         setJefeUsername(""); setJefePassword(""); setJefeServicioId("");
       } else {
         const data = await res.json();
-        alert(data.error);
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch (e) {
-      alert("Error al asignar jefe");
+      Swal.fire({ title: "Error", text: "Error al asignar jefe", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
@@ -666,178 +1399,400 @@ function GerentePanel({ token }: { token: string }) {
         setReportes(data);
       }
     } catch (e) {
-      alert("Error al generar reporte");
+      Swal.fire({ title: "Error", text: "Error al generar reporte", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
+  const guardarConfiguracion = async () => {
+    try {
+      const res = await fetch("http://localhost:3001/api/hospital/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ limiteAlmuerzo: configAlmuerzo, limiteCena: configCena })
+      });
+      if (res.ok) {
+        Swal.fire({ title: "Guardado", text: "Configuración guardada", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    } catch {
+      Swal.fire({ title: "Error", text: "No se pudo guardar la configuración.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
+
+  const handleImprimirVouchers = () => {
+    if (reportes.length === 0) {
+      Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+    
+    const filtered = reportes.filter(r => {
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+
+    if (filtered.length === 0) {
+      Swal.fire({ title: "Aviso", text: "No hay reportes que coincidan con el filtro.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Permita las ventanas emergentes para imprimir.");
+      return;
+    }
+
+    let vouchersHTML = '';
+    filtered.forEach(r => {
+      const name = r.Personal ? `${r.Personal.Apellido} ${r.Personal.Nombre}` : `${r.EmergenciaApellido} ${r.EmergenciaNombre}`;
+      const dni = r.Personal ? r.Personal.DNI : r.EmergenciaDNI;
+      const date = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
+      const qrData = encodeURIComponent(`${name}-${dni}-${r.TipoComida}-${r.TipoDieta}-${date}`);
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
+
+      vouchersHTML += `
+        <div class="voucher">
+          <div class="header">VALE DE COMIDA</div>
+          <div class="content">
+            <p><strong>Personal:</strong> ${name}</p>
+            <p><strong>DNI:</strong> ${dni}</p>
+            <p><strong>Fecha:</strong> ${date}</p>
+            <p><strong>Comida:</strong> ${r.TipoComida} (${r.TipoDieta})</p>
+          </div>
+          <img src="${qrUrl}" class="qr" alt="QR Code" />
+          <div class="footer">Sistema SisAC - ${new Date().toLocaleString()}</div>
+        </div>
+      `;
+    });
+
+    const html = `
+      <html>
+        <head>
+          <title>Imprimir Vouchers</title>
+          <style>
+            body { font-family: sans-serif; margin: 0; padding: 0; background: #fff; }
+            .voucher { 
+              border: 2px dashed #000; width: 300px; padding: 15px; margin: 15px; 
+              float: left; page-break-inside: avoid; position: relative; height: 160px;
+            }
+            .header { text-align: center; font-weight: bold; font-size: 16px; margin-bottom: 8px; border-bottom: 1px solid #000; padding-bottom: 5px; }
+            .content p { margin: 4px 0; font-size: 13px; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+            .qr { position: absolute; right: 15px; bottom: 30px; width: 70px; height: 70px; }
+            .footer { text-align: center; font-size: 10px; position: absolute; bottom: 5px; width: calc(100% - 30px); color: #555; border-top: 1px solid #eee; padding-top: 5px; }
+            @media print { @page { margin: 1cm; } body { -webkit-print-color-adjust: exact; } }
+          </style>
+        </head>
+        <body onload="setTimeout(() => { window.print(); window.close(); }, 800)">
+          ${vouchersHTML}
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const tabs = [
+    { id: "Bandeja", label: "Emergencias", icon: <AlertTriangle className="w-4 h-4 mr-2" /> },
+    { id: "Hospital", label: "Hospital", icon: <Building className="w-4 h-4 mr-2" /> },
+    { id: "Reportes", label: "Reportes", icon: <FileText className="w-4 h-4 mr-2" /> },
+    { id: "Configuracion", label: "Configuración", icon: <Settings className="w-4 h-4 mr-2" /> }
+  ];
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 flex justify-between items-center bg-gray-50/50">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">Bandeja de Emergencias</h2>
-            <p className="text-sm text-gray-500 mt-1">Revisa y resuelve las solicitudes pendientes de tu hospital.</p>
+      
+      {/* TABS NAVIGATION */}
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-1.5 flex flex-wrap gap-1">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === tab.id 
+                ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm' 
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+            {tab.id === "Bandeja" && emergencias.length > 0 && (
+              <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{emergencias.length}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* BANDEJA CONTENT */}
+      {activeTab === "Bandeja" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                <AlertTriangle className="w-5 h-5 mr-2 text-orange-500" /> Solicitudes Pendientes
+              </h2>
+            </div>
           </div>
-          <span className="bg-orange-100 text-orange-800 text-xs font-semibold px-3 py-1 rounded-full">{emergencias.length} Pendientes</span>
-        </div>
-        
-        {emergencias.length === 0 ? (
-          <div className="p-8 text-center text-gray-500">No hay solicitudes de emergencia pendientes.</div>
-        ) : (
-          <div className="divide-y divide-gray-200">
-            {emergencias.map(e => (
-              <div key={e.Id} className="p-6">
-                <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-                  <div>
-                    <h3 className="text-sm font-bold text-gray-900 uppercase">{e.EmergenciaNombre} {e.EmergenciaApellido} (DNI: {e.EmergenciaDNI})</h3>
-                    <p className="text-sm text-gray-600 mt-1"><span className="font-medium">Solicita:</span> {e.TipoComida} - {e.TipoDieta}</p>
-                    <p className="text-sm text-gray-600"><span className="font-medium">Jefe Solicitante ID:</span> {e.SolicitadoPorUsuarioId}</p>
-                    <div className="mt-3 bg-gray-50 p-3 rounded-md border border-gray-200 text-sm italic text-gray-700">
-                      "{e.JustificacionSolicitud}"
+          
+          {emergencias.length === 0 ? (
+            <div className="p-12 text-center flex flex-col items-center">
+              <CheckCircle className="w-16 h-16 text-green-400 dark:text-green-500/50 mb-4" />
+              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Todo al día</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">No hay solicitudes de emergencia pendientes de revisión.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-200 dark:divide-gray-800">
+              {emergencias.map(e => (
+                <div key={e.Id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                  <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3 mb-2">
+                        <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-md">
+                          URGENTE
+                        </span>
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{e.EmergenciaNombre} {e.EmergenciaApellido}</h3>
+                      </div>
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-1"><span className="font-semibold text-gray-900 dark:text-gray-200">DNI:</span> {e.EmergenciaDNI} • <span className="font-semibold text-gray-900 dark:text-gray-200">Solicita:</span> {e.TipoComida} ({e.TipoDieta})</p>
+                      <div className="mt-3 bg-gray-50 dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm italic text-gray-700 dark:text-gray-300 relative">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-orange-400 rounded-l-xl"></div>
+                        "{e.JustificacionSolicitud}"
+                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="flex flex-col space-y-3 w-full md:w-72">
-                    <textarea 
-                      className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2 border" 
-                      placeholder="Justificación de la resolución (Obligatoria)..." 
-                      rows={2}
-                      value={resolucionTxt[e.Id] || ""}
-                      onChange={(evt) => setResolucionTxt({...resolucionTxt, [e.Id]: evt.target.value})}
-                    ></textarea>
-                    <div className="flex space-x-3">
-                      <button onClick={() => resolveEmergency(e.Id, "Rechazado")} className="flex-1 bg-white border border-red-300 text-red-700 hover:bg-red-50 py-2 px-4 rounded-md text-sm font-medium transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-red-500">
-                        Rechazar
-                      </button>
-                      <button onClick={() => resolveEmergency(e.Id, "Aprobado")} className="flex-1 bg-green-600 border border-transparent text-white hover:bg-green-700 py-2 px-4 rounded-md text-sm font-medium transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500">
-                        Aprobar
-                      </button>
+                    
+                    <div className="flex flex-col space-y-3 w-full md:w-80">
+                      <textarea 
+                        className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-4 py-3 border transition-shadow" 
+                        placeholder="Motivo de la resolución (Obligatorio)..." 
+                        rows={2}
+                        value={resolucionTxt[e.Id] || ""}
+                        onChange={(evt) => setResolucionTxt({...resolucionTxt, [e.Id]: evt.target.value})}
+                      ></textarea>
+                      <div className="flex space-x-3">
+                        <button onClick={() => resolveEmergency(e.Id, "Rechazado")} className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-sm">
+                          <X className="w-4 h-4 mr-1.5" /> Rechazar
+                        </button>
+                        <button onClick={() => resolveEmergency(e.Id, "Aprobado")} className="flex-1 flex items-center justify-center bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white border border-transparent py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-md">
+                          <Check className="w-4 h-4 mr-1.5" /> Aprobar
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 bg-gray-50/50">
-          <h2 className="text-lg font-semibold text-gray-900">Gestión de Hospital</h2>
-          <p className="text-sm text-gray-500 mt-1">Configura servicios y asigna Jefes de Servicio.</p>
-        </div>
-        <div className="p-6 flex flex-col space-y-4">
-          <div className="flex flex-col space-y-2 mb-4">
-            <h3 className="text-sm font-medium text-gray-900">Servicios Existentes</h3>
-            {servicios.length === 0 ? (
-              <p className="text-sm text-gray-500">No hay servicios creados aún.</p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {servicios.map(s => (
-                  <span key={s.Id} className="bg-gray-100 text-gray-700 text-xs font-semibold px-3 py-1 rounded-full border border-gray-200">
-                    {s.Nombre} (ID: {s.Id})
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="flex space-x-4">
-            <input type="text" value={nuevoServicio} onChange={e => setNuevoServicio(e.target.value)} placeholder="Nombre del nuevo servicio" className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border" />
-            <button onClick={crearServicio} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 shadow-sm transition-colors">
-              Crear Servicio
-            </button>
-          </div>
-          <div className="flex space-x-4">
-            <input type="text" value={jefeUsername} onChange={e => setJefeUsername(e.target.value)} placeholder="Usuario Jefe de Servicio" className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border" />
-            <input type="password" value={jefePassword} onChange={e => setJefePassword(e.target.value)} placeholder="Contraseña" className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border" />
-            <select value={jefeServicioId} onChange={e => setJefeServicioId(e.target.value)} className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border bg-white">
-              <option value="" disabled>Seleccione un servicio...</option>
-              {servicios.map(s => <option key={s.Id} value={s.Id}>{s.Nombre}</option>)}
-            </select>
-            <button onClick={asignarJefe} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 shadow-sm transition-colors">
-              Asignar
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 bg-gray-50/50">
-          <h2 className="text-lg font-semibold text-gray-900">Reportes del Hospital</h2>
-        </div>
-        <div className="p-6 border-b border-gray-200 flex flex-wrap gap-4 items-end">
-          <div className="w-48">
-            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Fecha Desde</label>
-            <input type="date" value={repDesde} onChange={e => setRepDesde(e.target.value)} className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
-          </div>
-          <div className="w-48">
-            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Fecha Hasta</label>
-            <input type="date" value={repHasta} onChange={e => setRepHasta(e.target.value)} className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
-          </div>
-          <button onClick={generarReporte} className="bg-gray-800 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-gray-900 shadow-sm transition-colors">
-            Generar Reporte
-          </button>
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs font-medium text-gray-500 uppercase mb-1">Filtrar por Empleado (DNI o Nombre)</label>
-            <input type="text" value={repFiltroEmpleado} onChange={e => setRepFiltroEmpleado(e.target.value)} placeholder="Ej. Juan Perez" className="w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-blue-500 focus:ring-blue-500 px-3 py-2 border" />
-          </div>
-        </div>
-        <div className="p-8 text-gray-700 text-sm overflow-x-auto">
-          {reportes.length === 0 ? (
-            <div className="text-center text-gray-500">Vista previa del reporte (Selecciona filtros y haz clic en Generar Reporte)</div>
-          ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-4 py-2 text-left">Fecha</th>
-                  <th className="px-4 py-2 text-left">Tipo</th>
-                  <th className="px-4 py-2 text-left">Personal / Paciente</th>
-                  <th className="px-4 py-2 text-left">DNI</th>
-                  <th className="px-4 py-2 text-left">Estado</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {reportes.filter(r => {
-                  if (!repFiltroEmpleado) return true;
-                  const term = repFiltroEmpleado.toLowerCase();
-                  const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
-                  const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
-                  return name.includes(term) || dni.includes(term);
-                }).map((r) => (
-                  <tr key={r.Id}>
-                    <td className="px-4 py-2">{r.FechaPedido.split('T')[0].split('-').reverse().join('/')}</td>
-                    <td className="px-4 py-2">{r.TipoComida} ({r.TipoDieta})</td>
-                    <td className="px-4 py-2">{r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`}</td>
-                    <td className="px-4 py-2">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
-                    <td className="px-4 py-2">{r.Estado}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              ))}
+            </div>
           )}
         </div>
-      </div>
+      )}
+
+      {/* HOSPITAL CONTENT */}
+      {activeTab === "Hospital" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+              <Building className="w-5 h-5 mr-2 text-indigo-500" /> Gestión de Servicios
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Configura las áreas del hospital y sus encargados.</p>
+          </div>
+          <div className="p-8 flex flex-col space-y-8">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3 uppercase tracking-wider">1. Servicios Activos</h3>
+              {servicios.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-4 rounded-xl">No hay servicios creados aún.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {servicios.map(s => (
+                    <span key={s.Id} className="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-100 dark:border-indigo-800/50 flex items-center shadow-sm">
+                      {s.Nombre} <span className="ml-2 opacity-50 font-normal border-l border-indigo-200 dark:border-indigo-700 pl-2">ID: {s.Id}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 uppercase tracking-wider">Nuevo Servicio</h3>
+                <div className="flex flex-col space-y-3">
+                  <input type="text" value={nuevoServicio} onChange={e => setNuevoServicio(e.target.value)} placeholder="Ej. Terapia Intensiva" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
+                  <button onClick={crearServicio} className="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
+                    Crear Servicio
+                  </button>
+                </div>
+              </div>
+
+              <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 uppercase tracking-wider">Asignar Jefe de Servicio</h3>
+                <div className="flex flex-col space-y-3">
+                  <input type="text" value={jefeUsername} onChange={e => setJefeUsername(e.target.value)} placeholder="Usuario (Ej. jmendez)" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
+                  <input type="password" value={jefePassword} onChange={e => setJefePassword(e.target.value)} placeholder="Contraseña Temporal" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
+                  <div className="relative">
+                    <select value={jefeServicioId} onChange={e => setJefeServicioId(e.target.value)} className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow appearance-none">
+                      <option value="" disabled>Seleccione Área...</option>
+                      {servicios.map(s => <option key={s.Id} value={s.Id}>{s.Nombre}</option>)}
+                    </select>
+                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  </div>
+                  <button onClick={asignarJefe} className="w-full bg-blue-600 dark:bg-blue-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
+                    Crear Cuenta de Jefe
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* REPORTES CONTENT */}
+      {activeTab === "Reportes" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+              <FileText className="w-5 h-5 mr-2 text-indigo-500" /> Reportes Globales
+            </h2>
+            <button 
+              onClick={handleImprimirVouchers} 
+              className="bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 dark:hover:bg-white shadow-md transition-all flex items-center transform hover:scale-[1.02] active:scale-95"
+            >
+              <Printer className="w-4 h-4 mr-2" /> Imprimir Vouchers
+            </button>
+          </div>
+          <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-wrap gap-4 items-end bg-white dark:bg-gray-900">
+            <div className="w-full sm:w-48">
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Fecha Desde</label>
+              <input type="date" value={repDesde} onChange={e => setRepDesde(e.target.value)} className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" />
+            </div>
+            <div className="w-full sm:w-48">
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Fecha Hasta</label>
+              <input type="date" value={repHasta} onChange={e => setRepHasta(e.target.value)} className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" />
+            </div>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <button onClick={generarReporte} className="flex-1 sm:flex-none flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg shadow-sm font-bold transition-colors">
+                <Search className="w-4 h-4 mr-2" /> Buscar
+              </button>
+              <button onClick={exportExcel} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="Exportar a Excel (CSV)">
+                EXCEL
+              </button>
+              <button onClick={exportPDF} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 text-white'}`} title="Exportar a PDF">
+                PDF
+              </button>
+            </div>
+            <div className="w-full lg:flex-1">
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Filtro Rápido (DNI/Nombre)</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-4 w-4 text-gray-400" />
+                </div>
+                <input type="text" value={repFiltroEmpleado} onChange={e => setRepFiltroEmpleado(e.target.value)} placeholder="Ej. Juan Perez..." className="block w-full pl-9 pr-3 py-2.5 text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" />
+              </div>
+            </div>
+          </div>
+          <div className="p-0 overflow-x-auto">
+            {reportes.length === 0 ? (
+              <div className="text-center text-gray-500 dark:text-gray-400 py-16 flex flex-col items-center">
+                <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-full mb-4">
+                  <FileText className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+                </div>
+                <p className="font-medium text-lg text-gray-900 dark:text-gray-100">Sin resultados</p>
+                <p className="text-sm mt-1">Selecciona fechas y presiona Buscar para ver los pedidos.</p>
+              </div>
+            ) : (
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800/50">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Fecha</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Servicio</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tipo/Dieta</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Personal / Paciente</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">DNI</th>
+                    <th className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
+                  {reportes.filter(r => {
+                    if (!repFiltroEmpleado) return true;
+                    const term = repFiltroEmpleado.toLowerCase();
+                    const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+                    const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+                    return name.includes(term) || dni.includes(term);
+                  }).map((r) => (
+                    <tr key={r.Id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">{r.FechaPedido.split('T')[0].split('-').reverse().join('/')}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{r.Servicio?.Nombre || "-"}</td>
+                      <td className="px-6 py-4 text-sm">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.TipoComida.toLowerCase() === 'almuerzo' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'}`}>
+                          {r.TipoComida}
+                        </span>
+                        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{r.TipoDieta}</span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-bold text-gray-900 dark:text-gray-100">{r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
+                      <td className="px-6 py-4 text-sm">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.Estado === 'Aprobado' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : r.Estado === 'Rechazado' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
+                          {r.Estado}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* CONFIGURACION CONTENT */}
+      {activeTab === "Configuracion" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+              <Settings className="w-5 h-5 mr-2 text-gray-500" /> Configuración Global
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Modifica las reglas de negocio del sistema para tu hospital.</p>
+          </div>
+          <div className="p-8">
+            <div className="max-w-2xl bg-gray-50/50 dark:bg-gray-800/30 p-8 rounded-2xl border border-gray-100 dark:border-gray-800">
+              <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 mb-6 flex items-center">
+                <AlertTriangle className="w-4 h-4 mr-2 text-yellow-500" /> Horarios Límite de Pedidos
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Corte para Almuerzo</label>
+                  <input type="time" value={configAlmuerzo} onChange={e => setConfigAlmuerzo(e.target.value)} className="w-full text-lg font-mono rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500/50 px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Corte para Cena</label>
+                  <input type="time" value={configCena} onChange={e => setConfigCena(e.target.value)} className="w-full text-lg font-mono rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500/50 px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" />
+                </div>
+              </div>
+              <div className="mt-8 flex justify-end">
+                <button onClick={guardarConfiguracion} className="bg-blue-600 dark:bg-blue-500 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95 flex items-center">
+                  <Save className="w-4 h-4 mr-2" /> Guardar Cambios
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function RRHHPanel({ token }: { token: string }) {
+  const [activeTab, setActiveTab] = useState("Hospitales");
   const [hospitales, setHospitales] = useState<any[]>([]);
   const [nuevoHospital, setNuevoHospital] = useState("");
   const [gerenteUser, setGerenteUser] = useState("");
   const [gerentePass, setGerentePass] = useState("");
   const [gerenteHospitalId, setGerenteHospitalId] = useState("");
+  const { theme } = useTheme();
 
   const fetchHospitales = async () => {
     try {
       const res = await fetch("http://localhost:3001/api/hospitals", {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.ok) {
-        const data = await res.json();
-        setHospitales(data);
-      }
+      if (res.ok) setHospitales(await res.json());
     } catch (e) {
       console.error(e);
     }
@@ -848,6 +1803,7 @@ function RRHHPanel({ token }: { token: string }) {
   }, []);
 
   const crearHospital = async () => {
+    if (!nuevoHospital) return;
     try {
       const res = await fetch("http://localhost:3001/api/hospitals", {
         method: "POST",
@@ -855,19 +1811,20 @@ function RRHHPanel({ token }: { token: string }) {
         body: JSON.stringify({ nombre: nuevoHospital })
       });
       if (res.ok) {
-        alert("Hospital creado exitosamente");
+        Swal.fire({ title: "Éxito", text: "Hospital creado exitosamente", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         setNuevoHospital("");
         fetchHospitales();
       } else {
         const data = await res.json();
-        alert(data.error);
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch (e) {
-      alert("Error al crear hospital");
+      Swal.fire({ title: "Error", text: "Error al crear hospital", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
   const crearGerente = async () => {
+    if (!gerenteUser || !gerentePass || !gerenteHospitalId) return;
     try {
       const res = await fetch("http://localhost:3001/api/users/gerente", {
         method: "POST",
@@ -875,75 +1832,116 @@ function RRHHPanel({ token }: { token: string }) {
         body: JSON.stringify({ username: gerenteUser, password: gerentePass, hospitalId: gerenteHospitalId })
       });
       if (res.ok) {
-        alert("Gerente creado exitosamente");
+        Swal.fire({ title: "Éxito", text: "Gerente creado exitosamente", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         setGerenteUser(""); setGerentePass(""); setGerenteHospitalId("");
       } else {
         const data = await res.json();
-        alert(data.error);
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch (e) {
-      alert("Error al crear gerente");
+      Swal.fire({ title: "Error", text: "Error al crear gerente", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
+  const tabs = [
+    { id: "Hospitales", label: "Hospitales", icon: <Building className="w-4 h-4 mr-2" /> },
+    { id: "Administracion", label: "Administración Global", icon: <Settings className="w-4 h-4 mr-2" /> }
+  ];
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col items-center justify-center text-center">
-          <div className="text-blue-500 mb-2">
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+      
+      {/* TABS NAVIGATION */}
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-1.5 flex flex-wrap gap-1">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              activeTab === tab.id 
+                ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm' 
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+            }`}
+          >
+            {tab.icon}
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "Hospitales" && (
+      <>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in zoom-in-95 duration-300">
+        <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 flex flex-col items-center justify-center text-center transform transition-transform hover:-translate-y-1">
+          <div className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-4 rounded-full mb-4">
+            <Building className="w-8 h-8" />
           </div>
-          <h3 className="text-3xl font-bold text-gray-900">{hospitales.length}</h3>
-          <p className="text-sm text-gray-500 font-medium uppercase mt-1">Hospitales en Sistema</p>
+          <h3 className="text-4xl font-extrabold text-gray-900 dark:text-white">{hospitales.length}</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider mt-2">Hospitales en Red</p>
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 bg-gray-50/50">
-          <h2 className="text-lg font-semibold text-gray-900">Red de Hospitales</h2>
-          <p className="text-sm text-gray-500 mt-1">Estructura actual del sistema.</p>
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
+        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+            <Building className="w-5 h-5 mr-2 text-indigo-500" /> Red de Hospitales Activos
+          </h2>
         </div>
-        <div className="p-6">
+        <div className="p-8">
           {hospitales.length === 0 ? (
-            <p className="text-sm text-gray-500">No hay hospitales registrados.</p>
+            <div className="text-center p-12 bg-gray-50 dark:bg-gray-800/50 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
+              <Building className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
+              <p className="text-gray-500 dark:text-gray-400 font-medium">No hay hospitales registrados en el sistema.</p>
+            </div>
           ) : (
-            <div className="space-y-6">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               {hospitales.map(h => (
-                <div key={h.Id} className="border border-gray-200 rounded-lg p-4 bg-gray-50/30">
-                  <h3 className="font-bold text-gray-900 text-lg flex items-center">
-                    <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
-                    {h.Nombre} <span className="ml-2 text-xs font-normal text-gray-500 bg-gray-200 px-2 py-0.5 rounded-full">ID: {h.Id}</span>
+                <div key={h.Id} className="border border-gray-200 dark:border-gray-700 rounded-2xl p-6 bg-white dark:bg-gray-800/50 hover:shadow-md transition-shadow">
+                  <h3 className="font-extrabold text-gray-900 dark:text-white text-xl flex items-center justify-between mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+                    <span className="flex items-center">
+                      <div className="bg-indigo-100 dark:bg-indigo-900/50 p-2 rounded-lg mr-3">
+                        <Building className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                      </div>
+                      {h.Nombre}
+                    </span>
+                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">ID: {h.Id}</span>
                   </h3>
                   
-                  <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div>
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Gerentes Asignados</h4>
+                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 flex items-center">
+                        <User className="w-3.5 h-3.5 mr-1.5" /> Gerentes
+                      </h4>
                       {h.Usuarios && h.Usuarios.length > 0 ? (
-                        <ul className="space-y-1">
+                        <ul className="space-y-2">
                           {h.Usuarios.map((u: any) => (
-                            <li key={u.Id} className="text-sm text-gray-700 flex items-center">
-                              <svg className="w-4 h-4 mr-1.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                            <li key={u.Id} className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center bg-gray-50 dark:bg-gray-800 p-2 rounded-lg">
+                              <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center mr-2 text-xs font-bold text-gray-600 dark:text-gray-300">
+                                {u.NombreUsuario.charAt(0).toUpperCase()}
+                              </div>
                               {u.NombreUsuario}
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <p className="text-sm text-gray-500 italic">Sin gerentes</p>
+                        <p className="text-sm text-red-500 dark:text-red-400 font-medium italic bg-red-50 dark:bg-red-900/10 p-2 rounded-lg">Falta asignar gerente</p>
                       )}
                     </div>
                     
                     <div>
-                      <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Servicios Creados</h4>
+                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 flex items-center">
+                        <Utensils className="w-3.5 h-3.5 mr-1.5" /> Áreas / Servicios
+                      </h4>
                       {h.Servicios && h.Servicios.length > 0 ? (
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap gap-2">
                           {h.Servicios.map((s: any) => (
-                            <span key={s.Id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
+                            <span key={s.Id} className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
                               {s.Nombre}
                             </span>
                           ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-gray-500 italic">Sin servicios</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-500 italic p-2">Sin áreas creadas</p>
                       )}
                     </div>
                   </div>
@@ -953,43 +1951,58 @@ function RRHHPanel({ token }: { token: string }) {
           )}
         </div>
       </div>
+      </>
+      )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 bg-gray-50/50">
-          <h2 className="text-lg font-semibold text-gray-900">Panel de Administración de Red</h2>
-          <p className="text-sm text-gray-500 mt-1">Crea nuevos hospitales y asígnales Gerentes administradores.</p>
+      {activeTab === "Administracion" && (
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+            <Settings className="w-5 h-5 mr-2 text-gray-500" /> Panel de Administración Global
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Alta de nuevas sedes y credenciales gerenciales.</p>
         </div>
-        <div className="p-6 flex flex-col space-y-6">
+        <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
           
-          <div>
-            <h3 className="text-sm font-medium text-gray-900 mb-3">1. Alta de Hospital</h3>
-            <div className="flex space-x-4">
-              <input type="text" value={nuevoHospital} onChange={e => setNuevoHospital(e.target.value)} placeholder="Nombre del Hospital" className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border" />
-              <button onClick={crearHospital} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 shadow-sm transition-colors">
-                Crear Hospital
+          <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 uppercase tracking-wider flex items-center">
+              <span className="bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-400 w-6 h-6 flex items-center justify-center rounded-full mr-2">1</span>
+              Alta de Sede (Hospital)
+            </h3>
+            <div className="flex flex-col space-y-3">
+              <input type="text" value={nuevoHospital} onChange={e => setNuevoHospital(e.target.value)} placeholder="Nombre oficial del Hospital" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
+              <button onClick={crearHospital} className="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
+                Crear Sede
               </button>
             </div>
           </div>
 
-          <hr className="border-gray-200" />
-
-          <div>
-            <h3 className="text-sm font-medium text-gray-900 mb-3">2. Asignar Gerente a Hospital</h3>
-            <div className="flex space-x-4">
-              <input type="text" value={gerenteUser} onChange={e => setGerenteUser(e.target.value)} placeholder="Usuario Gerente" className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border" />
-              <input type="password" value={gerentePass} onChange={e => setGerentePass(e.target.value)} placeholder="Contraseña" className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border" />
-              <select value={gerenteHospitalId} onChange={e => setGerenteHospitalId(e.target.value)} className="flex-1 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm px-3 py-2 border bg-white">
-                <option value="" disabled>Seleccione un Hospital...</option>
-                {hospitales.map(h => <option key={h.Id} value={h.Id}>{h.Nombre}</option>)}
-              </select>
-              <button onClick={crearGerente} className="bg-blue-600 text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-blue-700 shadow-sm transition-colors">
-                Crear Gerente
+          <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 uppercase tracking-wider flex items-center">
+              <span className="bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-400 w-6 h-6 flex items-center justify-center rounded-full mr-2">2</span>
+              Asignar Cuenta Gerencial
+            </h3>
+            <div className="flex flex-col space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input type="text" value={gerenteUser} onChange={e => setGerenteUser(e.target.value)} placeholder="Usuario" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
+                <input type="password" value={gerentePass} onChange={e => setGerentePass(e.target.value)} placeholder="Contraseña" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
+              </div>
+              <div className="relative">
+                <select value={gerenteHospitalId} onChange={e => setGerenteHospitalId(e.target.value)} className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow appearance-none">
+                  <option value="" disabled>Seleccione Sede para el Gerente...</option>
+                  {hospitales.map(h => <option key={h.Id} value={h.Id}>{h.Nombre}</option>)}
+                </select>
+                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+              </div>
+              <button onClick={crearGerente} className="w-full bg-blue-600 dark:bg-blue-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
+                Generar Credenciales
               </button>
             </div>
           </div>
 
         </div>
       </div>
+      )}
     </div>
   );
 }
