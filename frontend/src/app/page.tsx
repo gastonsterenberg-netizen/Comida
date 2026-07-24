@@ -723,19 +723,33 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
   };
 
   const handleRevertir = async (p: any) => {
-    try {
-      const res = await fetch(`http://localhost:3001/api/staff/${p.Id}/revertir-baja`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        Swal.fire({ title: "Revertido", text: "El agente vuelve a estar habilitado.", icon: "success", timer: 2000, showConfirmButton: false, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-        fetchStaff();
-      } else {
-        Swal.fire({ title: "Error", text: "No se pudo revertir", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    const { isConfirmed } = await Swal.fire({
+      title: '¿Revertir Inhabilitación?',
+      text: `¿Estás seguro de que deseas habilitar nuevamente a ${p.Nombre} ${p.Apellido}?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, revertir',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#22c55e',
+      background: theme === 'dark' ? '#1f2937' : '#fff', 
+      color: theme === 'dark' ? '#fff' : '#000'
+    });
+
+    if (isConfirmed) {
+      try {
+        const res = await fetch(`http://localhost:3001/api/staff/${p.Id}/revertir-baja`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (res.ok) {
+          Swal.fire({ title: "Revertido", text: "El agente vuelve a estar habilitado.", icon: "success", timer: 2000, showConfirmButton: false, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          fetchStaff();
+        } else {
+          Swal.fire({ title: "Error", text: "No se pudo revertir", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      } catch (e) {
+        Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
-    } catch (e) {
-      Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
