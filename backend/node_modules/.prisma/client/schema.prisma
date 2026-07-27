@@ -67,6 +67,7 @@ model Usuarios {
   ServicioId          Int?
   TwoFactorSecret     String?         @db.NVarChar(128)
   TwoFactorHabilitado Boolean         @default(false)
+  Activo              Boolean         @default(true)
   Rol                 Roles           @relation(fields: [RolId], references: [Id])
   Hospital            Hospitales?     @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   Servicio            Servicios?      @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)

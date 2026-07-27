@@ -5,8 +5,11 @@ import { useTheme } from "next-themes";
 import Swal from 'sweetalert2';
 import { 
   LogOut, Sun, Moon, AlertTriangle, FileText, Settings, 
-  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, CheckCircle, Search, Save, Utensils
+  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, CheckCircle, Search, Save, Utensils, History
 } from "lucide-react";
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 type Role = "Jefe" | "Gerente" | "RRHH";
 
@@ -14,6 +17,8 @@ export default function Home() {
   const [role, setRole] = useState<Role | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
+  const [hospitalName, setHospitalName] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
@@ -45,9 +50,11 @@ export default function Home() {
   const [lCh, lCm] = limiteCena.split(':').map(Number);
   const isPastCena = currentTotalMins >= (lCh * 60 + lCm);
 
-  const handleLogin = (jwtToken: string, userRole: number, id: number) => {
+  const handleLogin = (jwtToken: string, userRole: number, id: number, hospName: string | null, userLoginName: string) => {
     setToken(jwtToken);
     setUserId(id);
+    setHospitalName(hospName);
+    setUsername(userLoginName);
     if (userRole === 1) setRole("RRHH");
     else if (userRole === 2) setRole("Gerente");
     else if (userRole === 3) setRole("Jefe");
@@ -70,6 +77,8 @@ export default function Home() {
         setToken(null);
         setRole(null);
         setUserId(null);
+        setHospitalName(null);
+        setUsername(null);
       }
     });
   };
@@ -99,8 +108,14 @@ export default function Home() {
             </div>
 
             <div className="flex items-center space-x-3 bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-full border border-gray-200 dark:border-gray-700">
-              <User className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">{role}</span>
+              <Building className="w-4 h-4 text-indigo-500 hidden md:block" />
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 hidden md:block border-r border-gray-300 dark:border-gray-600 pr-3 mr-1" title="Efector">
+                {hospitalName || "Todos"}
+              </span>
+              <User className="w-4 h-4 text-gray-500 dark:text-gray-400 ml-2" />
+              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                {username ? `${username} (${role})` : role}
+              </span>
               
               <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-2"></div>
               
@@ -145,7 +160,7 @@ export default function Home() {
   );
 }
 
-function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: number) => void }) {
+function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: number, hospitalName: string | null, username: string) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -176,7 +191,7 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
         }
         setStep(2);
       } else if (data.token) {
-        onLogin(data.token, data.user.roleId, data.user.id);
+        onLogin(data.token, data.user.roleId, data.user.id, data.user.hospitalName || null, data.user.username);
       }
     } catch (err: any) {
       setError(err.message);
@@ -198,7 +213,7 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Código inválido");
       
-      onLogin(data.token, data.user.roleId, data.user.id);
+      onLogin(data.token, data.user.roleId, data.user.id, data.user.hospitalName || null, data.user.username);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -318,16 +333,21 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
   const [emgDni, setEmgDni] = useState("");
   const [emgComida, setEmgComida] = useState("Almuerzo");
   const [emgDieta, setEmgDieta] = useState("Normal");
+  const [emgDietaCena, setEmgDietaCena] = useState("Normal");
+  const [emgDuracion, setEmgDuracion] = useState("hoy");
+  const [emgPeriodoInicio, setEmgPeriodoInicio] = useState("");
+  const [emgPeriodoFin, setEmgPeriodoFin] = useState("");
+  const [emgTipo, setEmgTipo] = useState("reemplazo");
+  const [emgReemplazaId, setEmgReemplazaId] = useState("");
   const [emgJustificacion, setEmgJustificacion] = useState("");
-  
   // Reportes
   const getTodayStr = () => {
     const today = new Date();
     today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
     return today.toISOString().split('T')[0];
   };
-  const [repDesde, setRepDesde] = useState(getTodayStr());
-  const [repHasta, setRepHasta] = useState(getTodayStr());
+  const [repDesde, setRepDesde] = useState("");
+  const [repHasta, setRepHasta] = useState("");
   const [repFiltroEmpleado, setRepFiltroEmpleado] = useState("");
   const [reportes, setReportes] = useState<any[]>([]);
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc'|'desc'}>({key: 'fecha', direction: 'desc'});
@@ -405,6 +425,13 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     fetchStaff();
     fetchHistorialEmergencias();
     fetchPadron();
+    
+    // Set initial dates here to avoid hydration mismatches
+    const today = getTodayStr();
+    setRepDesde(today);
+    setRepHasta(today);
+    setEmgPeriodoInicio(today);
+    setEmgPeriodoFin(today);
   }, []);
 
   const filteredPadron = padron.filter(p => 
@@ -594,6 +621,10 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
   const submitEmergency = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const isHoy = emgDuracion === "hoy";
+      const start = isHoy ? new Date().toISOString() : emgPeriodoInicio;
+      const end = isHoy ? new Date().toISOString() : emgPeriodoFin;
+
       const res = await fetch("http://localhost:3001/api/emergencies", {
         method: "POST",
         headers: { 
@@ -604,11 +635,13 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
           nombre: emgNombre,
           apellido: "", 
           dni: emgDni,
-          periodoInicio: new Date().toISOString(),
-          periodoFin: new Date().toISOString(),
+          periodoInicio: start,
+          periodoFin: end,
           tipoComida: emgComida,
           tipoDieta: emgDieta,
-          justificacion: emgJustificacion,
+          tipoDietaCena: emgComida === 'Ambos' ? emgDietaCena : undefined,
+          justificacion: emgTipo === "extra" ? emgJustificacion : undefined,
+          reemplazaId: emgTipo === "reemplazo" ? emgReemplazaId : undefined,
           solicitadoPorUsuarioId: userId
         })
       });
@@ -988,46 +1021,193 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
       {/* SECCION: EMERGENCIA */}
       {activeTab === "Emergencias" && (
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-orange-200 dark:border-orange-900/30 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-          <div className="px-6 py-5 border-b border-orange-200 dark:border-orange-900/30 bg-orange-50/50 dark:bg-orange-900/10">
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-orange-200 dark:border-orange-900/30 overflow-hidden animate-in fade-in zoom-in-95 duration-300 flex flex-col gap-6 p-6">
+          
+          <div className="border-b border-gray-200 dark:border-gray-800 pb-4">
             <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
               <AlertTriangle className="w-5 h-5 mr-2 text-orange-500" /> Solicitud de Emergencia
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Para personal o pacientes no listados en la planilla mensual.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Para reemplazos de personal inhabilitado o agregados extra justificados.</p>
           </div>
-          <div className="p-6">
-            <form className="grid grid-cols-1 md:grid-cols-2 gap-5" onSubmit={submitEmergency}>
+
+          <form className="flex flex-col gap-6" onSubmit={submitEmergency}>
+            
+            {/* ROW 1: Nombre y DNI */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Nombre y Apellido</label>
-                <input type="text" value={emgNombre} onChange={e => setEmgNombre(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" placeholder="Ej. Carlos Ruiz" required />
+                <input type="text" value={emgNombre} onChange={e => setEmgNombre(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Ej. Carlos Ruiz" required />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">DNI</label>
-                <input type="text" value={emgDni} onChange={e => setEmgDni(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" placeholder="Ej. 11223344" required />
+                <input type="text" value={emgDni} onChange={e => setEmgDni(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Ej. 11223344" required />
               </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Tipo de Comida y Dieta</label>
-                <div className="flex space-x-3">
-                  <select value={emgComida} onChange={e => setEmgComida(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="flex-1 rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                    {!isPastAlmuerzo && <option value="Almuerzo">Almuerzo</option>}
-                    {!isPastCena && <option value="Cena">Cena</option>}
-                    {(!isPastAlmuerzo && !isPastCena) && <option value="Ambos">Ambos</option>}
-                  </select>
-                  <select value={emgDieta} onChange={e => setEmgDieta(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="flex-1 rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                    {dietas.map(d => <option key={d} value={d}>{d}</option>)}
-                  </select>
+            </div>
+
+            {/* ROW 2: Comida, Dieta, Duracion */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 bg-gray-50 dark:bg-gray-800/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Comida</label>
+                <div className="flex gap-4">
+                  {!isPastAlmuerzo && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="emgComida" value="Almuerzo" checked={emgComida === 'Almuerzo'} onChange={() => setEmgComida('Almuerzo')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Almuerzo</span>
+                    </label>
+                  )}
+                  {!isPastCena && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="emgComida" value="Cena" checked={emgComida === 'Cena'} onChange={() => setEmgComida('Cena')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Cena</span>
+                    </label>
+                  )}
+                  {(!isPastAlmuerzo && !isPastCena) && (
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="emgComida" value="Ambos" checked={emgComida === 'Ambos'} onChange={() => setEmgComida('Ambos')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Ambos</span>
+                    </label>
+                  )}
                 </div>
               </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Justificación Obligatoria</label>
-                <textarea value={emgJustificacion} onChange={e => setEmgJustificacion(e.target.value)} disabled={isPastAlmuerzo && isPastCena} rows={2} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" placeholder="Motivo de la solicitud..." required></textarea>
+              
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                  {emgComida === 'Ambos' ? 'Dieta Almuerzo' : 'Dieta'}
+                </label>
+                <select value={emgDieta} onChange={e => setEmgDieta(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                  {dietas.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+                
+                {emgComida === 'Ambos' && (
+                  <div className="mt-3">
+                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Dieta Cena</label>
+                    <select value={emgDietaCena} onChange={e => setEmgDietaCena(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                      {dietas.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </div>
+                )}
               </div>
-              <div className="md:col-span-2 flex justify-end mt-2">
-                <button type="submit" disabled={isPastAlmuerzo && isPastCena} className="inline-flex items-center justify-center py-2.5 px-6 border border-transparent shadow-sm text-sm font-bold rounded-lg text-white bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-95">
-                  <CheckCircle className="w-4 h-4 mr-2" /> Enviar Solicitud
-                </button>
+
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Duración</label>
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="emgDuracion" value="hoy" checked={emgDuracion === 'hoy'} onChange={() => setEmgDuracion('hoy')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Solo por hoy</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="radio" name="emgDuracion" value="rango" checked={emgDuracion === 'rango'} onChange={() => setEmgDuracion('rango')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Rango de fechas</span>
+                    </label>
+                  </div>
+                  {emgDuracion === 'rango' && (
+                    <div className="flex gap-2 mt-1">
+                      <input type="date" value={emgPeriodoInicio} onChange={e => setEmgPeriodoInicio(e.target.value)} className="w-full rounded border-gray-300 dark:border-gray-700 sm:text-xs px-2 py-1 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+                      <input type="date" value={emgPeriodoFin} onChange={e => setEmgPeriodoFin(e.target.value)} className="w-full rounded border-gray-300 dark:border-gray-700 sm:text-xs px-2 py-1 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+                    </div>
+                  )}
+                </div>
               </div>
-            </form>
+            </div>
+
+            {/* ROW 3: Tipo de Emergencia */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Tipo de Solicitud</label>
+                <div className="flex gap-4 mb-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="emgTipo" value="reemplazo" checked={emgTipo === 'reemplazo'} onChange={() => setEmgTipo('reemplazo')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Reemplazo de Personal</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input type="radio" name="emgTipo" value="extra" checked={emgTipo === 'extra'} onChange={() => setEmgTipo('extra')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Agregado Extra</span>
+                  </label>
+                </div>
+                
+                {emgTipo === 'reemplazo' && (
+                  <select value={emgReemplazaId} onChange={e => setEmgReemplazaId(e.target.value)} required={emgTipo === 'reemplazo'} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                    <option value="">-- Seleccionar a quién reemplaza --</option>
+                    {staff.filter(p => p.bajaProvisoriaHoy || p.bajaDefinitivaHoy).map(p => (
+                      <option key={p.Id} value={p.Id}>{p.Nombre} {p.Apellido} (DNI: {p.DNI})</option>
+                    ))}
+                  </select>
+                )}
+                
+                {emgTipo === 'extra' && (
+                  <textarea value={emgJustificacion} onChange={e => setEmgJustificacion(e.target.value)} required={emgTipo === 'extra'} rows={2} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Escribe aquí la justificación obligatoria..."></textarea>
+                )}
+              </div>
+            </div>
+
+            <div className="flex justify-end mt-2 pt-4 border-t border-gray-200 dark:border-gray-800">
+              <button type="submit" disabled={isPastAlmuerzo && isPastCena} className="inline-flex items-center justify-center py-2.5 px-6 border border-transparent shadow-sm text-sm font-bold rounded-lg text-white bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-95">
+                <CheckCircle className="w-4 h-4 mr-2" /> Enviar Solicitud de Emergencia
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* HISTORIAL DE EMERGENCIAS */}
+      {activeTab === "Emergencias" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden mt-6 animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+              <History className="w-5 h-5 mr-2 text-blue-500" /> Solicitudes Recientes (Últimos 5 Días)
+            </h2>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-800">
+                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Fecha</th>
+                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Paciente/Agente</th>
+                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Comida</th>
+                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Tipo</th>
+                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {historialEmergencias.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-gray-500 dark:text-gray-400">No hay solicitudes recientes.</td>
+                  </tr>
+                ) : (
+                  historialEmergencias.map((h: any) => {
+                    let badgeClass = "bg-yellow-100 text-yellow-800 border-yellow-200";
+                    if (h.Estado === "Aprobado") badgeClass = "bg-green-100 text-green-800 border-green-200";
+                    if (h.Estado === "Rechazado") badgeClass = "bg-red-100 text-red-800 border-red-200";
+                    
+                    const isReemplazo = h.EmergenciaReemplazaId !== null;
+
+                    return (
+                      <tr key={h.Id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                        <td className="p-4 text-sm font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                          {new Date(h.FechaPedido).toLocaleDateString()}
+                        </td>
+                        <td className="p-4 text-sm text-gray-700 dark:text-gray-300">
+                          {h.EmergenciaNombre} {h.EmergenciaApellido} <span className="text-gray-500 text-xs">({h.EmergenciaDNI})</span>
+                        </td>
+                        <td className="p-4 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                          {h.TipoComida} <span className="text-gray-400 text-xs">({h.TipoDieta})</span>
+                        </td>
+                        <td className="p-4 text-sm text-gray-700 dark:text-gray-300">
+                          {isReemplazo ? (
+                            <span className="inline-flex items-center text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-0.5 rounded-full text-xs border border-blue-200 dark:border-blue-800">
+                              Reemplazo: {h.PersonalReemplazado?.Nombre} {h.PersonalReemplazado?.Apellido}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 px-2.5 py-0.5 rounded-full text-xs border border-purple-200 dark:border-purple-800">
+                              Agregado Extra
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-4 text-sm">
+                          <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeClass}`}>
+                            {h.Estado}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -1507,9 +1687,55 @@ function GerentePanel({ token }: { token: string }) {
     printWindow.document.close();
   };
 
+  const exportExcel = () => {
+    if (reportes.length === 0) return;
+    
+    const dataToExport = reportes.map(r => ({
+      Fecha: r.FechaPedido.split('T')[0],
+      DNI: r.Personal ? r.Personal.DNI : r.EmergenciaDNI,
+      Nombre: r.Personal ? `${r.Personal.Apellido} ${r.Personal.Nombre}` : `${r.EmergenciaApellido} ${r.EmergenciaNombre}`,
+      Servicio: r.Servicio ? r.Servicio.Nombre : "Emergencia",
+      Comida: r.TipoComida,
+      Dieta: r.TipoDieta,
+      Estado: r.Estado
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reportes");
+    XLSX.writeFile(workbook, `Reportes_SisAC_${repDesde}_${repHasta}.xlsx`);
+  };
+
+  const exportPDF = () => {
+    if (reportes.length === 0) return;
+    
+    const doc = new jsPDF();
+    doc.text(`Reportes de Comida SisAC (${repDesde} a ${repHasta})`, 14, 15);
+    
+    const tableData = reportes.map(r => [
+      r.FechaPedido.split('T')[0].split('-').reverse().join('/'),
+      r.Personal ? r.Personal.DNI : (r.EmergenciaDNI || ""),
+      r.Personal ? `${r.Personal.Apellido} ${r.Personal.Nombre}` : `${r.EmergenciaApellido} ${r.EmergenciaNombre}`,
+      r.Servicio ? r.Servicio.Nombre : "Emergencia",
+      r.TipoComida,
+      r.TipoDieta,
+      r.Estado
+    ]);
+
+    (doc as any).autoTable({
+      head: [['Fecha', 'DNI', 'Nombre', 'Servicio', 'Comida', 'Dieta', 'Estado']],
+      body: tableData,
+      startY: 20,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [79, 70, 229] }
+    });
+
+    doc.save(`Reportes_SisAC_${repDesde}_${repHasta}.pdf`);
+  };
+
   const tabs = [
     { id: "Bandeja", label: "Emergencias", icon: <AlertTriangle className="w-4 h-4 mr-2" /> },
-    { id: "Hospital", label: "Hospital", icon: <Building className="w-4 h-4 mr-2" /> },
+    { id: "Hospital", label: "Efectores", icon: <Building className="w-4 h-4 mr-2" /> },
     { id: "Reportes", label: "Reportes", icon: <FileText className="w-4 h-4 mr-2" /> },
     { id: "Configuracion", label: "Configuración", icon: <Settings className="w-4 h-4 mr-2" /> }
   ];
@@ -1606,7 +1832,7 @@ function GerentePanel({ token }: { token: string }) {
             <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
               <Building className="w-5 h-5 mr-2 text-indigo-500" /> Gestión de Servicios
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Configura las áreas del hospital y sus encargados.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Configura las áreas del efector y sus encargados.</p>
           </div>
           <div className="p-8 flex flex-col space-y-8">
             <div>
@@ -1762,7 +1988,7 @@ function GerentePanel({ token }: { token: string }) {
             <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
               <Settings className="w-5 h-5 mr-2 text-gray-500" /> Configuración Global
             </h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Modifica las reglas de negocio del sistema para tu hospital.</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Modifica las reglas de negocio del sistema para tu efector.</p>
           </div>
           <div className="p-8">
             <div className="max-w-2xl bg-gray-50/50 dark:bg-gray-800/30 p-8 rounded-2xl border border-gray-100 dark:border-gray-800">
@@ -1801,6 +2027,8 @@ function RRHHPanel({ token }: { token: string }) {
   const [gerenteHospitalId, setGerenteHospitalId] = useState("");
   const { theme } = useTheme();
 
+  const [gerentes, setGerentes] = useState<any[]>([]);
+
   const fetchHospitales = async () => {
     try {
       const res = await fetch("http://localhost:3001/api/hospitals", {
@@ -1812,8 +2040,19 @@ function RRHHPanel({ token }: { token: string }) {
     }
   };
 
+  const fetchGerentes = async () => {
+    try {
+      const res = await fetch("http://localhost:3001/api/users/gerentes", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) setGerentes(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
   useEffect(() => {
     fetchHospitales();
+    fetchGerentes();
   }, []);
 
   const crearHospital = async () => {
@@ -1825,7 +2064,7 @@ function RRHHPanel({ token }: { token: string }) {
         body: JSON.stringify({ nombre: nuevoHospital })
       });
       if (res.ok) {
-        Swal.fire({ title: "Éxito", text: "Hospital creado exitosamente", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        Swal.fire({ title: "Éxito", text: "Efector creado exitosamente", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         setNuevoHospital("");
         fetchHospitales();
       } else {
@@ -1833,7 +2072,7 @@ function RRHHPanel({ token }: { token: string }) {
         Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch (e) {
-      Swal.fire({ title: "Error", text: "Error al crear hospital", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      Swal.fire({ title: "Error", text: "Error al crear efector", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
@@ -1857,8 +2096,67 @@ function RRHHPanel({ token }: { token: string }) {
     }
   };
 
+  const resetGerente = async (id: number) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/users/${id}/reset-password`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        Swal.fire({ title: "Éxito", text: "Contraseña reseteada a '1234'", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    } catch (e) {
+      Swal.fire({ title: "Error", text: "No se pudo resetear la contraseña", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
+
+  const toggleGerente = async (id: number) => {
+    try {
+      const res = await fetch(`http://localhost:3001/api/users/${id}/disable`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        fetchGerentes();
+        Swal.fire({ title: "Éxito", text: "Estado actualizado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    } catch (e) {
+      Swal.fire({ title: "Error", text: "No se pudo actualizar", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
+
+  const deleteGerente = async (id: number) => {
+    Swal.fire({
+      title: '¿Eliminar usuario?',
+      text: "¿Seguro que deseas eliminar este usuario? Esta acción no se puede deshacer.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`http://localhost:3001/api/users/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            fetchGerentes();
+            Swal.fire({ title: "Éxito", text: "Usuario eliminado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          }
+        } catch (e) {
+          Swal.fire({ title: "Error", text: "No se pudo eliminar", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      }
+    });
+  };
+
   const tabs = [
-    { id: "Hospitales", label: "Hospitales", icon: <Building className="w-4 h-4 mr-2" /> },
+    { id: "Hospitales", label: "Efectores", icon: <Building className="w-4 h-4 mr-2" /> },
     { id: "Administracion", label: "Administración Global", icon: <Settings className="w-4 h-4 mr-2" /> }
   ];
 
@@ -1886,26 +2184,26 @@ function RRHHPanel({ token }: { token: string }) {
       {activeTab === "Hospitales" && (
       <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-in fade-in zoom-in-95 duration-300">
-        <div className="bg-white dark:bg-gray-900 p-8 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 flex flex-col items-center justify-center text-center transform transition-transform hover:-translate-y-1">
-          <div className="bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 p-4 rounded-full mb-4">
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 flex items-center gap-5">
+          <div className="p-4 bg-indigo-50 dark:bg-indigo-900/30 rounded-xl text-indigo-600 dark:text-indigo-400">
             <Building className="w-8 h-8" />
           </div>
-          <h3 className="text-4xl font-extrabold text-gray-900 dark:text-white">{hospitales.length}</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider mt-2">Hospitales en Red</p>
+          <div>
+            <h3 className="text-4xl font-extrabold text-gray-900 dark:text-white">{hospitales.length}</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wider mt-2">Efectores en Red</p>
+          </div>
         </div>
       </div>
 
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-            <Building className="w-5 h-5 mr-2 text-indigo-500" /> Red de Hospitales Activos
-          </h2>
-        </div>
-        <div className="p-8">
+        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+          <Building className="w-5 h-5 mr-2 text-indigo-500" /> Red de Efectores Activos
+        </h2>
+        <div className="p-6">
           {hospitales.length === 0 ? (
-            <div className="text-center p-12 bg-gray-50 dark:bg-gray-800/50 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
-              <Building className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-4" />
-              <p className="text-gray-500 dark:text-gray-400 font-medium">No hay hospitales registrados en el sistema.</p>
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-8 text-center border border-gray-100 dark:border-gray-800">
+              <Building className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+              <p className="text-gray-500 dark:text-gray-400 font-medium">No hay efectores registrados en el sistema.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -1978,15 +2276,15 @@ function RRHHPanel({ token }: { token: string }) {
         </div>
         <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
           
-          <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 uppercase tracking-wider flex items-center">
-              <span className="bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-400 w-6 h-6 flex items-center justify-center rounded-full mr-2">1</span>
-              Alta de Sede (Hospital)
+          <div className="bg-gray-50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
+            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center uppercase tracking-wider">
+              <Building className="w-4 h-4 mr-2 text-indigo-500" />
+              Alta de Sede (Efector)
             </h3>
             <div className="flex flex-col space-y-3">
-              <input type="text" value={nuevoHospital} onChange={e => setNuevoHospital(e.target.value)} placeholder="Nombre oficial del Hospital" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
+              <input type="text" value={nuevoHospital} onChange={e => setNuevoHospital(e.target.value)} placeholder="Nombre oficial del Efector" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
               <button onClick={crearHospital} className="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
-                Crear Sede
+                Registrar Efector
               </button>
             </div>
           </div>
@@ -2011,6 +2309,64 @@ function RRHHPanel({ token }: { token: string }) {
               <button onClick={crearGerente} className="w-full bg-blue-600 dark:bg-blue-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
                 Generar Credenciales
               </button>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 mt-4">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
+              <Users className="w-5 h-5 mr-2 text-blue-500" />
+              Directorio de Gerentes
+            </h3>
+            
+            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+              <table className="w-full text-sm text-left">
+                <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-300">
+                  <tr>
+                    <th className="px-6 py-4 font-bold">Usuario</th>
+                    <th className="px-6 py-4 font-bold">Efector</th>
+                    <th className="px-6 py-4 font-bold text-center">Estado</th>
+                    <th className="px-6 py-4 font-bold text-center">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                  {gerentes.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-8 text-center text-gray-500 font-medium">
+                        No hay gerentes registrados
+                      </td>
+                    </tr>
+                  ) : (
+                    gerentes.map((g) => (
+                      <tr key={g.Id} className={`bg-white dark:bg-gray-800 ${!g.Activo ? 'opacity-60' : ''}`}>
+                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
+                          {g.NombreUsuario}
+                        </td>
+                        <td className="px-6 py-4 text-gray-600 dark:text-gray-300">
+                          {g.Hospital ? g.Hospital.Nombre : '-'}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${g.Activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {g.Activo ? 'Activo' : 'Inactivo'}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex justify-center space-x-2">
+                            <button onClick={() => resetGerente(g.Id)} className="p-1.5 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg" title="Resetear a 1234">
+                              <Lock className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => toggleGerente(g.Id)} className={`p-1.5 rounded-lg ${g.Activo ? 'bg-orange-100 text-orange-600 hover:bg-orange-200' : 'bg-green-100 text-green-600 hover:bg-green-200'}`} title={g.Activo ? 'Inhabilitar' : 'Habilitar'}>
+                              {g.Activo ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                            </button>
+                            <button onClick={() => deleteGerente(g.Id)} className="p-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg" title="Eliminar">
+                              <AlertTriangle className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 

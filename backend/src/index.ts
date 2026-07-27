@@ -65,7 +65,10 @@ app.post('/api/auth/register', async (req: Request, res: Response): Promise<void
 app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> => {
   const { username, password } = req.body;
   try {
-    const user = await prisma.usuarios.findUnique({ where: { NombreUsuario: username } });
+    const user = await prisma.usuarios.findUnique({ 
+      where: { NombreUsuario: username },
+      include: { Hospital: true }
+    });
     if (!user) {
       await logAudit(req, 'LOGIN_FALLIDO', `Intento con usuario: ${username}`);
       res.status(401).json({ error: 'Credenciales inválidas' });
@@ -98,8 +101,11 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
         id: user.Id,
         username: user.NombreUsuario,
         roleId: user.RolId,
-      },
+        hospitalId: user.HospitalId,
+        hospitalName: user.Hospital ? user.Hospital.Nombre : null
+      }
     });
+    
     await logAudit(req, 'LOGIN_EXITOSO', undefined, user.Id);
   } catch (error) {
     console.error(error);
@@ -154,6 +160,79 @@ app.get('/api/services', authenticateToken, isGerente, async (req: Request, res:
 });
 
 // 3.2 Crear usuario Jefe de Servicio
+
+// GERENTES endpoints
+app.get('/api/users/gerentes', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  if (req.user?.roleId !== 1) { // Solo RRHH
+    res.status(403).json({ error: 'No autorizado' });
+    return;
+  }
+  try {
+    const gerentes = await prisma.usuarios.findMany({
+      where: { RolId: 2 },
+      select: { Id: true, NombreUsuario: true, Activo: true, Hospital: { select: { Nombre: true } } }
+    });
+    res.json(gerentes);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener gerentes' });
+  }
+});
+
+app.put('/api/users/:id/reset-password', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  if (req.user?.roleId !== 1) {
+    res.status(403).json({ error: 'No autorizado' });
+    return;
+  }
+  try {
+    const newHash = await bcrypt.hash('1234', 10);
+    await prisma.usuarios.update({
+      where: { Id: Number(req.params.id) },
+      data: { ContrasenaHash: newHash }
+    });
+    res.json({ message: 'Contraseña reseteada a "1234"' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al resetear contraseña' });
+  }
+});
+
+app.put('/api/users/:id/disable', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  if (req.user?.roleId !== 1) {
+    res.status(403).json({ error: 'No autorizado' });
+    return;
+  }
+  try {
+    const user = await prisma.usuarios.findUnique({ where: { Id: Number(req.params.id) } });
+    if (!user) {
+      res.status(404).json({ error: 'Usuario no encontrado' });
+      return;
+    }
+    await prisma.usuarios.update({
+      where: { Id: Number(req.params.id) },
+      // TypeScript could complain because of 'Activo' if Prisma client isn't updated. 
+      // Workaround for now: Cast to any
+      data: { Activo: !((user as any).Activo) } as any
+    });
+    res.json({ message: 'Estado del usuario actualizado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar estado del usuario' });
+  }
+});
+
+app.delete('/api/users/:id', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  if (req.user?.roleId !== 1) {
+    res.status(403).json({ error: 'No autorizado' });
+    return;
+  }
+  try {
+    await prisma.usuarios.delete({
+      where: { Id: Number(req.params.id) }
+    });
+    res.json({ message: 'Usuario eliminado correctamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar usuario' });
+  }
+});
+
 app.post('/api/users/jefe-servicio', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
   const { username, password, servicioId } = req.body;
   const hospitalId = req.user?.hospitalId;
@@ -922,36 +1001,56 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
 
 // 5.2 Crear solicitud de emergencia
 app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> => {
-  const { nombre, apellido, dni, periodoInicio, periodoFin, tipoComida, tipoDieta, justificacion, solicitadoPorUsuarioId, reemplazaId } = req.body;
+  const { nombre, apellido, dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId } = req.body;
 
-  const errorMsg = await checkDeadlines(solicitadoPorUsuarioId, tipoComida);
-  if (errorMsg) {
-    res.status(400).json({ error: errorMsg });
-    return;
+  // Validate deadlines
+  const comidasToCheck = tipoComida === 'Ambos' ? ['Almuerzo', 'Cena'] : [tipoComida];
+  for (const tc of comidasToCheck) {
+    const errorMsg = await checkDeadlines(solicitadoPorUsuarioId, tc);
+    if (errorMsg) {
+      res.status(400).json({ error: `Para ${tc}: ${errorMsg}` });
+      return;
+    }
   }
 
   try {
-    const now = new Date();
-    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const pInicio = periodoInicio ? new Date(periodoInicio) : new Date();
+    const pFin = periodoFin ? new Date(periodoFin) : new Date();
+    
+    const start = new Date(Date.UTC(pInicio.getFullYear(), pInicio.getMonth(), pInicio.getDate()));
+    const end = new Date(Date.UTC(pFin.getFullYear(), pFin.getMonth(), pFin.getDate()));
+    
+    if (end < start) {
+      res.status(400).json({ error: 'La fecha de fin no puede ser menor a la fecha de inicio.' });
+      return;
+    }
 
-    await prisma.pedidosComida.create({
-      data: {
-        FechaPedido: today,
-        TipoComida: tipoComida,
-        TipoDieta: tipoDieta || 'Normal',
-        SolicitadoPorUsuarioId: solicitadoPorUsuarioId,
-        Estado: 'Pendiente',
-        EmergenciaNombre: nombre,
-        EmergenciaApellido: apellido,
-        EmergenciaDNI: dni,
-        EmergenciaPeriodoInicio: periodoInicio ? new Date(periodoInicio) : today,
-        EmergenciaPeriodoFin: periodoFin ? new Date(periodoFin) : today,
-        EmergenciaReemplazaId: reemplazaId ? Number(reemplazaId) : null,
-        JustificacionSolicitud: justificacion
+    const newOrders = [];
+    let current = new Date(start);
+    
+    while (current <= end) {
+      for (const tc of comidasToCheck) {
+        newOrders.push({
+          FechaPedido: new Date(current),
+          TipoComida: tc,
+          TipoDieta: tc === 'Cena' && tipoComida === 'Ambos' && tipoDietaCena ? tipoDietaCena : (tipoDieta || 'Normal'),
+          SolicitadoPorUsuarioId: solicitadoPorUsuarioId,
+          Estado: 'Pendiente',
+          EmergenciaNombre: nombre || '',
+          EmergenciaApellido: apellido || '',
+          EmergenciaDNI: dni || '',
+          EmergenciaPeriodoInicio: start,
+          EmergenciaPeriodoFin: end,
+          EmergenciaReemplazaId: reemplazaId ? Number(reemplazaId) : null,
+          JustificacionSolicitud: justificacion || null
+        });
       }
-    });
-    await logAudit(req, 'ALTA_EMERGENCIA', `Solicitud de emergencia creada para DNI ${dni}`);
-    res.json({ message: 'Solicitud de emergencia creada y pendiente de aprobación.' });
+      current.setDate(current.getDate() + 1);
+    }
+
+    await prisma.pedidosComida.createMany({ data: newOrders });
+    await logAudit(req, 'ALTA_EMERGENCIA', `Solicitud de emergencia creada para DNI ${dni} del ${start.toISOString().split('T')[0]} al ${end.toISOString().split('T')[0]}`);
+    res.json({ message: 'Solicitudes de emergencia creadas y pendientes de aprobación.' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al crear solicitud de emergencia' });
@@ -988,7 +1087,10 @@ app.get('/api/emergencies/history', authenticateToken, async (req: Request, res:
     const history = await prisma.pedidosComida.findMany({
       where: { 
         SolicitadoPorUsuarioId: userId,
-        JustificacionSolicitud: { not: null },
+        OR: [
+          { JustificacionSolicitud: { not: null } },
+          { EmergenciaReemplazaId: { not: null } }
+        ],
         FechaPedido: { gte: fiveDaysAgoUTC }
       },
       orderBy: { Id: 'desc' },
