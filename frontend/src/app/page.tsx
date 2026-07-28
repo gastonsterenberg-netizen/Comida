@@ -1612,13 +1612,14 @@ function GerentePanel({ token }: { token: string }) {
     }
   };
 
-  const handleImprimirVouchers = () => {
+  const handleImprimirVouchers = (tipo: 'Almuerzo' | 'Cena') => {
     if (reportes.length === 0) {
       Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
     
     const filtered = reportes.filter(r => {
+      if (r.TipoComida !== tipo) return false;
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
       const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
@@ -1627,9 +1628,16 @@ function GerentePanel({ token }: { token: string }) {
     });
 
     if (filtered.length === 0) {
-      Swal.fire({ title: "Aviso", text: "No hay reportes que coincidan con el filtro.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      Swal.fire({ title: "Aviso", text: `No hay reportes de ${tipo} que coincidan con el filtro.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
+
+    const grupos: Record<string, any[]> = {};
+    filtered.forEach(r => {
+      const servicioName = r.Servicio ? r.Servicio.Nombre : "Emergencia";
+      if (!grupos[servicioName]) grupos[servicioName] = [];
+      grupos[servicioName].push(r);
+    });
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -1638,43 +1646,94 @@ function GerentePanel({ token }: { token: string }) {
     }
 
     let vouchersHTML = '';
-    filtered.forEach(r => {
-      const name = r.Personal ? `${r.Personal.Apellido} ${r.Personal.Nombre}` : `${r.EmergenciaApellido} ${r.EmergenciaNombre}`;
-      const dni = r.Personal ? r.Personal.DNI : r.EmergenciaDNI;
-      const date = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const qrData = encodeURIComponent(`${name}-${dni}-${r.TipoComida}-${r.TipoDieta}-${date}`);
+    Object.entries(grupos).forEach(([servicio, platos]) => {
+      const date = platos[0].FechaPedido.split('T')[0].split('-').reverse().join('/');
+      const totalPlatos = platos.length;
+      const counts: Record<string, number> = {};
+      platos.forEach(p => { counts[p.TipoDieta] = (counts[p.TipoDieta] || 0) + 1; });
+      const dietasText = Object.entries(counts).map(([dieta, cant]) => `${dieta} (${cant})`).join(' | ');
+      const qrData = encodeURIComponent(`${servicio}-${tipo}-${date}-Total:${totalPlatos}`);
       const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
 
       vouchersHTML += `
         <div class="voucher">
-          <div class="header">VALE DE COMIDA</div>
-          <div class="content">
-            <p><strong>Personal:</strong> ${name}</p>
-            <p><strong>DNI:</strong> ${dni}</p>
-            <p><strong>Fecha:</strong> ${date}</p>
-            <p><strong>Comida:</strong> ${r.TipoComida} (${r.TipoDieta})</p>
+          <div class="watermark">SisAC ORIGINAL - SisAC ORIGINAL</div>
+          <div class="v-header">
+             <div class="v-logo">
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+                  <defs>
+                    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#3b82f6" />
+                      <stop offset="100%" stop-color="#4f46e5" />
+                    </linearGradient>
+                  </defs>
+                  <rect width="64" height="64" rx="16" fill="url(#bg)" />
+                  <g transform="translate(14, 14) scale(1.5)">
+                    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2v20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </g>
+                </svg>
+             </div>
+             <div class="v-title">
+                <div class="v-title-main">SisAC - VAUCHER DE COMIDA</div>
+                <div class="v-title-sub">Sistema de Administracion de Comida</div>
+             </div>
           </div>
-          <img src="${qrUrl}" class="qr" alt="QR Code" />
-          <div class="footer">Sistema SisAC - ${new Date().toLocaleString()}</div>
+          <div class="v-body">
+             <div class="v-info">
+                <div class="v-row space-between">
+                   <div>TIPO: <strong>${tipo.toUpperCase()}</strong></div>
+                   <div>Servicio: ${servicio}</div>
+                   <div>Fecha: ${date}</div>
+                </div>
+                <div class="v-total">TOTAL PLATOS: ${totalPlatos}</div>
+                <div class="v-diets">Dietas: ${dietasText}</div>
+             </div>
+             <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
+          </div>
         </div>
+        <div class="cut-line"></div>
       `;
     });
 
     const html = `
       <html>
         <head>
-          <title>Imprimir Vouchers</title>
+          <title>Imprimir Vouchers - ${tipo}</title>
           <style>
             body { font-family: sans-serif; margin: 0; padding: 0; background: #fff; }
             .voucher { 
-              border: 2px dashed #000; width: 300px; padding: 15px; margin: 15px; 
-              float: left; page-break-inside: avoid; position: relative; height: 160px;
+              border: 1px solid #000; width: 100%; max-width: 700px;
+              margin: 20px auto 0 auto; position: relative; overflow: hidden;
+              background: #fff; box-sizing: border-box;
             }
-            .header { text-align: center; font-weight: bold; font-size: 16px; margin-bottom: 8px; border-bottom: 1px solid #000; padding-bottom: 5px; }
-            .content p { margin: 4px 0; font-size: 13px; max-width: 200px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-            .qr { position: absolute; right: 15px; bottom: 30px; width: 70px; height: 70px; }
-            .footer { text-align: center; font-size: 10px; position: absolute; bottom: 5px; width: calc(100% - 30px); color: #555; border-top: 1px solid #eee; padding-top: 5px; }
-            @media print { @page { margin: 1cm; } body { -webkit-print-color-adjust: exact; } }
+            .watermark {
+              position: absolute; top: 50%; left: 50%;
+              transform: translate(-50%, -50%) rotate(-20deg);
+              font-size: 30px; font-weight: bold; color: rgba(200, 200, 200, 0.5);
+              white-space: nowrap; pointer-events: none; z-index: 1;
+            }
+            .v-header {
+              display: flex; align-items: center; padding: 10px;
+              border-bottom: 1px solid #000; position: relative; z-index: 2;
+            }
+            .v-logo { width: 38px; height: 38px; margin-right: 15px; }
+            .v-logo svg { width: 100%; height: 100%; object-fit: contain; }
+            .v-title-main { font-size: 20px; font-weight: bold; color: #004488; }
+            .v-title-sub { font-size: 12px; color: #333; }
+            .v-body { display: flex; padding: 10px; position: relative; z-index: 2; }
+            .v-info { flex: 1; padding-right: 10px; }
+            .v-row { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 14px; }
+            .v-total { font-size: 16px; font-weight: bold; margin-bottom: 15px; }
+            .v-diets { font-size: 12px; }
+            .v-qr { width: 80px; display: flex; align-items: flex-end; justify-content: flex-end; }
+            .v-qr img { width: 80px; height: 80px; }
+            .cut-line { width: 100%; max-width: 700px; margin: 20px auto; border-top: 2px dashed #aaa; }
+            @media print { 
+              @page { size: A4 portrait; margin: 1cm; } 
+              body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } 
+            }
           </style>
         </head>
         <body onload="setTimeout(() => { window.print(); window.close(); }, 800)">
@@ -1682,7 +1741,6 @@ function GerentePanel({ token }: { token: string }) {
         </body>
       </html>
     `;
-
     printWindow.document.write(html);
     printWindow.document.close();
   };
@@ -1890,12 +1948,20 @@ function GerentePanel({ token }: { token: string }) {
             <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
               <FileText className="w-5 h-5 mr-2 text-indigo-500" /> Reportes Globales
             </h2>
-            <button 
-              onClick={handleImprimirVouchers} 
-              className="bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 dark:hover:bg-white shadow-md transition-all flex items-center transform hover:scale-[1.02] active:scale-95"
-            >
-              <Printer className="w-4 h-4 mr-2" /> Imprimir Vouchers
-            </button>
+            <div className="flex space-x-2">
+              <button 
+                onClick={() => handleImprimirVouchers('Almuerzo')} 
+                className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-orange-600 shadow-md transition-all flex items-center transform hover:scale-[1.02] active:scale-95"
+              >
+                <Printer className="w-4 h-4 mr-2" /> Vouchers Alm.
+              </button>
+              <button 
+                onClick={() => handleImprimirVouchers('Cena')} 
+                className="bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-600 shadow-md transition-all flex items-center transform hover:scale-[1.02] active:scale-95"
+              >
+                <Printer className="w-4 h-4 mr-2" /> Vouchers Cena
+              </button>
+            </div>
           </div>
           <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-wrap gap-4 items-end bg-white dark:bg-gray-900">
             <div className="w-full sm:w-48">
