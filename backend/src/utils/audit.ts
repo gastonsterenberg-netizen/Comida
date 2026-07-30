@@ -11,9 +11,11 @@ export async function logAudit(
 ) {
   try {
     const ipAddress = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
-    
-    // Si no se pasó usuarioId y hay usuario autenticado en req.user, usarlo
     const finalUsuarioId = usuarioId || (req as any).user?.userId || null;
+    let rawIp = Array.isArray(ipAddress) ? ipAddress[0] : ipAddress;
+    if (rawIp === '::1' || rawIp === '::ffff:127.0.0.1') {
+      rawIp = '127.0.0.1';
+    }
 
     // @ts-ignore
     await prisma.auditoria.create({
@@ -21,7 +23,7 @@ export async function logAudit(
         Accion: accion,
         Detalles: detalles || null,
         UsuarioId: finalUsuarioId,
-        IpAddress: Array.isArray(ipAddress) ? ipAddress[0] : ipAddress,
+        IpAddress: rawIp,
       },
     });
   } catch (error) {

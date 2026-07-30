@@ -1137,7 +1137,8 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
 
 // 5.2 Crear solicitud de emergencia
 app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> => {
-  const { nombreCompleto, dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId } = req.body;
+  const nombreCompleto = req.body.nombreCompleto || req.body.nombre || (req.body.apellido ? `${req.body.apellido} ${req.body.nombre}` : '');
+  const { dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId } = req.body;
 
   // Validate deadlines
   const comidasToCheck = tipoComida === 'Ambos' ? ['Almuerzo', 'Cena'] : [tipoComida];
@@ -1194,12 +1195,38 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
 
 // 5.3 Obtener solicitudes de emergencia pendientes para el Gerente
 app.get('/api/emergencies/pending', async (req: Request, res: Response): Promise<void> => {
-  // TODO: Filtrar por el Hospital del Gerente (req.user.hospitalId)
   try {
     const pending = await prisma.pedidosComida.findMany({
       where: { Estado: 'Pendiente' },
       include: { SolicitadoPor: true, PersonalReemplazado: true }
     });
+
+    const dnis = pending
+      .filter(p => (!p.EmergenciaNombreCompleto || p.EmergenciaNombreCompleto.trim() === '') && p.EmergenciaDNI)
+      .map(p => p.EmergenciaDNI as string);
+
+    if (dnis.length > 0) {
+      const padronList = await prisma.padronHabilitados.findMany({
+        where: { DNI: { in: dnis } }
+      });
+      const padronMap = new Map(padronList.map(p => [p.DNI, p.NombreCompleto]));
+
+      const personalList = await prisma.personal.findMany({
+        where: { DNI: { in: dnis } }
+      });
+      const personalMap = new Map(personalList.map(p => [p.DNI, p.NombreCompleto]));
+
+      const enrichedPending = pending.map(p => {
+        if ((!p.EmergenciaNombreCompleto || p.EmergenciaNombreCompleto.trim() === '') && p.EmergenciaDNI) {
+          const foundName = padronMap.get(p.EmergenciaDNI) || personalMap.get(p.EmergenciaDNI) || '';
+          return { ...p, EmergenciaNombreCompleto: foundName };
+        }
+        return p;
+      });
+      res.json(enrichedPending);
+      return;
+    }
+
     res.json(pending);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener solicitudes' });
@@ -1302,7 +1329,7 @@ app.get('/api/reports', authenticateToken, async (req: Request, res: Response): 
       where: whereClause,
       include: {
         Personal: { include: { Servicio: true, Hospital: true } },
-        PersonalReemplazado: true,
+        PersonalReemplazado: { include: { Servicio: true, Hospital: true } },
         SolicitadoPor: { include: { Servicio: true, Hospital: true } }
       }
     });
@@ -1320,7 +1347,48 @@ app.get('/api/reports', authenticateToken, async (req: Request, res: Response): 
       );
     }
 
-    res.json(filteredReport);
+    // Enriquecer registros que carezcan de Servicio consultando Padrón / Personal por DNI
+    const dnisToLookup = [...new Set(
+      filteredReport
+        .filter(r => !r.Personal?.Servicio && !r.PersonalReemplazado?.Servicio && !r.SolicitadoPor?.Servicio && r.EmergenciaDNI)
+        .map(r => r.EmergenciaDNI as string)
+    )];
+
+    let padronMap = new Map<string, any>();
+    if (dnisToLookup.length > 0) {
+      const padronEntries = await prisma.padronHabilitados.findMany({
+        where: { DNI: { in: dnisToLookup } },
+        include: { Servicio: true }
+      });
+      padronEntries.forEach(p => {
+        if (p.Servicio) padronMap.set(p.DNI, p.Servicio);
+      });
+      
+      const remainingDnis = dnisToLookup.filter(d => !padronMap.has(d));
+      if (remainingDnis.length > 0) {
+        const personalEntries = await prisma.personal.findMany({
+          where: { DNI: { in: remainingDnis } },
+          include: { Servicio: true }
+        });
+        personalEntries.forEach(p => {
+          if (p.Servicio) padronMap.set(p.DNI, p.Servicio);
+        });
+      }
+    }
+
+    const finalReport = filteredReport.map(r => {
+      let servicio = r.Personal?.Servicio || 
+                     r.PersonalReemplazado?.Servicio || 
+                     r.SolicitadoPor?.Servicio || 
+                     (r.EmergenciaDNI ? padronMap.get(r.EmergenciaDNI) : null) || 
+                     null;
+      return {
+        ...r,
+        Servicio: servicio
+      };
+    });
+
+    res.json(finalReport);
   } catch (error) {
     res.status(500).json({ error: 'Error al generar el reporte' });
   }

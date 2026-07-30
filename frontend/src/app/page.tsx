@@ -5,13 +5,13 @@ import { useTheme } from "next-themes";
 import Swal from 'sweetalert2';
 import { 
   LogOut, Sun, Moon, AlertTriangle, FileText, Settings, 
-  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2
+  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, ChevronUp, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2, Shield, RefreshCw
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
-type Role = "Jefe" | "Gerente" | "RRHH";
+type Role = "Jefe" | "Gerente" | "RRHH" | "Admin";
 
 const getTodayStr = () => {
   const today = new Date();
@@ -110,11 +110,13 @@ export default function Home() {
           </div>
           
           <div className="flex items-center space-x-4">
-            <div className={`hidden md:flex flex-col text-xs border-l-4 ${isPastAlmuerzo && isPastCena ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'} px-3 py-1.5 rounded-r-lg`}>
-              <div className="font-bold mb-0.5">Límites Pedido</div>
-              <div>Alm: {limiteAlmuerzo} {isPastAlmuerzo && <span className="font-bold text-red-600 dark:text-red-400">(!)</span>}</div>
-              <div>Cen: {limiteCena} {isPastCena && <span className="font-bold text-red-600 dark:text-red-400">(!)</span>}</div>
-            </div>
+            {role !== "RRHH" && role !== "Admin" && (
+              <div className={`hidden md:flex flex-col text-xs border-l-4 ${isPastAlmuerzo && isPastCena ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'} px-3 py-1.5 rounded-r-lg`}>
+                <div className="font-bold mb-0.5">Límites Pedido</div>
+                <div>Alm: {limiteAlmuerzo} {isPastAlmuerzo && <span className="font-bold text-red-600 dark:text-red-400">(!)</span>}</div>
+                <div>Cen: {limiteCena} {isPastCena && <span className="font-bold text-red-600 dark:text-red-400">(!)</span>}</div>
+              </div>
+            )}
 
             <div className="flex items-center space-x-3 bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-2xl border border-gray-200 dark:border-gray-700">
               <Building className="w-4 h-4 text-indigo-500 hidden md:block flex-shrink-0" />
@@ -130,7 +132,7 @@ export default function Home() {
               </div>
               <User className="w-4 h-4 text-gray-500 dark:text-gray-400 ml-2" />
               <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                {username ? `${username} (${role})` : role}
+                {username ? `${username} (${role === "RRHH" ? "Admin" : role})` : (role === "RRHH" ? "Admin" : role)}
               </span>
               
               <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-2"></div>
@@ -784,6 +786,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
           Authorization: `Bearer ${token}` 
         },
         body: JSON.stringify({
+          nombreCompleto: emgNombre,
           nombre: emgNombre,
           apellido: "", 
           dni: emgDni,
@@ -792,7 +795,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
           tipoComida: emgComida,
           tipoDieta: emgDieta,
           tipoDietaCena: emgComida === 'Ambos' ? emgDietaCena : undefined,
-          justificacion: emgTipo === "reemplazo" ? (emgJustificacion || "por reemplazo de personal") : emgJustificacion,
+          justificacion: emgTipo === "reemplazo" ? "por reemplazo de personal" : emgJustificacion,
           reemplazaId: emgTipo === "reemplazo" ? emgReemplazaId : undefined,
           solicitadoPorUsuarioId: userId
         })
@@ -1294,24 +1297,12 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                 </div>
                 
                 {emgTipo === 'reemplazo' && (
-                  <div className="space-y-3">
-                    <select value={emgReemplazaId} onChange={e => setEmgReemplazaId(e.target.value)} required={emgTipo === 'reemplazo'} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                      <option value="">-- Seleccionar a quién reemplaza --</option>
-                      {staff.filter(p => p.bajaProvisoriaHoy || p.bajaDefinitivaHoy).map(p => (
-                        <option key={p.Id} value={p.Id}>{p.Nombre} {p.Apellido} (DNI: {p.DNI})</option>
-                      ))}
-                    </select>
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Justificación</label>
-                      <input 
-                        type="text" 
-                        value={emgJustificacion} 
-                        onChange={e => setEmgJustificacion(e.target.value)} 
-                        className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
-                        placeholder="por reemplazo de personal" 
-                      />
-                    </div>
-                  </div>
+                  <select value={emgReemplazaId} onChange={e => setEmgReemplazaId(e.target.value)} required={emgTipo === 'reemplazo'} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                    <option value="">-- Seleccionar a quién reemplaza --</option>
+                    {staff.filter(p => p.bajaProvisoriaHoy || p.bajaDefinitivaHoy).map(p => (
+                      <option key={p.Id} value={p.Id}>{p.Nombre} {p.Apellido} (DNI: {p.DNI})</option>
+                    ))}
+                  </select>
                 )}
                 
                 {emgTipo === 'extra' && (
@@ -1935,6 +1926,14 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     });
   };
 
+  const getServicioNombre = (r: any) => {
+    if (r.Servicio?.Nombre) return r.Servicio.Nombre;
+    if (r.Personal?.Servicio?.Nombre) return r.Personal.Servicio.Nombre;
+    if (r.PersonalReemplazado?.Servicio?.Nombre) return r.PersonalReemplazado.Servicio.Nombre;
+    if (r.SolicitadoPor?.Servicio?.Nombre) return r.SolicitadoPor.Servicio.Nombre;
+    return "Sin Servicio";
+  };
+
   const generarReporte = async () => {
     try {
       const res = await fetch(`http://localhost:3001/api/reports?fechaInicio=${repDesde}&fechaFin=${repHasta}`, {
@@ -2132,7 +2131,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     let rowsHTML = '';
     filtered.forEach((r, idx) => {
       const fechaOrder = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const servicioName = r.Servicio ? r.Servicio.Nombre : "Emergencia";
+      const servicioName = getServicioNombre(r);
       const nombreAgente = r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`;
       const dniAgente = r.Personal ? (r.Personal.DNI || "-") : (r.EmergenciaDNI || "-");
 
@@ -2248,7 +2247,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
 
     const grupos: Record<string, any[]> = {};
     filtered.forEach(r => {
-      const servicioName = r.Servicio ? r.Servicio.Nombre : "Emergencia";
+      const servicioName = getServicioNombre(r);
       if (!grupos[servicioName]) grupos[servicioName] = [];
       grupos[servicioName].push(r);
     });
@@ -2378,7 +2377,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
       Fecha: r.FechaPedido.split('T')[0],
       DNI: r.Personal ? r.Personal.DNI : r.EmergenciaDNI,
       Nombre: r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`,
-      Servicio: r.Servicio ? r.Servicio.Nombre : "Emergencia",
+      Servicio: getServicioNombre(r),
       Comida: r.TipoComida,
       Dieta: r.TipoDieta,
       Estado: r.Estado
@@ -2400,7 +2399,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
       r.FechaPedido.split('T')[0].split('-').reverse().join('/'),
       r.Personal ? r.Personal.DNI : (r.EmergenciaDNI || ""),
       r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`,
-      r.Servicio ? r.Servicio.Nombre : "Emergencia",
+      getServicioNombre(r),
       r.TipoComida,
       r.TipoDieta,
       r.Estado
@@ -2467,22 +2466,31 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
             </div>
           ) : (
             <div className="divide-y divide-gray-200 dark:divide-gray-800">
-              {emergencias.map(e => (
-                <div key={e.Id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                  <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-md">
-                          URGENTE
-                        </span>
-                        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{e.EmergenciaNombre} {e.EmergenciaApellido}</h3>
+              {emergencias.map(e => {
+                const nombreAgente = e.EmergenciaNombreCompleto || `${e.EmergenciaNombre || ''} ${e.EmergenciaApellido || ''}`.trim() || 'Agente';
+                return (
+                  <div key={e.Id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                    <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
+                      <div className="flex-1">
+                        <div className="flex items-center space-x-3 mb-2">
+                          <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-md">
+                            URGENTE
+                          </span>
+                          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</h3>
+                        </div>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                          <span className="font-semibold text-gray-900 dark:text-gray-200">Agente:</span> <span className="font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">DNI:</span> {e.EmergenciaDNI} • <span className="font-semibold text-gray-900 dark:text-gray-200">Solicita:</span> {e.TipoComida} ({e.TipoDieta})
+                        </p>
+                        {e.PersonalReemplazado && (
+                          <p className="text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">
+                            Reemplaza a: {e.PersonalReemplazado.NombreCompleto} (DNI: {e.PersonalReemplazado.DNI})
+                          </p>
+                        )}
+                        <div className="mt-3 bg-gray-50 dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm italic text-gray-700 dark:text-gray-300 relative">
+                          <div className="absolute top-0 left-0 w-1 h-full bg-orange-400 rounded-l-xl"></div>
+                          "{e.JustificacionSolicitud}"
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-1"><span className="font-semibold text-gray-900 dark:text-gray-200">DNI:</span> {e.EmergenciaDNI} • <span className="font-semibold text-gray-900 dark:text-gray-200">Solicita:</span> {e.TipoComida} ({e.TipoDieta})</p>
-                      <div className="mt-3 bg-gray-50 dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm italic text-gray-700 dark:text-gray-300 relative">
-                        <div className="absolute top-0 left-0 w-1 h-full bg-orange-400 rounded-l-xl"></div>
-                        "{e.JustificacionSolicitud}"
-                      </div>
-                    </div>
                     
                     <div className="flex flex-col space-y-3 w-full md:w-80">
                       <textarea 
@@ -2503,7 +2511,8 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
                     </div>
                   </div>
                 </div>
-              ))}
+              );
+            })}
             </div>
           )}
         </div>
@@ -2741,7 +2750,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
                   }).map((r) => (
                     <tr key={r.Id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                       <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">{r.FechaPedido.split('T')[0].split('-').reverse().join('/')}</td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{r.Servicio?.Nombre || "-"}</td>
+                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-400">{getServicioNombre(r)}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.TipoComida.toLowerCase() === 'almuerzo' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'}`}>
                           {r.TipoComida}
@@ -2810,9 +2819,18 @@ function RRHHPanel({ token }: { token: string }) {
   const [gerenteHospitalId, setGerenteHospitalId] = useState("");
   const { theme } = useTheme();
 
+  const [openServicios, setOpenServicios] = useState<{ [hospitalId: number]: boolean }>({});
+  const toggleServicios = (id: number) => {
+    setOpenServicios(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
   const [gerentes, setGerentes] = useState<any[]>([]);
   const [importando, setImportando] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
+
+  const [logsAuditoria, setLogsAuditoria] = useState<any[]>([]);
+  const [cargandoAuditoria, setCargandoAuditoria] = useState(false);
+  const [filtroAuditoria, setFiltroAuditoria] = useState("");
 
   const fetchHospitales = async () => {
     try {
@@ -2835,10 +2853,86 @@ function RRHHPanel({ token }: { token: string }) {
       console.error(e);
     }
   };
+
+  const fetchAuditoria = async () => {
+    setCargandoAuditoria(true);
+    try {
+      const res = await fetch("http://localhost:3001/api/admin/auditoria", {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) setLogsAuditoria(await res.json());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCargandoAuditoria(false);
+    }
+  };
+
   useEffect(() => {
     fetchHospitales();
     fetchGerentes();
+    fetchAuditoria();
   }, []);
+
+  const filteredAuditoria = logsAuditoria.filter((l: any) => {
+    if (!filtroAuditoria) return true;
+    const search = filtroAuditoria.toLowerCase();
+    const accion = (l.Accion || "").toLowerCase();
+    const usuario = (l.Usuario?.NombreUsuario || "").toLowerCase();
+    const detalles = (l.Detalles || "").toLowerCase();
+    const ip = (l.IpAddress || "").toLowerCase();
+    return accion.includes(search) || usuario.includes(search) || detalles.includes(search) || ip.includes(search);
+  });
+
+  const formatIp = (ip?: string) => {
+    if (!ip) return '-';
+    if (ip === '::1' || ip === '::ffff:127.0.0.1') return '127.0.0.1';
+    return ip;
+  };
+
+  const exportAuditoriaExcel = () => {
+    if (filteredAuditoria.length === 0) return;
+    const excelData = filteredAuditoria.map((l: any) => ({
+      ID: l.Id,
+      "Fecha y Hora": new Date(l.Fecha).toLocaleString('es-AR'),
+      Acción: l.Accion,
+      Usuario: l.Usuario ? l.Usuario.NombreUsuario : 'Sistema / Anon',
+      Rol: l.Usuario?.Rol?.Nombre || '-',
+      Detalles: l.Detalles || '',
+      IP: formatIp(l.IpAddress)
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Auditoría");
+    XLSX.writeFile(workbook, `Reporte_Auditoria_${getTodayStr()}.xlsx`);
+  };
+
+  const exportAuditoriaPDF = () => {
+    if (filteredAuditoria.length === 0) return;
+    const doc = new jsPDF({ orientation: 'landscape' });
+    doc.setFontSize(14);
+    doc.text("Reporte de Auditoría de Sistema", 14, 15);
+    doc.setFontSize(9);
+    doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 22);
+
+    const tableRows = filteredAuditoria.map((l: any) => [
+      new Date(l.Fecha).toLocaleString('es-AR'),
+      l.Accion,
+      l.Usuario ? `${l.Usuario.NombreUsuario} (${l.Usuario?.Rol?.Nombre || ''})` : 'Sistema',
+      l.Detalles || '-',
+      formatIp(l.IpAddress)
+    ]);
+
+    (doc as any).autoTable({
+      head: [['Fecha / Hora', 'Acción', 'Usuario', 'Detalles', 'IP']],
+      body: tableRows,
+      startY: 26,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [30, 41, 59] }
+    });
+
+    doc.save(`Auditoria_${getTodayStr()}.pdf`);
+  };
 
   const crearHospital = async () => {
     if (!nuevoHospital) return;
@@ -3002,7 +3096,8 @@ function RRHHPanel({ token }: { token: string }) {
   const tabs = [
     { id: "Hospitales", label: "Efectores", icon: <Building className="w-4 h-4 mr-2" /> },
     { id: "Administracion", label: "Administración Global", icon: <Settings className="w-4 h-4 mr-2" /> },
-    { id: "Importacion", label: "Importar Personal", icon: <Upload className="w-4 h-4 mr-2" /> }
+    { id: "Importacion", label: "Importar Personal", icon: <Upload className="w-4 h-4 mr-2" /> },
+    { id: "Auditoria", label: "Auditoría", icon: <Shield className="w-4 h-4 mr-2" /> }
   ];
 
   return (
@@ -3061,7 +3156,6 @@ function RRHHPanel({ token }: { token: string }) {
                       </div>
                       {h.Nombre}
                     </span>
-                    <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-3 py-1 rounded-full">ID: {h.Id}</span>
                   </h3>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -3086,19 +3180,34 @@ function RRHHPanel({ token }: { token: string }) {
                     </div>
                     
                     <div>
-                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 flex items-center">
-                        <Utensils className="w-3.5 h-3.5 mr-1.5" /> Áreas / Servicios
-                      </h4>
-                      {h.Servicios && h.Servicios.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {h.Servicios.map((s: any) => (
-                            <span key={s.Id} className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
-                              {s.Nombre}
-                            </span>
-                          ))}
+                      <button 
+                        type="button"
+                        onClick={() => toggleServicios(h.Id)}
+                        className="w-full flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700/60 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 transition-colors"
+                      >
+                        <span className="flex items-center">
+                          <Utensils className="w-3.5 h-3.5 mr-1.5 text-indigo-500" />
+                          Servicios ({h.Servicios?.length || 0})
+                        </span>
+                        {openServicios[h.Id] ? (
+                          <ChevronUp className="w-4 h-4 text-gray-500" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4 text-gray-500" />
+                        )}
+                      </button>
+
+                      {openServicios[h.Id] && (
+                        <div className="mt-2.5 p-3 bg-gray-50/50 dark:bg-gray-800/30 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-wrap gap-2 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
+                          {h.Servicios && h.Servicios.length > 0 ? (
+                            h.Servicios.map((s: any) => (
+                              <span key={s.Id} className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
+                                {s.Nombre}
+                              </span>
+                            ))
+                          ) : (
+                            <p className="text-sm text-gray-500 dark:text-gray-500 italic p-1">Sin servicios creados</p>
+                          )}
                         </div>
-                      ) : (
-                        <p className="text-sm text-gray-500 dark:text-gray-500 italic p-2">Sin áreas creadas</p>
                       )}
                     </div>
                   </div>
@@ -3227,7 +3336,7 @@ function RRHHPanel({ token }: { token: string }) {
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Cargar agentes (Personal) mediante un archivo Excel (.xlsx, .csv).</p>
         </div>
         <div className="p-8">
-          <div className="max-w-2xl bg-gray-50 dark:bg-gray-800/30 p-8 rounded-2xl border border-gray-100 dark:border-gray-800 border-dashed text-center">
+          <div className="w-full bg-gray-50 dark:bg-gray-800/30 p-8 rounded-2xl border border-gray-100 dark:border-gray-800 border-dashed text-center">
             <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">Selecciona o arrastra el archivo Excel</h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">El archivo debe contener las siguientes columnas exactas: <br/><code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded">efector, servicio, idpuesto, idagente, documento, agente, tipofuncion, tipoplanta, con_vianda, esguardia12, esguardia24</code></p>
@@ -3256,6 +3365,124 @@ function RRHHPanel({ token }: { token: string }) {
           </div>
         </div>
       </div>
+      )}
+
+      {/* SECCION AUDITORIA */}
+      {activeTab === "Auditoria" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-50/50 dark:bg-gray-800/30">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                <Shield className="w-5 h-5 mr-2 text-indigo-500" /> Registros de Auditoría
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Historial de acciones y eventos del sistema</p>
+            </div>
+            
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative w-full sm:w-64">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-4 w-4 text-gray-400" />
+                </div>
+                <input 
+                  type="text" 
+                  value={filtroAuditoria} 
+                  onChange={e => setFiltroAuditoria(e.target.value)} 
+                  placeholder="Buscar acción, usuario, detalles..." 
+                  className="block w-full pl-9 pr-3 py-2 text-sm border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
+                />
+              </div>
+
+              <button 
+                onClick={fetchAuditoria} 
+                className="p-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl text-gray-700 dark:text-gray-300 font-bold transition-colors"
+                title="Actualizar auditoría"
+              >
+                <RefreshCw className={`w-4 h-4 ${cargandoAuditoria ? 'animate-spin' : ''}`} />
+              </button>
+
+              <button 
+                onClick={exportAuditoriaExcel} 
+                disabled={filteredAuditoria.length === 0} 
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
+                  filteredAuditoria.length === 0 
+                    ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' 
+                    : 'bg-green-600 hover:bg-green-700 text-white'
+                }`}
+              >
+                EXCEL
+              </button>
+
+              <button 
+                onClick={exportAuditoriaPDF} 
+                disabled={filteredAuditoria.length === 0} 
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
+                  filteredAuditoria.length === 0 
+                    ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' 
+                    : 'bg-red-600 hover:bg-red-700 text-white'
+                }`}
+              >
+                PDF
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            {cargandoAuditoria ? (
+              <div className="p-12 text-center text-gray-500 dark:text-gray-400">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-indigo-500" />
+                <p>Cargando registros de auditoría...</p>
+              </div>
+            ) : filteredAuditoria.length === 0 ? (
+              <div className="p-12 text-center text-gray-500 dark:text-gray-400">
+                <Shield className="w-10 h-10 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                <p className="font-bold">No se encontraron registros de auditoría.</p>
+              </div>
+            ) : (
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800/50 text-xs text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider">
+                  <tr>
+                    <th className="px-6 py-3.5 text-left">Fecha y Hora</th>
+                    <th className="px-6 py-3.5 text-left">Acción</th>
+                    <th className="px-6 py-3.5 text-left">Usuario</th>
+                    <th className="px-6 py-3.5 text-left">Detalles</th>
+                    <th className="px-6 py-3.5 text-left">IP</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-sm">
+                  {filteredAuditoria.map((log: any) => (
+                    <tr key={log.Id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/40 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-300 font-medium">
+                        {new Date(log.Fecha).toLocaleString('es-AR')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
+                          log.Accion.includes('LOGIN') ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
+                          log.Accion.includes('BAJA') || log.Accion.includes('FALLIDO') ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300' :
+                          log.Accion.includes('ACTUALIZACION') || log.Accion.includes('REVERTIR') ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300' :
+                          'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+                        }`}>
+                          {log.Accion}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900 dark:text-gray-100">
+                        {log.Usuario ? `${log.Usuario.NombreUsuario}` : 'Sistema'}
+                        {log.Usuario?.Rol && (
+                          <span className="text-xs font-normal text-gray-500 ml-1">({log.Usuario.Rol.Nombre})</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-gray-700 dark:text-gray-300 max-w-md truncate" title={log.Detalles || ''}>
+                        {log.Detalles || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap font-mono text-xs text-gray-500 dark:text-gray-400">
+                        {formatIp(log.IpAddress)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
       )}
 
     </div>
