@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import Swal from 'sweetalert2';
 import { 
   LogOut, Sun, Moon, AlertTriangle, FileText, Settings, 
-  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, CheckCircle, Search, Save, Utensils, History
+  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -13,11 +13,18 @@ import 'jspdf-autotable';
 
 type Role = "Jefe" | "Gerente" | "RRHH";
 
+const getTodayStr = () => {
+  const today = new Date();
+  today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
+  return today.toISOString().split('T')[0];
+};
+
 export default function Home() {
   const [role, setRole] = useState<Role | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [userId, setUserId] = useState<number | null>(null);
   const [hospitalName, setHospitalName] = useState<string | null>(null);
+  const [servicioName, setServicioName] = useState<string | null>(null);
   const [username, setUsername] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState<Date | null>(null);
   const { theme, setTheme } = useTheme();
@@ -50,10 +57,11 @@ export default function Home() {
   const [lCh, lCm] = limiteCena.split(':').map(Number);
   const isPastCena = currentTotalMins >= (lCh * 60 + lCm);
 
-  const handleLogin = (jwtToken: string, userRole: number, id: number, hospName: string | null, userLoginName: string) => {
+  const handleLogin = (jwtToken: string, userRole: number, id: number, hospName: string | null, servName: string | null, userLoginName: string) => {
     setToken(jwtToken);
     setUserId(id);
     setHospitalName(hospName);
+    setServicioName(servName);
     setUsername(userLoginName);
     if (userRole === 1) setRole("RRHH");
     else if (userRole === 2) setRole("Gerente");
@@ -78,6 +86,7 @@ export default function Home() {
         setRole(null);
         setUserId(null);
         setHospitalName(null);
+        setServicioName(null);
         setUsername(null);
       }
     });
@@ -107,11 +116,18 @@ export default function Home() {
               <div>Cen: {limiteCena} {isPastCena && <span className="font-bold text-red-600 dark:text-red-400">(!)</span>}</div>
             </div>
 
-            <div className="flex items-center space-x-3 bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-full border border-gray-200 dark:border-gray-700">
-              <Building className="w-4 h-4 text-indigo-500 hidden md:block" />
-              <span className="text-sm font-semibold text-gray-700 dark:text-gray-300 hidden md:block border-r border-gray-300 dark:border-gray-600 pr-3 mr-1" title="Efector">
-                {hospitalName || "Todos"}
-              </span>
+            <div className="flex items-center space-x-3 bg-gray-100 dark:bg-gray-800 px-4 py-2 rounded-2xl border border-gray-200 dark:border-gray-700">
+              <Building className="w-4 h-4 text-indigo-500 hidden md:block flex-shrink-0" />
+              <div className="hidden md:flex flex-col border-r border-gray-300 dark:border-gray-600 pr-3 mr-1 text-left justify-center">
+                <span className="text-xs font-bold text-gray-800 dark:text-gray-200 leading-tight" title="Efector">
+                  {hospitalName || "Todos"}
+                </span>
+                {role === "Jefe" && servicioName && (
+                  <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 leading-tight mt-0.5" title="Servicio">
+                    {servicioName}
+                  </span>
+                )}
+              </div>
               <User className="w-4 h-4 text-gray-500 dark:text-gray-400 ml-2" />
               <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
                 {username ? `${username} (${role})` : role}
@@ -152,19 +168,31 @@ export default function Home() {
           </div>
         )}
 
-        {role === "Jefe" && <JefePanel isPastAlmuerzo={isPastAlmuerzo} isPastCena={isPastCena} limiteAlmuerzo={limiteAlmuerzo} limiteCena={limiteCena} token={token} userId={userId} />}
-        {role === "Gerente" && <GerentePanel token={token} />}
+        {role === "Jefe" && <JefePanel isPastAlmuerzo={isPastAlmuerzo} isPastCena={isPastCena} limiteAlmuerzo={limiteAlmuerzo} limiteCena={limiteCena} token={token} userId={userId} servicioName={servicioName} />}
+        {role === "Gerente" && (
+          <GerentePanel 
+            token={token} 
+            hospitalName={hospitalName}
+            username={username}
+            onConfigUpdated={(alm, cen) => {
+              setLimiteAlmuerzo(alm);
+              setLimiteCena(cen);
+            }} 
+          />
+        )}
         {role === "RRHH" && <RRHHPanel token={token} />}
       </main>
     </div>
   );
 }
 
-function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: number, hospitalName: string | null, username: string) => void }) {
+function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: number, hospitalName: string | null, servicioName: string | null, username: string) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(1); // 1: Credentials, 2: 2FA, 3: Change Password
   const [tempToken, setTempToken] = useState("");
   const [totp, setTotp] = useState("");
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
@@ -184,14 +212,17 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error de credenciales");
       
-      if (data.require2FA) {
+      if (data.requirePasswordChange) {
+        setTempToken(data.tempToken);
+        setStep(3);
+      } else if (data.require2FA) {
         setTempToken(data.tempToken);
         if (data.setup && data.qrCode) {
           setQrCodeUrl(data.qrCode);
         }
         setStep(2);
       } else if (data.token) {
-        onLogin(data.token, data.user.roleId, data.user.id, data.user.hospitalName || null, data.user.username);
+        onLogin(data.token, data.user.roleId, data.user.id, data.user.hospitalName || null, data.user.servicioName || null, data.user.username);
       }
     } catch (err: any) {
       setError(err.message);
@@ -213,7 +244,38 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Código inválido");
       
-      onLogin(data.token, data.user.roleId, data.user.id, data.user.hospitalName || null, data.user.username);
+      onLogin(data.token, data.user.roleId, data.user.id, data.user.hospitalName || null, data.user.servicioName || null, data.user.username);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const doChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setError("");
+
+    if (newPassword !== confirmPassword) {
+      setError("Las contraseñas no coinciden.");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("http://localhost:3001/api/auth/change-password", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tempToken}`
+        },
+        body: JSON.stringify({ newPassword })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al actualizar contraseña");
+
+      onLogin(data.token, data.user.roleId, data.user.id, data.user.hospitalName || null, data.user.servicioName || null, data.user.username);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -280,7 +342,7 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
               {isLoading ? 'Autenticando...' : 'Iniciar Sesión'}
             </button>
           </form>
-        ) : (
+        ) : step === 2 ? (
           <form onSubmit={do2FA} className="space-y-5">
             {qrCodeUrl && (
               <div className="flex flex-col items-center justify-center p-5 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 mb-4">
@@ -310,13 +372,61 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
               {isLoading ? 'Verificando...' : 'Verificar Código'}
             </button>
           </form>
+        ) : (
+          <form onSubmit={doChangePassword} className="space-y-5">
+            <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 rounded-xl text-xs text-amber-800 dark:text-amber-300 mb-2">
+              <strong>Cambio de Contraseña Obligatorio:</strong> Es tu primer inicio de sesión. Por razones de seguridad, debes actualizar tu contraseña por defecto (123456) antes de continuar.
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Nueva Contraseña</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input 
+                  type="password" 
+                  value={newPassword} 
+                  onChange={e => setNewPassword(e.target.value)} 
+                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
+                  placeholder="••••••••"
+                  required 
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Confirmar Nueva Contraseña</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input 
+                  type="password" 
+                  value={confirmPassword} 
+                  onChange={e => setConfirmPassword(e.target.value)} 
+                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
+                  placeholder="••••••••"
+                  required 
+                />
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Debe contener al menos 8 caracteres, 1 mayúscula, 1 minúscula, 1 número y 1 carácter especial.
+            </p>
+            <button 
+              type="submit" 
+              disabled={isLoading}
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-95"
+            >
+              {isLoading ? 'Actualizando...' : 'Cambiar Contraseña e Ingresar'}
+            </button>
+          </form>
         )}
       </div>
     </div>
   );
 }
 
-function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, token, userId }: { isPastAlmuerzo: boolean, isPastCena: boolean, limiteAlmuerzo: string, limiteCena: string, token: string, userId: number | null }) {
+function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, token, userId, servicioName }: { isPastAlmuerzo: boolean, isPastCena: boolean, limiteAlmuerzo: string, limiteCena: string, token: string, userId: number | null, servicioName?: string | null }) {
   const [activeTab, setActiveTab] = useState("Planilla");
   const [planillaTab, setPlanillaTab] = useState<"almuerzo" | "cena">("almuerzo");
   const [staff, setStaff] = useState<any[]>([]);
@@ -339,15 +449,10 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
   const [emgPeriodoFin, setEmgPeriodoFin] = useState("");
   const [emgTipo, setEmgTipo] = useState("reemplazo");
   const [emgReemplazaId, setEmgReemplazaId] = useState("");
-  const [emgJustificacion, setEmgJustificacion] = useState("");
+  const [emgJustificacion, setEmgJustificacion] = useState("por reemplazo de personal");
   // Reportes
-  const getTodayStr = () => {
-    const today = new Date();
-    today.setMinutes(today.getMinutes() - today.getTimezoneOffset());
-    return today.toISOString().split('T')[0];
-  };
-  const [repDesde, setRepDesde] = useState("");
-  const [repHasta, setRepHasta] = useState("");
+  const [repDesde, setRepDesde] = useState(getTodayStr());
+  const [repHasta, setRepHasta] = useState(getTodayStr());
   const [repFiltroEmpleado, setRepFiltroEmpleado] = useState("");
   const [reportes, setReportes] = useState<any[]>([]);
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc'|'desc'}>({key: 'fecha', direction: 'desc'});
@@ -366,8 +471,8 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     if (sortConfig.key === 'fecha') { valA = a.FechaPedido; valB = b.FechaPedido; }
     if (sortConfig.key === 'tipo') { valA = a.TipoComida; valB = b.TipoComida; }
     if (sortConfig.key === 'nombre') {
-      valA = a.Personal ? `${a.Personal.Apellido} ${a.Personal.Nombre}` : `${a.EmergenciaApellido} ${a.EmergenciaNombre}`;
-      valB = b.Personal ? `${b.Personal.Apellido} ${b.Personal.Nombre}` : `${b.EmergenciaApellido} ${b.EmergenciaNombre}`;
+      valA = a.Personal ? `${a.Personal.NombreCompleto}` : `${a.EmergenciaNombreCompleto}`;
+      valB = b.Personal ? `${b.Personal.NombreCompleto}` : `${b.EmergenciaNombreCompleto}`;
     }
     if (sortConfig.key === 'dni') {
       valA = a.Personal ? a.Personal.DNI : a.EmergenciaDNI;
@@ -394,7 +499,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
         // Pre-fill right side list with current active staff
         setPlantelDraft(activeData.map((p: any) => ({
           DNI: p.DNI,
-          NombreCompleto: `${p.Apellido}, ${p.Nombre}`,
+          NombreCompleto: p.NombreCompleto,
           Horario: p.Horario === "24h" ? "Guardia 24h" : "Guardia 12h"
         })));
       }
@@ -556,14 +661,61 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     const isDeadline = tipoComida === "almuerzo" ? isPastAlmuerzo : isPastCena;
     if (isDeadline) return;
 
+    const p = staff.find(s => s.Id === personalId);
+    const is12h = p ? !p.Horario.includes("24h") : false;
+
+    const current = selections[personalId] || { almuerzo: null, cena: null };
+    const isSame = current[tipoComida] === tipoDieta;
+    const isSelecting = !isSame;
+
+    if (is12h && isSelecting) {
+      const otherMeal = tipoComida === "almuerzo" ? "cena" : "almuerzo";
+      const otherDeadline = otherMeal === "almuerzo" ? isPastAlmuerzo : isPastCena;
+      const otherValue = current[otherMeal];
+
+      if (otherValue) {
+        if (otherDeadline) {
+          Swal.fire({
+            title: "Guardia 12h",
+            text: `El agente (Guardia 12h) ya posee ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} registrado cuyo horario de pedido ya cerró. Solo se permite 1 comida por día.`,
+            icon: "warning",
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3500,
+            background: theme === 'dark' ? '#1f2937' : '#fff',
+            color: theme === 'dark' ? '#fff' : '#000'
+          });
+          return;
+        } else {
+          Swal.fire({
+            title: "Guardia 12h",
+            text: `Agente con Guardia 12h: se reemplazó la selección de ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} por ${tipoComida === "almuerzo" ? "Almuerzo" : "Cena"}.`,
+            icon: "info",
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3000,
+            background: theme === 'dark' ? '#1f2937' : '#fff',
+            color: theme === 'dark' ? '#fff' : '#000'
+          });
+        }
+      }
+    }
+
     setSelections(prev => {
-      const current = prev[personalId] || { almuerzo: null, cena: null };
-      const isSame = current[tipoComida] === tipoDieta;
+      const cur = prev[personalId] || { almuerzo: null, cena: null };
+      const same = cur[tipoComida] === tipoDieta;
+
       return {
         ...prev,
         [personalId]: {
-          ...current,
-          [tipoComida]: isSame ? null : tipoDieta
+          almuerzo: tipoComida === "almuerzo" 
+            ? (same ? null : tipoDieta) 
+            : (is12h && !same ? null : cur.almuerzo),
+          cena: tipoComida === "cena" 
+            ? (same ? null : tipoDieta) 
+            : (is12h && !same ? null : cur.cena)
         }
       };
     });
@@ -640,14 +792,14 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
           tipoComida: emgComida,
           tipoDieta: emgDieta,
           tipoDietaCena: emgComida === 'Ambos' ? emgDietaCena : undefined,
-          justificacion: emgTipo === "extra" ? emgJustificacion : undefined,
+          justificacion: emgTipo === "reemplazo" ? (emgJustificacion || "por reemplazo de personal") : emgJustificacion,
           reemplazaId: emgTipo === "reemplazo" ? emgReemplazaId : undefined,
           solicitadoPorUsuarioId: userId
         })
       });
       if (res.ok) {
         Swal.fire({ title: "Enviado", text: "Solicitud de emergencia creada", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-        setEmgNombre(""); setEmgDni(""); setEmgJustificacion("");
+        setEmgNombre(""); setEmgDni(""); setEmgJustificacion(emgTipo === "reemplazo" ? "por reemplazo de personal" : "");
         fetchHistorialEmergencias();
       } else {
         const data = await res.json();
@@ -806,13 +958,13 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     const filtered = sortedReportes.filter(r => {
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
-      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
       const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
       return name.includes(term) || dni.includes(term);
     });
     filtered.forEach(r => {
       const fecha = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`;
+      const name = r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`;
       const dni = r.Personal ? r.Personal.DNI : r.EmergenciaDNI;
       csv += `${fecha},${r.TipoComida},"${name}",${dni},${r.TipoDieta},${r.Estado}\n`;
     });
@@ -830,7 +982,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     const filtered = sortedReportes.filter(r => {
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
-      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
       const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
       return name.includes(term) || dni.includes(term);
     });
@@ -844,7 +996,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
       <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Personal / Paciente</th><th>DNI</th><th>Dieta</th><th>Estado</th></tr></thead><tbody>`;
     filtered.forEach(r => {
       const fecha = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`;
+      const name = r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`;
       const dni = r.Personal ? r.Personal.DNI : r.EmergenciaDNI;
       html += `<tr><td>${fecha}</td><td>${r.TipoComida}</td><td>${name}</td><td>${dni}</td><td>${r.TipoDieta}</td><td>${r.Estado}</td></tr>`;
     });
@@ -955,7 +1107,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                     <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white dark:bg-gray-900 z-10 border-r border-gray-100 dark:border-gray-800">
                       <div className="flex flex-col">
                         <div className="flex items-center">
-                          <span className={`text-sm font-bold ${p.bajaProvisoriaHoy ? 'text-red-500 line-through' : 'text-gray-900 dark:text-gray-100'}`}>{p.Nombre} {p.Apellido}</span>
+                          <span className={`text-sm font-bold ${p.bajaProvisoriaHoy ? 'text-red-500 line-through' : 'text-gray-900 dark:text-gray-100'}`}>{p.NombreCompleto || `${p.Nombre || ''} ${p.Apellido || ''}`}</span>
                           {p.bajaProvisoriaHoy && p.bajaMotivo && (
                             <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded ml-2 border border-red-200 dark:border-red-800">
                               {p.bajaMotivo}
@@ -1112,24 +1264,61 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Tipo de Solicitud</label>
                 <div className="flex gap-4 mb-3">
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="emgTipo" value="reemplazo" checked={emgTipo === 'reemplazo'} onChange={() => setEmgTipo('reemplazo')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Reemplazo de Personal</span>
+                    <input 
+                      type="radio" 
+                      name="emgTipo" 
+                      value="reemplazo" 
+                      checked={emgTipo === 'reemplazo'} 
+                      onChange={() => {
+                        setEmgTipo('reemplazo');
+                        setEmgJustificacion("por reemplazo de personal");
+                      }} 
+                      className="accent-orange-500 w-4 h-4" 
+                    /> 
+                    <span className="text-sm">Reemplazo de Personal</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="emgTipo" value="extra" checked={emgTipo === 'extra'} onChange={() => setEmgTipo('extra')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Agregado Extra</span>
+                    <input 
+                      type="radio" 
+                      name="emgTipo" 
+                      value="extra" 
+                      checked={emgTipo === 'extra'} 
+                      onChange={() => {
+                        setEmgTipo('extra');
+                        setEmgJustificacion("");
+                      }} 
+                      className="accent-orange-500 w-4 h-4" 
+                    /> 
+                    <span className="text-sm">Agregado Extra</span>
                   </label>
                 </div>
                 
                 {emgTipo === 'reemplazo' && (
-                  <select value={emgReemplazaId} onChange={e => setEmgReemplazaId(e.target.value)} required={emgTipo === 'reemplazo'} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                    <option value="">-- Seleccionar a quién reemplaza --</option>
-                    {staff.filter(p => p.bajaProvisoriaHoy || p.bajaDefinitivaHoy).map(p => (
-                      <option key={p.Id} value={p.Id}>{p.Nombre} {p.Apellido} (DNI: {p.DNI})</option>
-                    ))}
-                  </select>
+                  <div className="space-y-3">
+                    <select value={emgReemplazaId} onChange={e => setEmgReemplazaId(e.target.value)} required={emgTipo === 'reemplazo'} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                      <option value="">-- Seleccionar a quién reemplaza --</option>
+                      {staff.filter(p => p.bajaProvisoriaHoy || p.bajaDefinitivaHoy).map(p => (
+                        <option key={p.Id} value={p.Id}>{p.Nombre} {p.Apellido} (DNI: {p.DNI})</option>
+                      ))}
+                    </select>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Justificación</label>
+                      <input 
+                        type="text" 
+                        value={emgJustificacion} 
+                        onChange={e => setEmgJustificacion(e.target.value)} 
+                        className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
+                        placeholder="por reemplazo de personal" 
+                      />
+                    </div>
+                  </div>
                 )}
                 
                 {emgTipo === 'extra' && (
-                  <textarea value={emgJustificacion} onChange={e => setEmgJustificacion(e.target.value)} required={emgTipo === 'extra'} rows={2} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Escribe aquí la justificación obligatoria..."></textarea>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Justificación Obligatoria</label>
+                    <textarea value={emgJustificacion} onChange={e => setEmgJustificacion(e.target.value)} required={emgTipo === 'extra'} rows={2} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Escribe aquí la justificación obligatoria..."></textarea>
+                  </div>
                 )}
               </div>
             </div>
@@ -1155,8 +1344,9 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-800">
-                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Fecha</th>
-                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Paciente/Agente</th>
+                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Fecha/Hora Pedido</th>
+                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Rango Solicitado</th>
+                  <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Agente</th>
                   <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Comida</th>
                   <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Tipo</th>
                   <th className="p-4 font-semibold text-sm text-gray-600 dark:text-gray-400">Estado</th>
@@ -1165,7 +1355,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
               <tbody>
                 {historialEmergencias.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-gray-500 dark:text-gray-400">No hay solicitudes recientes.</td>
+                    <td colSpan={6} className="p-8 text-center text-gray-500 dark:text-gray-400">No hay solicitudes recientes.</td>
                   </tr>
                 ) : (
                   historialEmergencias.map((h: any) => {
@@ -1175,13 +1365,37 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                     
                     const isReemplazo = h.EmergenciaReemplazaId !== null;
 
+                    const fechaObj = h.FechaCreacion ? new Date(h.FechaCreacion) : new Date(h.FechaPedido);
+                    const hora24 = fechaObj.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\s?[a-zA-Z\.]+/g, '').trim();
+                    const fechaHoraStr = `${fechaObj.toLocaleDateString('es-AR')} ${hora24}`;
+
+                    let rangoStr = new Date(h.FechaPedido).toLocaleDateString('es-AR');
+                    if (h.EmergenciaPeriodoInicio && h.EmergenciaPeriodoFin) {
+                      const pInicioStr = new Date(h.EmergenciaPeriodoInicio).toLocaleDateString('es-AR');
+                      const pFinStr = new Date(h.EmergenciaPeriodoFin).toLocaleDateString('es-AR');
+                      rangoStr = pInicioStr === pFinStr ? pInicioStr : `${pInicioStr} al ${pFinStr}`;
+                    }
+
+                    const nombreAgente = h.EmergenciaNombreCompleto || `${h.EmergenciaNombre || ''} ${h.EmergenciaApellido || ''}`.trim() || (h.Personal ? h.Personal.NombreCompleto : 'Agente');
+                    const dniAgente = h.EmergenciaDNI || (h.Personal ? h.Personal.DNI : '-');
+
+                    const reemplazadoNombre = h.PersonalReemplazado 
+                      ? (h.PersonalReemplazado.NombreCompleto || `${h.PersonalReemplazado.Nombre || ''} ${h.PersonalReemplazado.Apellido || ''}`.trim())
+                      : '';
+
                     return (
                       <tr key={h.Id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                         <td className="p-4 text-sm font-medium text-gray-900 dark:text-gray-100 whitespace-nowrap">
-                          {new Date(h.FechaPedido).toLocaleDateString()}
+                          {fechaHoraStr}
+                        </td>
+                        <td className="p-4 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                          {rangoStr}
                         </td>
                         <td className="p-4 text-sm text-gray-700 dark:text-gray-300">
-                          {h.EmergenciaNombre} {h.EmergenciaApellido} <span className="text-gray-500 text-xs">({h.EmergenciaDNI})</span>
+                          <div className="flex flex-col">
+                            <span className="font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">DNI: {dniAgente}</span>
+                          </div>
                         </td>
                         <td className="p-4 text-sm text-gray-700 dark:text-gray-300 whitespace-nowrap">
                           {h.TipoComida} <span className="text-gray-400 text-xs">({h.TipoDieta})</span>
@@ -1189,7 +1403,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                         <td className="p-4 text-sm text-gray-700 dark:text-gray-300">
                           {isReemplazo ? (
                             <span className="inline-flex items-center text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-0.5 rounded-full text-xs border border-blue-200 dark:border-blue-800">
-                              Reemplazo: {h.PersonalReemplazado?.Nombre} {h.PersonalReemplazado?.Apellido}
+                              Reemplazo a: {reemplazadoNombre || 'Agente'}
                             </span>
                           ) : (
                             <span className="inline-flex items-center text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 px-2.5 py-0.5 rounded-full text-xs border border-purple-200 dark:border-purple-800">
@@ -1258,7 +1472,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                     </button>
                     {isExpanded && (
                       <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                        {padronByService[sName].sort((a, b) => a.NombreCompleto.localeCompare(b.NombreCompleto)).map(p => {
+                        {padronByService[sName].sort((a: any, b: any) => a.NombreCompleto.localeCompare(b.NombreCompleto)).map((p: any) => {
                           const draftEntry = plantelDraft.find(draft => draft.DNI === p.DNI);
                           const isSelected = !!draftEntry;
                           const dbAssigned = staff.find(s => s.DNI === p.DNI);
@@ -1430,7 +1644,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                 {sortedReportes.filter(r => {
                   if (!repFiltroEmpleado) return true;
                   const term = repFiltroEmpleado.toLowerCase();
-                  const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+                  const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
                   const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
                   return name.includes(term) || dni.includes(term);
                 }).map((r) => (
@@ -1442,7 +1656,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                       </span>
                       <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{r.TipoDieta}</span>
                     </td>
-                    <td className="px-6 py-4 text-sm font-bold text-gray-900 dark:text-gray-100">{r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`}</td>
+                    <td className="px-6 py-4 text-sm font-bold text-gray-900 dark:text-gray-100">{r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`}</td>
                     <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
                     <td className="px-6 py-4 text-sm">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.Estado === 'Aprobado' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : r.Estado === 'Rechazado' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
@@ -1461,23 +1675,22 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
   );
 }
 
-function GerentePanel({ token }: { token: string }) {
+function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { token: string, hospitalName?: string | null, username?: string | null, onConfigUpdated?: (almuerzo: string, cena: string) => void }) {
   const [emergencias, setEmergencias] = useState<any[]>([]);
   const [resolucionTxt, setResolucionTxt] = useState<{ [id: number]: string }>({});
   const [activeTab, setActiveTab] = useState("Bandeja");
   
   // ABM Servicios
   const [servicios, setServicios] = useState<any[]>([]);
-  const [nuevoServicio, setNuevoServicio] = useState("");
+  const [serviciosPage, setServiciosPage] = useState(1);
+  const [buscarServicio, setBuscarServicio] = useState("");
+  const serviciosFiltrados = servicios.filter(s => s.Nombre.toLowerCase().includes(buscarServicio.toLowerCase()));
 
-  // ABM Jefe Servicio
-  const [jefeUsername, setJefeUsername] = useState("");
-  const [jefePassword, setJefePassword] = useState("");
-  const [jefeServicioId, setJefeServicioId] = useState("");
+
 
   // Reportes & Config
-  const [repDesde, setRepDesde] = useState("");
-  const [repHasta, setRepHasta] = useState("");
+  const [repDesde, setRepDesde] = useState(getTodayStr());
+  const [repHasta, setRepHasta] = useState(getTodayStr());
   const [repFiltroEmpleado, setRepFiltroEmpleado] = useState("");
   const [reportes, setReportes] = useState<any[]>([]);
   const [configAlmuerzo, setConfigAlmuerzo] = useState("09:00");
@@ -1547,40 +1760,179 @@ function GerentePanel({ token }: { token: string }) {
   };
 
   const crearServicio = async () => {
-    if (!nuevoServicio) return;
-    try {
-      const res = await fetch("http://localhost:3001/api/services", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ nombre: nuevoServicio })
-      });
-      if (res.ok) {
-        Swal.fire({ title: "Éxito", text: "Servicio creado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-        setNuevoServicio("");
-        fetchServicios();
+    const { value: nombreServicio } = await Swal.fire({
+      title: 'Nuevo Servicio',
+      input: 'text',
+      inputLabel: 'Nombre del Servicio',
+      inputPlaceholder: 'Ej. Terapia Intensiva',
+      showCancelButton: true,
+      confirmButtonText: 'Crear',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000',
+      inputValidator: (value) => {
+        if (!value) return 'Debes escribir un nombre para el servicio';
       }
-    } catch (e) {
-      Swal.fire({ title: "Error", text: "Error al crear servicio", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    });
+
+    if (nombreServicio) {
+      try {
+        const res = await fetch("http://localhost:3001/api/services", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ nombre: nombreServicio })
+        });
+        if (res.ok) {
+          Swal.fire({ title: "Éxito", text: "Servicio creado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          fetchServicios();
+        } else {
+          const data = await res.json();
+          Swal.fire({ title: "Error", text: data.error || "Error al crear", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      } catch (e) {
+        Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
     }
   };
 
-  const asignarJefe = async () => {
-    try {
-      const res = await fetch("http://localhost:3001/api/users/jefe-servicio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ username: jefeUsername, password: jefePassword, servicioId: Number(jefeServicioId) })
-      });
-      if (res.ok) {
-        Swal.fire({ title: "Éxito", text: "Jefe asignado exitosamente", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-        setJefeUsername(""); setJefePassword(""); setJefeServicioId("");
-      } else {
-        const data = await res.json();
-        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+  const asignarJefeModal = async (servicioId: number, servicioNombre: string) => {
+    const { value: formValues } = await Swal.fire({
+      title: `Asignar Jefe a ${servicioNombre}`,
+      html:
+        '<p style="font-size:13px; color:#6b7280; margin-bottom:12px;">Se creará la cuenta con la contraseña por defecto <strong>123456</strong>. El usuario deberá cambiarla obligatoriamente en su primer ingreso.</p>' +
+        '<input id="swal-input-nombre" class="swal2-input" placeholder="Nombre Completo (Ej. Juan Méndez)">' +
+        '<input id="swal-input-user" class="swal2-input" placeholder="Nombre de usuario (Ej. jmendez)">',
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Crear Cuenta',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000',
+      preConfirm: () => {
+        const nombreCompleto = (document.getElementById('swal-input-nombre') as HTMLInputElement).value;
+        const username = (document.getElementById('swal-input-user') as HTMLInputElement).value;
+        if (!nombreCompleto || !username) {
+          Swal.showValidationMessage('El Nombre Completo y el Nombre de Usuario son obligatorios');
+          return false;
+        }
+        return { nombreCompleto, username };
       }
-    } catch (e) {
-      Swal.fire({ title: "Error", text: "Error al asignar jefe", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    });
+
+    if (formValues) {
+      try {
+        const res = await fetch("http://localhost:3001/api/users/jefe-servicio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ username: formValues.username, nombreCompleto: formValues.nombreCompleto, servicioId })
+        });
+        if (res.ok) {
+          Swal.fire({ title: "Éxito", text: "Jefe asignado exitosamente (Contraseña: 123456)", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          fetchServicios();
+        } else {
+          const data = await res.json();
+          Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      } catch (e) {
+        Swal.fire({ title: "Error", text: "Error de red", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
     }
+  };
+
+  const resetJefePassword = async (id: number, username: string) => {
+    Swal.fire({
+      title: '¿Resetear contraseña?',
+      text: `Se cambiará la contraseña de "${username}" a 123456 y se le exigirá cambiarla en su próximo ingreso.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, resetear',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`http://localhost:3001/api/users/${id}/reset-password`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            Swal.fire({ title: "Éxito", text: `Contraseña de ${username} reseteada a '123456'`, icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+            fetchServicios();
+          } else {
+            const data = await res.json();
+            Swal.fire({ title: "Error", text: data.error || "No se pudo resetear", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          }
+        } catch (e) {
+          Swal.fire({ title: "Error", text: "Error de red", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      }
+    });
+  };
+
+  const toggleJefeStatus = async (id: number, username: string, currentActive: boolean) => {
+    const accion = currentActive ? "Inhabilitar" : "Habilitar";
+    Swal.fire({
+      title: `¿${accion} usuario?`,
+      text: `¿Deseas ${accion.toLowerCase()} la cuenta de "${username}"?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: `Sí, ${accion.toLowerCase()}`,
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`http://localhost:3001/api/users/${id}/disable`, {
+            method: "PUT",
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            Swal.fire({ title: "Éxito", text: `Usuario ${username} ${currentActive ? 'inhabilitado' : 'habilitado'}`, icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+            fetchServicios();
+          } else {
+            const data = await res.json();
+            Swal.fire({ title: "Error", text: data.error || "No se pudo actualizar el estado", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          }
+        } catch (e) {
+          Swal.fire({ title: "Error", text: "Error de red", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      }
+    });
+  };
+
+  const deleteJefe = async (id: number, username: string) => {
+    Swal.fire({
+      title: '¿Eliminar usuario?',
+      text: `¿Seguro que deseas eliminar la cuenta de "${username}"? Esta acción no se puede deshacer.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`http://localhost:3001/api/users/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            Swal.fire({ title: "Éxito", text: `Usuario ${username} eliminado`, icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+            fetchServicios();
+          } else {
+            const data = await res.json();
+            Swal.fire({ title: "Error", text: data.error || "No se pudo eliminar", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          }
+        } catch (e) {
+          Swal.fire({ title: "Error", text: "Error de red", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      }
+    });
   };
 
   const generarReporte = async () => {
@@ -1606,10 +1958,272 @@ function GerentePanel({ token }: { token: string }) {
       });
       if (res.ok) {
         Swal.fire({ title: "Guardado", text: "Configuración guardada", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        if (onConfigUpdated) {
+          onConfigUpdated(configAlmuerzo, configCena);
+        }
       }
     } catch {
       Swal.fire({ title: "Error", text: "No se pudo guardar la configuración.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
+  };
+
+  const handleImprimirCocina = () => {
+    if (reportes.length === 0) {
+      Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const filtered = reportes.filter(r => {
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+
+    if (filtered.length === 0) {
+      Swal.fire({ title: "Aviso", text: "No hay datos para imprimir según el filtro actual.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const resAlmuerzo: Record<string, number> = {};
+    const resCena: Record<string, number> = {};
+    let totalAlmuerzo = 0;
+    let totalCena = 0;
+
+    filtered.forEach(r => {
+      const comida = (r.TipoComida || '').toLowerCase();
+      const dieta = r.TipoDieta || 'Normal';
+      if (comida === 'almuerzo') {
+        resAlmuerzo[dieta] = (resAlmuerzo[dieta] || 0) + 1;
+        totalAlmuerzo++;
+      } else if (comida === 'cena') {
+        resCena[dieta] = (resCena[dieta] || 0) + 1;
+        totalCena++;
+      } else {
+        resAlmuerzo[dieta] = (resAlmuerzo[dieta] || 0) + 1;
+        totalAlmuerzo++;
+      }
+    });
+
+    const now = new Date();
+    const fechaImpresion = now.toLocaleDateString('es-AR');
+    const horaImpresion = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\s?[a-zA-Z\.]+/g, '').trim();
+    const usuarioImpresion = username || 'Usuario';
+    const efNombre = hospitalName || 'Efector';
+    const fDesdeStr = repDesde.split('-').reverse().join('/');
+    const fHastaStr = repHasta.split('-').reverse().join('/');
+
+    const renderTablaDietas = (counts: Record<string, number>, total: number) => {
+      if (total === 0) return '<p style="color:#666; font-style:italic; margin-bottom: 20px;">Sin pedidos registrados para este turno.</p>';
+      let rows = '';
+      Object.entries(counts).sort((a,b) => b[1] - a[1]).forEach(([dieta, cant]) => {
+        rows += `
+          <tr>
+            <td style="padding: 8px 12px; border: 1px solid #ccc; font-weight: bold; font-size: 14px;">${dieta}</td>
+            <td style="padding: 8px 12px; border: 1px solid #ccc; text-align: center; font-size: 16px; font-weight: bold; color: #1e40af;">${cant}</td>
+          </tr>
+        `;
+      });
+      return `
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 8px 12px; border: 1px solid #ccc; text-align: left; font-size: 13px; color: #374151;">Tipo de Dieta</th>
+              <th style="padding: 8px 12px; border: 1px solid #ccc; text-align: center; font-size: 13px; color: #374151; width: 180px;">Cantidad a Cocinar</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+            <tr style="background-color: #e5e7eb; font-weight: bold;">
+              <td style="padding: 8px 12px; border: 1px solid #ccc; text-align: right; font-size: 14px;">SUBTOTAL RACIONES:</td>
+              <td style="padding: 8px 12px; border: 1px solid #ccc; text-align: center; font-size: 16px; color: #000;">${total}</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    };
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Permita las ventanas emergentes para imprimir.");
+      return;
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Reporte de Producción - Cocina</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 25px; color: #111; }
+            .header { border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .title { font-size: 22px; font-weight: bold; color: #1e3a8a; letter-spacing: 0.5px; }
+            .subtitle { font-size: 14px; color: #374151; margin-top: 5px; }
+            .meta { text-align: right; font-size: 12px; color: #4b5563; }
+            .section-title { font-size: 16px; font-weight: bold; color: #1f2937; margin-top: 20px; border-left: 4px solid #2563eb; padding-left: 10px; }
+            .footer { margin-top: 35px; border-top: 1px dashed #9ca3af; padding-top: 8px; font-size: 10px; color: #6b7280; text-align: right; }
+            @media print {
+              @page { size: A4 portrait; margin: 1.5cm; }
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body onload="setTimeout(() => { window.print(); window.close(); }, 600)">
+          <div class="header">
+            <div>
+              <div class="title">REPORTE DE PRODUCCIÓN - COCINA</div>
+              <div class="subtitle">Efector: <strong>${efNombre}</strong></div>
+            </div>
+            <div class="meta">
+              <div>Período: <strong>${fDesdeStr} ${fDesdeStr !== fHastaStr ? 'al ' + fHastaStr : ''}</strong></div>
+              <div>Fecha de Emisión: ${fechaImpresion}</div>
+            </div>
+          </div>
+
+          <div class="section-title">☀️ ALMUERZO</div>
+          ${renderTablaDietas(resAlmuerzo, totalAlmuerzo)}
+
+          <div class="section-title">🌙 CENA</div>
+          ${renderTablaDietas(resCena, totalCena)}
+
+          <div style="margin-top: 25px; padding: 14px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px; font-size: 16px; font-weight: bold; text-align: right; color: #1e3a8a;">
+            GRAN TOTAL RACIONES A COCINAR: <span style="color: #1d4ed8; font-size: 20px; margin-left: 8px;">${totalAlmuerzo + totalCena}</span>
+          </div>
+
+          <div class="footer">
+            Impreso el ${fechaImpresion} a las ${horaImpresion} | Usuario: ${usuarioImpresion}
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const handleImprimirEntrega = () => {
+    if (reportes.length === 0) {
+      Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const filtered = reportes.filter(r => {
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+
+    if (filtered.length === 0) {
+      Swal.fire({ title: "Aviso", text: "No hay datos para imprimir según el filtro actual.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const now = new Date();
+    const fechaImpresion = now.toLocaleDateString('es-AR');
+    const horaImpresion = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\s?[a-zA-Z\.]+/g, '').trim();
+    const usuarioImpresion = username || 'Usuario';
+    const efNombre = hospitalName || 'Efector';
+    const fDesdeStr = repDesde.split('-').reverse().join('/');
+    const fHastaStr = repHasta.split('-').reverse().join('/');
+
+    let rowsHTML = '';
+    filtered.forEach((r, idx) => {
+      const fechaOrder = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
+      const servicioName = r.Servicio ? r.Servicio.Nombre : "Emergencia";
+      const nombreAgente = r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`;
+      const dniAgente = r.Personal ? (r.Personal.DNI || "-") : (r.EmergenciaDNI || "-");
+
+      rowsHTML += `
+        <tr>
+          <td style="padding: 8px 6px; border: 1px solid #999; text-align: center; font-size: 11px;">${idx + 1}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px; white-space: nowrap;">${fechaOrder}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">${servicioName}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
+            <strong>${nombreAgente}</strong><br/>
+            <span style="color: #555; font-size: 10px;">DNI: ${dniAgente}</span>
+          </td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
+            <strong>${r.TipoComida}</strong> (${r.TipoDieta})
+          </td>
+          <td style="padding: 8px 6px; border: 1px solid #999; width: 190px; text-align: center; vertical-align: bottom;">
+            <div style="border-bottom: 1px solid #444; height: 35px; width: 90%; margin: 0 auto 3px auto;"></div>
+            <span style="font-size: 8px; color: #666; text-transform: uppercase; font-weight: bold;">Firma / Conformidad</span>
+          </td>
+        </tr>
+      `;
+    });
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Permita las ventanas emergentes para imprimir.");
+      return;
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Planilla de Entrega y Conformidad</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #111; }
+            .header { border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .title { font-size: 20px; font-weight: bold; color: #111; }
+            .subtitle { font-size: 13px; color: #374151; margin-top: 4px; }
+            .meta { text-align: right; font-size: 11px; color: #4b5563; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th { background-color: #f3f4f6; padding: 8px 6px; border: 1px solid #666; font-size: 11px; text-align: left; text-transform: uppercase; color: #374151; }
+            .summary { margin-top: 18px; font-size: 13px; font-weight: bold; text-align: right; border-top: 2px solid #111; padding-top: 8px; }
+            .footer { margin-top: 25px; border-top: 1px dashed #aaa; padding-top: 6px; font-size: 9px; color: #6b7280; text-align: right; }
+            @media print {
+              @page { size: A4 portrait; margin: 1cm; }
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body onload="setTimeout(() => { window.print(); window.close(); }, 600)">
+          <div class="header">
+            <div>
+              <div class="title">PLANILLA DE ENTREGA Y CONFORMIDAD DE RACIONES</div>
+              <div class="subtitle">Efector: <strong>${efNombre}</strong></div>
+            </div>
+            <div class="meta">
+              <div>Período: <strong>${fDesdeStr} ${fDesdeStr !== fHastaStr ? 'al ' + fHastaStr : ''}</strong></div>
+              <div>Fecha de Emisión: ${fechaImpresion}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: center; width: 30px;">#</th>
+                <th style="width: 80px;">Fecha</th>
+                <th>Servicio / Destino</th>
+                <th>Agente / Paciente</th>
+                <th style="width: 140px;">Comida / Dieta</th>
+                <th style="text-align: center; width: 190px;">Firma de Conformidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHTML}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            TOTAL RACIONES A ENTREGAR: ${filtered.length}
+          </div>
+
+          <div class="footer">
+            Impreso el ${fechaImpresion} a las ${horaImpresion} | Usuario: ${usuarioImpresion}
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
 
   const handleImprimirVouchers = (tipo: 'Almuerzo' | 'Cena') => {
@@ -1622,7 +2236,7 @@ function GerentePanel({ token }: { token: string }) {
       if (r.TipoComida !== tipo) return false;
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
-      const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
       const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
       return name.includes(term) || dni.includes(term);
     });
@@ -1644,6 +2258,11 @@ function GerentePanel({ token }: { token: string }) {
       alert("Permita las ventanas emergentes para imprimir.");
       return;
     }
+
+    const now = new Date();
+    const fechaImpresion = now.toLocaleDateString('es-AR');
+    const horaImpresion = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const usuarioImpresion = username || 'Usuario';
 
     let vouchersHTML = '';
     Object.entries(grupos).forEach(([servicio, platos]) => {
@@ -1692,6 +2311,9 @@ function GerentePanel({ token }: { token: string }) {
              </div>
              <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
           </div>
+          <div class="v-footer">
+             Impreso el ${fechaImpresion} a las ${horaImpresion} hs | Usuario: ${usuarioImpresion}
+          </div>
         </div>
         <div class="cut-line"></div>
       `;
@@ -1729,6 +2351,10 @@ function GerentePanel({ token }: { token: string }) {
             .v-diets { font-size: 12px; }
             .v-qr { width: 80px; display: flex; align-items: flex-end; justify-content: flex-end; }
             .v-qr img { width: 80px; height: 80px; }
+            .v-footer {
+              border-top: 1px dashed #ccc; padding: 4px 10px; font-size: 9px;
+              color: #555; text-align: right; position: relative; z-index: 2; background: #fbfbfb;
+            }
             .cut-line { width: 100%; max-width: 700px; margin: 20px auto; border-top: 2px dashed #aaa; }
             @media print { 
               @page { size: A4 portrait; margin: 1cm; } 
@@ -1751,7 +2377,7 @@ function GerentePanel({ token }: { token: string }) {
     const dataToExport = reportes.map(r => ({
       Fecha: r.FechaPedido.split('T')[0],
       DNI: r.Personal ? r.Personal.DNI : r.EmergenciaDNI,
-      Nombre: r.Personal ? `${r.Personal.Apellido} ${r.Personal.Nombre}` : `${r.EmergenciaApellido} ${r.EmergenciaNombre}`,
+      Nombre: r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`,
       Servicio: r.Servicio ? r.Servicio.Nombre : "Emergencia",
       Comida: r.TipoComida,
       Dieta: r.TipoDieta,
@@ -1773,7 +2399,7 @@ function GerentePanel({ token }: { token: string }) {
     const tableData = reportes.map(r => [
       r.FechaPedido.split('T')[0].split('-').reverse().join('/'),
       r.Personal ? r.Personal.DNI : (r.EmergenciaDNI || ""),
-      r.Personal ? `${r.Personal.Apellido} ${r.Personal.Nombre}` : `${r.EmergenciaApellido} ${r.EmergenciaNombre}`,
+      r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`,
       r.Servicio ? r.Servicio.Nombre : "Emergencia",
       r.TipoComida,
       r.TipoDieta,
@@ -1888,55 +2514,140 @@ function GerentePanel({ token }: { token: string }) {
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
           <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
             <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-              <Building className="w-5 h-5 mr-2 text-indigo-500" /> Gestión de Servicios
+              <Building className="w-5 h-5 mr-2 text-indigo-500" /> Gestión de Servicios{hospitalName ? ` de ${hospitalName}` : ''}
             </h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Configura las áreas del efector y sus encargados.</p>
           </div>
           <div className="p-8 flex flex-col space-y-8">
             <div>
-              <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-3 uppercase tracking-wider">1. Servicios Activos</h3>
-              {servicios.length === 0 ? (
-                <p className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-4 rounded-xl">No hay servicios creados aún.</p>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider">1. Servicios Activos</h3>
+                <button onClick={crearServicio} className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-800/60 px-3 py-1.5 rounded-lg transition-colors flex items-center shadow-sm">
+                  <Plus className="w-4 h-4 mr-1" /> <span className="text-xs font-bold">Nuevo</span>
+                </button>
+              </div>
+              
+              <div className="mb-4 relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-4 w-4 text-gray-400" />
+                </div>
+                <input 
+                  type="text" 
+                  value={buscarServicio} 
+                  onChange={e => { setBuscarServicio(e.target.value); setServiciosPage(1); }} 
+                  placeholder="Buscar servicio..." 
+                  className="block w-full pl-10 pr-3 py-2 border border-gray-200 dark:border-gray-700 rounded-xl leading-5 bg-white dark:bg-gray-800 placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm transition-shadow shadow-sm text-gray-900 dark:text-gray-100" 
+                />
+              </div>
+
+              {serviciosFiltrados.length === 0 ? (
+                <p className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 p-4 rounded-xl">No hay servicios que coincidan con la búsqueda.</p>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {servicios.map(s => (
-                    <span key={s.Id} className="bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-100 dark:border-indigo-800/50 flex items-center shadow-sm">
-                      {s.Nombre} <span className="ml-2 opacity-50 font-normal border-l border-indigo-200 dark:border-indigo-700 pl-2">ID: {s.Id}</span>
-                    </span>
-                  ))}
+                <div className="flex flex-col space-y-3">
+                  {serviciosFiltrados.slice((serviciosPage - 1) * 10, serviciosPage * 10).map(s => {
+                    const jefes = s.Usuarios || [];
+                    return (
+                      <div key={s.Id} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2">
+                            <span className="font-extrabold text-gray-900 dark:text-gray-100 text-base">{s.Nombre}</span>
+                            <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-300 text-xs px-2.5 py-0.5 rounded-full font-semibold">
+                              {s._count?.Personal || 0} Agentes
+                            </span>
+                          </div>
+
+                          <div className="mt-2 space-y-1.5">
+                            <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center mb-1">
+                              <User className="w-3.5 h-3.5 mr-1 text-indigo-500" /> Jefes de Servicio:
+                            </div>
+                            {jefes.length > 0 ? (
+                              <div className="flex flex-col space-y-1.5">
+                                {jefes.map((u: any) => {
+                                  const displayName = u.NombreCompleto || u.NombreUsuario;
+                                  return (
+                                    <div 
+                                      key={u.Id} 
+                                      className={`flex items-center justify-between bg-gray-50 dark:bg-gray-800/80 px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-700/60 ${!u.Activo ? 'opacity-60 bg-red-50/40 dark:bg-red-950/20' : ''}`}
+                                    >
+                                      <div className="flex items-center space-x-2">
+                                        <span className={`text-sm font-semibold ${!u.Activo ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>
+                                          {displayName}
+                                        </span>
+                                        {u.NombreCompleto && (
+                                          <span className="text-xs text-gray-400 dark:text-gray-500">
+                                            ({u.NombreUsuario})
+                                          </span>
+                                        )}
+                                        {!u.Activo && (
+                                          <span className="text-[10px] bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded font-bold">
+                                            Inhabilitado
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center space-x-1">
+                                        <button
+                                          onClick={() => resetJefePassword(u.Id, displayName)}
+                                          className="p-1 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded transition-colors"
+                                          title="Resetear Contraseña a '123456'"
+                                        >
+                                          <Lock className="w-4 h-4" />
+                                        </button>
+                                        <button
+                                          onClick={() => toggleJefeStatus(u.Id, displayName, u.Activo)}
+                                          className={`p-1 rounded transition-colors ${
+                                            u.Activo
+                                              ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+                                              : 'text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40'
+                                          }`}
+                                          title={u.Activo ? 'Inhabilitar usuario' : 'Habilitar usuario'}
+                                        >
+                                          {u.Activo ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                                        </button>
+                                        <button
+                                          onClick={() => deleteJefe(u.Id, displayName)}
+                                          className="p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded transition-colors"
+                                          title="Eliminar usuario"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-gray-400 dark:text-gray-500 italic bg-gray-50 dark:bg-gray-800/40 px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-800">
+                                Sin Jefe de Servicio asignado
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-start">
+                          <button 
+                            onClick={() => asignarJefeModal(s.Id, s.Nombre)} 
+                            className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-3 py-1.5 rounded-lg transition-colors flex items-center text-xs font-bold shadow-sm"
+                            title="Asignar Jefe de Servicio"
+                          >
+                            <UserPlus className="w-4 h-4 mr-1.5" /> Asignar Jefe
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {serviciosFiltrados.length > 10 && (
+                    <div className="flex justify-between items-center mt-4">
+                      <button onClick={() => setServiciosPage(p => Math.max(1, p - 1))} disabled={serviciosPage === 1} className="text-sm px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-md disabled:opacity-50 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">Anterior</button>
+                      <span className="text-sm text-gray-500 font-medium">Página {serviciosPage} de {Math.ceil(serviciosFiltrados.length / 10)}</span>
+                      <button onClick={() => setServiciosPage(p => Math.min(Math.ceil(serviciosFiltrados.length / 10), p + 1))} disabled={serviciosPage === Math.ceil(serviciosFiltrados.length / 10)} className="text-sm px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-md disabled:opacity-50 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">Siguiente</button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 uppercase tracking-wider">Nuevo Servicio</h3>
-                <div className="flex flex-col space-y-3">
-                  <input type="text" value={nuevoServicio} onChange={e => setNuevoServicio(e.target.value)} placeholder="Ej. Terapia Intensiva" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
-                  <button onClick={crearServicio} className="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
-                    Crear Servicio
-                  </button>
-                </div>
-              </div>
 
-              <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
-                <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 uppercase tracking-wider">Asignar Jefe de Servicio</h3>
-                <div className="flex flex-col space-y-3">
-                  <input type="text" value={jefeUsername} onChange={e => setJefeUsername(e.target.value)} placeholder="Usuario (Ej. jmendez)" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
-                  <input type="password" value={jefePassword} onChange={e => setJefePassword(e.target.value)} placeholder="Contraseña Temporal" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
-                  <div className="relative">
-                    <select value={jefeServicioId} onChange={e => setJefeServicioId(e.target.value)} className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow appearance-none">
-                      <option value="" disabled>Seleccione Área...</option>
-                      {servicios.map(s => <option key={s.Id} value={s.Id}>{s.Nombre}</option>)}
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-                  </div>
-                  <button onClick={asignarJefe} className="w-full bg-blue-600 dark:bg-blue-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
-                    Crear Cuenta de Jefe
-                  </button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -1972,9 +2683,15 @@ function GerentePanel({ token }: { token: string }) {
               <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Fecha Hasta</label>
               <input type="date" value={repHasta} onChange={e => setRepHasta(e.target.value)} className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" />
             </div>
-            <div className="flex gap-2 w-full sm:w-auto">
-              <button onClick={generarReporte} className="flex-1 sm:flex-none flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2.5 rounded-lg shadow-sm font-bold transition-colors">
+            <div className="flex flex-wrap gap-2 w-full lg:w-auto">
+              <button onClick={generarReporte} className="flex-1 sm:flex-none flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg shadow-sm font-bold transition-colors">
                 <Search className="w-4 h-4 mr-2" /> Buscar
+              </button>
+              <button onClick={handleImprimirCocina} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700 text-white'}`} title="Imprimir reporte de producción para Cocina (totales por dieta)">
+                <Printer className="w-4 h-4 mr-1.5" /> Cocina
+              </button>
+              <button onClick={handleImprimirEntrega} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`} title="Imprimir planilla de Entrega con espacio para firmas">
+                <Printer className="w-4 h-4 mr-1.5" /> Entrega
               </button>
               <button onClick={exportExcel} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="Exportar a Excel (CSV)">
                 EXCEL
@@ -2018,7 +2735,7 @@ function GerentePanel({ token }: { token: string }) {
                   {reportes.filter(r => {
                     if (!repFiltroEmpleado) return true;
                     const term = repFiltroEmpleado.toLowerCase();
-                    const name = r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}`.toLowerCase() : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`.toLowerCase();
+                    const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
                     const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
                     return name.includes(term) || dni.includes(term);
                   }).map((r) => (
@@ -2031,7 +2748,7 @@ function GerentePanel({ token }: { token: string }) {
                         </span>
                         <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{r.TipoDieta}</span>
                       </td>
-                      <td className="px-6 py-4 text-sm font-bold text-gray-900 dark:text-gray-100">{r.Personal ? `${r.Personal.Nombre} ${r.Personal.Apellido}` : `${r.EmergenciaNombre} ${r.EmergenciaApellido}`}</td>
+                      <td className="px-6 py-4 text-sm font-bold text-gray-900 dark:text-gray-100">{r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`}</td>
                       <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.Estado === 'Aprobado' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : r.Estado === 'Rechazado' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
@@ -2094,6 +2811,8 @@ function RRHHPanel({ token }: { token: string }) {
   const { theme } = useTheme();
 
   const [gerentes, setGerentes] = useState<any[]>([]);
+  const [importando, setImportando] = useState(false);
+  const [importProgress, setImportProgress] = useState(0);
 
   const fetchHospitales = async () => {
     try {
@@ -2221,9 +2940,69 @@ function RRHHPanel({ token }: { token: string }) {
     });
   };
 
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setImportando(true);
+    setImportProgress(0);
+    const reader = new FileReader();
+    reader.onload = async (evt) => {
+      try {
+        const bstr = evt.target?.result;
+        const workbook = XLSX.read(bstr, { type: 'binary' });
+        const wsname = workbook.SheetNames[0];
+        const ws = workbook.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json(ws);
+
+        if (data.length === 0) {
+          Swal.fire('Error', 'El Excel está vacío', 'error');
+          setImportando(false);
+          return;
+        }
+
+        const CHUNK_SIZE = 500;
+        let totalImported = 0;
+        let hasError = false;
+        
+        for (let i = 0; i < data.length; i += CHUNK_SIZE) {
+          const chunk = data.slice(i, i + CHUNK_SIZE);
+          const res = await fetch("http://localhost:3001/api/personal/bulk", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ data: chunk })
+          });
+          
+          if (res.ok) {
+            const respData = await res.json();
+            totalImported += respData.count;
+            setImportProgress(Math.min(100, Math.round(((i + chunk.length) / data.length) * 100)));
+          } else {
+            const errData = await res.json();
+            Swal.fire('Error', errData.error || 'Error al importar', 'error');
+            hasError = true;
+            break;
+          }
+        }
+
+        if (!hasError) {
+          Swal.fire('Éxito', `Se importaron/actualizaron ${totalImported} registros`, 'success');
+          fetchHospitales(); // refrescar
+        }
+      } catch (err) {
+        Swal.fire('Error', 'Error al procesar el archivo Excel', 'error');
+      } finally {
+        setImportando(false);
+        if (e.target) e.target.value = '';
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
   const tabs = [
     { id: "Hospitales", label: "Efectores", icon: <Building className="w-4 h-4 mr-2" /> },
-    { id: "Administracion", label: "Administración Global", icon: <Settings className="w-4 h-4 mr-2" /> }
+    { id: "Administracion", label: "Administración Global", icon: <Settings className="w-4 h-4 mr-2" /> },
+    { id: "Importacion", label: "Importar Personal", icon: <Upload className="w-4 h-4 mr-2" /> }
   ];
 
   return (
@@ -2435,10 +3214,50 @@ function RRHHPanel({ token }: { token: string }) {
               </table>
             </div>
           </div>
-
         </div>
       </div>
       )}
+
+      {activeTab === "Importacion" && (
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+            <Upload className="w-5 h-5 mr-2 text-indigo-500" /> Importación Masiva
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Cargar agentes (Personal) mediante un archivo Excel (.xlsx, .csv).</p>
+        </div>
+        <div className="p-8">
+          <div className="max-w-2xl bg-gray-50 dark:bg-gray-800/30 p-8 rounded-2xl border border-gray-100 dark:border-gray-800 border-dashed text-center">
+            <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-2">Selecciona o arrastra el archivo Excel</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">El archivo debe contener las siguientes columnas exactas: <br/><code className="text-xs bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded">efector, servicio, idpuesto, idagente, documento, agente, tipofuncion, tipoplanta, con_vianda, esguardia12, esguardia24</code></p>
+            <div className="flex justify-center">
+              <label className={`cursor-pointer bg-indigo-600 dark:bg-indigo-500 text-white px-6 py-3 rounded-xl text-sm font-bold shadow-md transition-all transform hover:scale-[1.02] active:scale-95 ${importando ? 'opacity-50 pointer-events-none' : 'hover:bg-indigo-700 dark:hover:bg-indigo-600'}`}>
+                {importando ? 'Importando...' : 'Examinar archivo'}
+                <input type="file" accept=".xlsx, .xls, .csv" className="hidden" onChange={handleImportExcel} disabled={importando} />
+              </label>
+            </div>
+            {importando && (
+              <div className="mt-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                <div className="flex justify-between text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                  <span>Progreso de importación</span>
+                  <span>{importProgress}%</span>
+                </div>
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 overflow-hidden shadow-inner">
+                  <div 
+                    className="bg-indigo-600 dark:bg-indigo-500 h-3 rounded-full transition-all duration-300 ease-out relative overflow-hidden" 
+                    style={{ width: `${importProgress}%` }}
+                  >
+                    <div className="absolute top-0 left-0 bottom-0 right-0 bg-white/20 animate-pulse"></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+      )}
+
     </div>
   );
 }

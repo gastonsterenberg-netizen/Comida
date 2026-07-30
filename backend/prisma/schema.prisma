@@ -34,8 +34,7 @@ model Servicios {
 model Personal {
   Id                  Int             @id @default(autoincrement())
   DNI                 String          @unique @db.NVarChar(20)
-  Nombre              String          @db.NVarChar(100)
-  Apellido            String          @db.NVarChar(100)
+  NombreCompleto      String          @db.NVarChar(200)
   HospitalId          Int
   ServicioId          Int
   IdPersonal          String?         @db.NVarChar(50)
@@ -44,8 +43,14 @@ model Personal {
   PeriodoFin          DateTime        @db.Date
   Activo              Boolean         @default(true)
   BajaProvisoriaFecha DateTime?       @db.Date
-  BajaProvisoriaHasta       DateTime?       @db.Date
-  BajaMotivo                String?         @db.NVarChar(50)
+  BajaProvisoriaHasta DateTime?       @db.Date
+  BajaMotivo          String?         @db.NVarChar(50)
+  IdPuesto            String?         @db.NVarChar(50)
+  TipoFuncion         String?         @db.NVarChar(100)
+  TipoPlanta          String?         @db.NVarChar(100)
+  ConVianda           Boolean         @default(false)
+  EsGuardia12         Boolean         @default(false)
+  EsGuardia24         Boolean         @default(false)
   Hospital                  Hospitales      @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   Servicio                  Servicios       @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   PedidosComida             PedidosComida[] @relation("PedidosPersonales")
@@ -61,6 +66,7 @@ model Roles {
 model Usuarios {
   Id                  Int             @id @default(autoincrement())
   NombreUsuario       String          @unique @db.NVarChar(50)
+  NombreCompleto      String?         @db.NVarChar(200)
   ContrasenaHash      String          @db.NVarChar(255)
   RolId               Int
   HospitalId          Int?
@@ -68,6 +74,7 @@ model Usuarios {
   TwoFactorSecret     String?         @db.NVarChar(128)
   TwoFactorHabilitado Boolean         @default(false)
   Activo              Boolean         @default(true)
+  DebeCambiarContrasena Boolean       @default(false)
   Rol                 Roles           @relation(fields: [RolId], references: [Id])
   Hospital            Hospitales?     @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   Servicio            Servicios?      @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
@@ -79,13 +86,13 @@ model Usuarios {
 model PedidosComida {
   Id                      Int        @id @default(autoincrement())
   FechaPedido             DateTime   @db.Date
+  FechaCreacion           DateTime   @default(now())
   TipoComida              String     @db.NVarChar(20)
   TipoDieta               String     @default("Normal") @db.NVarChar(30)
   PersonalId              Int?
   SolicitadoPorUsuarioId  Int
   Estado                  String     @default("Aprobado") @db.NVarChar(20)
-  EmergenciaNombre        String?    @db.NVarChar(100)
-  EmergenciaApellido      String?    @db.NVarChar(100)
+  EmergenciaNombreCompleto String?   @db.NVarChar(200)
   EmergenciaDNI           String?    @db.NVarChar(20)
   EmergenciaPeriodoInicio DateTime?  @db.Date
   EmergenciaPeriodoFin    DateTime?  @db.Date

@@ -19,7 +19,8 @@ const app = express();
 const prisma = new PrismaClient();
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 
@@ -67,7 +68,7 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
   try {
     const user = await prisma.usuarios.findUnique({ 
       where: { NombreUsuario: username },
-      include: { Hospital: true }
+      include: { Hospital: true, Servicio: true }
     });
     if (!user) {
       await logAudit(req, 'LOGIN_FALLIDO', `Intento con usuario: ${username}`);
@@ -94,6 +95,19 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
       { expiresIn: '12h' }
     );
 
+    if (user.DebeCambiarContrasena) {
+      res.json({
+        message: 'Debe cambiar su contraseña en el primer login',
+        requirePasswordChange: true,
+        tempToken: sessionToken,
+        user: {
+          id: user.Id,
+          username: user.NombreUsuario
+        }
+      });
+      return;
+    }
+
     res.json({
       message: 'Login exitoso',
       token: sessionToken,
@@ -102,7 +116,9 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
         username: user.NombreUsuario,
         roleId: user.RolId,
         hospitalId: user.HospitalId,
-        hospitalName: user.Hospital ? user.Hospital.Nombre : null
+        hospitalName: user.Hospital ? user.Hospital.Nombre : null,
+        servicioId: user.ServicioId,
+        servicioName: user.Servicio ? user.Servicio.Nombre : null
       }
     });
     
@@ -110,6 +126,72 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error en login' });
+  }
+});
+
+app.post('/api/auth/change-password', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const { newPassword } = req.body;
+  const userId = req.user?.userId;
+
+  if (!userId || !newPassword) {
+    res.status(400).json({ error: 'Datos incompletos' });
+    return;
+  }
+
+  if (!isPasswordSecure(newPassword)) {
+    res.status(400).json({ error: 'La nueva contraseña debe tener al menos 8 caracteres, incluir una letra mayúscula, una letra minúscula, un número y un carácter especial.' });
+    return;
+  }
+
+  try {
+    const user = await prisma.usuarios.findUnique({
+      where: { Id: userId },
+      include: { Hospital: true, Servicio: true }
+    });
+
+    if (!user) {
+      res.status(404).json({ error: 'Usuario no encontrado' });
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await prisma.usuarios.update({
+      where: { Id: userId },
+      data: {
+        ContrasenaHash: hashedPassword,
+        DebeCambiarContrasena: false
+      }
+    });
+
+    const sessionToken = jwt.sign(
+      {
+        userId: user.Id,
+        roleId: user.RolId,
+        hospitalId: user.HospitalId,
+        servicioId: user.ServicioId,
+      },
+      JWT_SECRET,
+      { expiresIn: '12h' }
+    );
+
+    res.json({
+      message: 'Contraseña actualizada exitosamente',
+      token: sessionToken,
+      user: {
+        id: user.Id,
+        username: user.NombreUsuario,
+        roleId: user.RolId,
+        hospitalId: user.HospitalId,
+        hospitalName: user.Hospital ? user.Hospital.Nombre : null,
+        servicioId: user.ServicioId,
+        servicioName: user.Servicio ? user.Servicio.Nombre : null
+      }
+    });
+
+    await logAudit(req, 'CAMBIO_CONTRASENA_OBLIGATORIO', undefined, user.Id);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al cambiar contraseña' });
   }
 });
 
@@ -151,7 +233,16 @@ app.get('/api/services', authenticateToken, isGerente, async (req: Request, res:
 
   try {
     const services = await prisma.servicios.findMany({
-      where: { HospitalId: hospitalId }
+      where: { HospitalId: hospitalId },
+      include: {
+        _count: {
+          select: { Personal: true }
+        },
+        Usuarios: {
+          where: { RolId: 3 },
+          select: { Id: true, NombreUsuario: true, NombreCompleto: true, Activo: true }
+        }
+      }
     });
     res.json(services);
   } catch (error) {
@@ -179,37 +270,52 @@ app.get('/api/users/gerentes', authenticateToken, async (req: Request, res: Resp
 });
 
 app.put('/api/users/:id/reset-password', authenticateToken, async (req: Request, res: Response): Promise<void> => {
-  if (req.user?.roleId !== 1) {
-    res.status(403).json({ error: 'No autorizado' });
-    return;
-  }
+  const targetId = Number(req.params.id);
   try {
-    const newHash = await bcrypt.hash('1234', 10);
+    const user = await prisma.usuarios.findUnique({ where: { Id: targetId } });
+    if (!user) {
+      res.status(404).json({ error: 'Usuario no encontrado' });
+      return;
+    }
+
+    const isRRHH = req.user?.roleId === 1;
+    const isGerenteOwner = req.user?.roleId === 2 && user.RolId === 3 && user.HospitalId === req.user.hospitalId;
+
+    if (!isRRHH && !isGerenteOwner) {
+      res.status(403).json({ error: 'No autorizado' });
+      return;
+    }
+
+    const newHash = await bcrypt.hash('123456', 10);
     await prisma.usuarios.update({
-      where: { Id: Number(req.params.id) },
-      data: { ContrasenaHash: newHash }
+      where: { Id: targetId },
+      data: { ContrasenaHash: newHash, DebeCambiarContrasena: true }
     });
-    res.json({ message: 'Contraseña reseteada a "1234"' });
+    res.json({ message: 'Contraseña reseteada a "123456"' });
   } catch (error) {
     res.status(500).json({ error: 'Error al resetear contraseña' });
   }
 });
 
 app.put('/api/users/:id/disable', authenticateToken, async (req: Request, res: Response): Promise<void> => {
-  if (req.user?.roleId !== 1) {
-    res.status(403).json({ error: 'No autorizado' });
-    return;
-  }
+  const targetId = Number(req.params.id);
   try {
-    const user = await prisma.usuarios.findUnique({ where: { Id: Number(req.params.id) } });
+    const user = await prisma.usuarios.findUnique({ where: { Id: targetId } });
     if (!user) {
       res.status(404).json({ error: 'Usuario no encontrado' });
       return;
     }
+
+    const isRRHH = req.user?.roleId === 1;
+    const isGerenteOwner = req.user?.roleId === 2 && user.RolId === 3 && user.HospitalId === req.user.hospitalId;
+
+    if (!isRRHH && !isGerenteOwner) {
+      res.status(403).json({ error: 'No autorizado' });
+      return;
+    }
+
     await prisma.usuarios.update({
-      where: { Id: Number(req.params.id) },
-      // TypeScript could complain because of 'Activo' if Prisma client isn't updated. 
-      // Workaround for now: Cast to any
+      where: { Id: targetId },
       data: { Activo: !((user as any).Activo) } as any
     });
     res.json({ message: 'Estado del usuario actualizado' });
@@ -219,31 +325,45 @@ app.put('/api/users/:id/disable', authenticateToken, async (req: Request, res: R
 });
 
 app.delete('/api/users/:id', authenticateToken, async (req: Request, res: Response): Promise<void> => {
-  if (req.user?.roleId !== 1) {
-    res.status(403).json({ error: 'No autorizado' });
-    return;
-  }
+  const targetId = Number(req.params.id);
   try {
+    const user = await prisma.usuarios.findUnique({ where: { Id: targetId } });
+    if (!user) {
+      res.status(404).json({ error: 'Usuario no encontrado' });
+      return;
+    }
+
+    const isRRHH = req.user?.roleId === 1;
+    const isGerenteOwner = req.user?.roleId === 2 && user.RolId === 3 && user.HospitalId === req.user.hospitalId;
+
+    if (!isRRHH && !isGerenteOwner) {
+      res.status(403).json({ error: 'No autorizado' });
+      return;
+    }
+
     await prisma.usuarios.delete({
-      where: { Id: Number(req.params.id) }
+      where: { Id: targetId }
     });
     res.json({ message: 'Usuario eliminado correctamente' });
-  } catch (error) {
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === 'P2003' || error.code === 'P2014') {
+      res.status(400).json({ 
+        error: 'No se puede eliminar este usuario porque tiene historial registrado (pedidos de comida o auditorías). Puedes inhabilitarlo usando el botón ❌ para quitarle el acceso manteniendo la integridad de los datos.' 
+      });
+      return;
+    }
     res.status(500).json({ error: 'Error al eliminar usuario' });
   }
 });
 
 app.post('/api/users/jefe-servicio', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
-  const { username, password, servicioId } = req.body;
+  const { username, nombreCompleto, servicioId } = req.body;
+  const password = req.body.password || '123456';
   const hospitalId = req.user?.hospitalId;
 
-  if (!username || !password || !servicioId || !hospitalId) {
-    res.status(400).json({ error: 'Faltan campos requeridos' });
-    return;
-  }
-
-  if (!isPasswordSecure(password)) {
-    res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres, incluir una letra mayúscula, una letra minúscula, un número y un carácter especial.' });
+  if (!username || !nombreCompleto || !servicioId || !hospitalId) {
+    res.status(400).json({ error: 'Faltan campos requeridos (Nombre completo, usuario y servicio)' });
     return;
   }
 
@@ -260,10 +380,12 @@ app.post('/api/users/jefe-servicio', authenticateToken, isGerente, async (req: R
     const user = await prisma.usuarios.create({
       data: {
         NombreUsuario: username,
+        NombreCompleto: nombreCompleto,
         ContrasenaHash: hashedPassword,
         RolId: 3, // JEFE_SERVICIO
         HospitalId: hospitalId,
-        ServicioId: sId
+        ServicioId: sId,
+        DebeCambiarContrasena: true
       }
     });
     res.json({ message: 'Jefe de Servicio creado exitosamente', userId: user.Id });
@@ -367,8 +489,7 @@ app.post('/api/staff/import_old', authenticateToken, isJefeServicio, upload.sing
             where: { DNI: strDni },
             update: {
                IdPersonal: String(idPersonal || ''),
-               Nombre: String(nombre),
-               Apellido: String(apellido),
+               NombreCompleto: (String(apellido) + ' ' + String(nombre)).trim(),
                HospitalId: userHospitalId,
                ServicioId: userServicioId,
                Horario: horario,
@@ -379,8 +500,7 @@ app.post('/api/staff/import_old', authenticateToken, isJefeServicio, upload.sing
             create: {
                DNI: strDni,
                IdPersonal: String(idPersonal || ''),
-               Nombre: String(nombre),
-               Apellido: String(apellido),
+               NombreCompleto: (String(apellido) + ' ' + String(nombre)).trim(),
                HospitalId: userHospitalId,
                ServicioId: userServicioId,
                Horario: horario,
@@ -649,8 +769,7 @@ app.post('/api/staff/plantel', authenticateToken, async (req: Request, res: Resp
       plantel.map(p => prisma.personal.upsert({
         where: { DNI: p.DNI },
         update: {
-          Nombre: p.NombreCompleto.split(',')[1]?.trim() || p.NombreCompleto,
-          Apellido: p.NombreCompleto.split(',')[0]?.trim() || '',
+          NombreCompleto: p.NombreCompleto,
           HospitalId: hospitalId,
           ServicioId: servicioId,
           Horario: p.Horario,
@@ -663,8 +782,7 @@ app.post('/api/staff/plantel', authenticateToken, async (req: Request, res: Resp
         },
         create: {
           DNI: p.DNI,
-          Nombre: p.NombreCompleto.split(',')[1]?.trim() || p.NombreCompleto,
-          Apellido: p.NombreCompleto.split(',')[0]?.trim() || '',
+          NombreCompleto: p.NombreCompleto,
           HospitalId: hospitalId,
           ServicioId: servicioId,
           Horario: p.Horario,
@@ -940,8 +1058,26 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
       const personal = await prisma.personal.findUnique({ where: { Id: o.personalId } });
       if (!personal) continue;
       
-      if (!personal.Horario.includes('24h') && mealsRequested > 1) {
-        throw new Error(`El agente ${personal.Nombre} ${personal.Apellido} (Guardia 12h) no puede pedir más de 1 comida desde el mismo servicio.`);
+      if (!personal.Horario.includes('24h')) {
+        if (mealsRequested > 1) {
+          throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) solo puede solicitar 1 comida por día.`);
+        }
+        if (isAlmuerzo && o.almuerzoDieta) {
+          const cenaExistente = await prisma.pedidosComida.findFirst({
+            where: { FechaPedido: today, TipoComida: 'Cena', Personal: { DNI: personal.DNI } }
+          });
+          if (cenaExistente) {
+            throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrada una Cena para el día de hoy.`);
+          }
+        }
+        if (isCena && o.cenaDieta) {
+          const almuerzoExistente = await prisma.pedidosComida.findFirst({
+            where: { FechaPedido: today, TipoComida: 'Almuerzo', Personal: { DNI: personal.DNI } }
+          });
+          if (almuerzoExistente) {
+            throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrado un Almuerzo para el día de hoy.`);
+          }
+        }
       }
 
       if (isAlmuerzo && o.almuerzoDieta) {
@@ -953,7 +1089,7 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
           }
         });
         if (almuerzoExistente) {
-          throw new Error(`El agente ${personal.Nombre} ${personal.Apellido} ya tiene un Almuerzo solicitado en otro servicio.`);
+          throw new Error(`El agente ${personal.NombreCompleto} ya tiene un Almuerzo solicitado en otro servicio.`);
         }
         
         newOrders.push({
@@ -974,7 +1110,7 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
           }
         });
         if (cenaExistente) {
-          throw new Error(`El agente ${personal.Nombre} ${personal.Apellido} ya tiene una Cena solicitada en otro servicio.`);
+          throw new Error(`El agente ${personal.NombreCompleto} ya tiene una Cena solicitada en otro servicio.`);
         }
 
         newOrders.push({
@@ -1001,7 +1137,7 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
 
 // 5.2 Crear solicitud de emergencia
 app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> => {
-  const { nombre, apellido, dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId } = req.body;
+  const { nombreCompleto, dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId } = req.body;
 
   // Validate deadlines
   const comidasToCheck = tipoComida === 'Ambos' ? ['Almuerzo', 'Cena'] : [tipoComida];
@@ -1036,8 +1172,7 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
           TipoDieta: tc === 'Cena' && tipoComida === 'Ambos' && tipoDietaCena ? tipoDietaCena : (tipoDieta || 'Normal'),
           SolicitadoPorUsuarioId: solicitadoPorUsuarioId,
           Estado: 'Pendiente',
-          EmergenciaNombre: nombre || '',
-          EmergenciaApellido: apellido || '',
+          EmergenciaNombreCompleto: nombreCompleto || '',
           EmergenciaDNI: dni || '',
           EmergenciaPeriodoInicio: start,
           EmergenciaPeriodoFin: end,
@@ -1310,6 +1445,80 @@ app.put('/api/hospital/config', authenticateToken, isGerente, async (req: Reques
     res.json({ message: 'Configuracin actualizada', data: updated });
   } catch (error) {
     res.status(500).json({ error: 'Error al actualizar configuracin' });
+  }
+});
+
+app.post('/api/personal/bulk', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  if (req.user?.roleId !== 1) {
+    res.status(403).json({ error: 'No autorizado. Solo RRHH/Admin.' });
+    return;
+  }
+  const { data } = req.body;
+  if (!data || !Array.isArray(data)) {
+    res.status(400).json({ error: 'Data invalida' });
+    return;
+  }
+
+  try {
+    let imported = 0;
+    for (const row of data) {
+      if (!row.documento || !row.agente) continue;
+
+      let hospital = await prisma.hospitales.findFirst({ where: { Nombre: String(row.efector).trim() } });
+      if (!hospital) {
+        const uniqueCode = String(row.efector).trim().substring(0,3).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+        hospital = await prisma.hospitales.create({
+          data: { Nombre: String(row.efector).trim(), Codigo: uniqueCode }
+        });
+      }
+
+      let servicio = await prisma.servicios.findFirst({ where: { Nombre: String(row.servicio).trim(), HospitalId: hospital.Id } });
+      if (!servicio) {
+        servicio = await prisma.servicios.create({
+          data: { Nombre: String(row.servicio).trim(), HospitalId: hospital.Id }
+        });
+      }
+
+      const nombreCompleto = String(row.agente).trim();
+      const isTruthy = (v: any) => v === 'S' || v === true || v === 1 || String(v).toLowerCase() === 'true';
+
+      await prisma.personal.upsert({
+        where: { DNI: String(row.documento) },
+        update: {
+          NombreCompleto: nombreCompleto,
+          HospitalId: hospital.Id,
+          ServicioId: servicio.Id,
+          IdPuesto: String(row.idpuesto || ''),
+          TipoFuncion: String(row.tipofuncion || ''),
+          TipoPlanta: String(row.tipoplanta || ''),
+          ConVianda: isTruthy(row.con_vianda),
+          EsGuardia12: isTruthy(row.esguardia12),
+          EsGuardia24: isTruthy(row.esguardia24),
+        },
+        create: {
+          DNI: String(row.documento),
+          NombreCompleto: nombreCompleto,
+          HospitalId: hospital.Id,
+          ServicioId: servicio.Id,
+          IdPersonal: String(row.idagente || ''),
+          Horario: '08:00 a 16:00',
+          PeriodoInicio: new Date(),
+          PeriodoFin: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
+          IdPuesto: String(row.idpuesto || ''),
+          TipoFuncion: String(row.tipofuncion || ''),
+          TipoPlanta: String(row.tipoplanta || ''),
+          ConVianda: isTruthy(row.con_vianda),
+          EsGuardia12: isTruthy(row.esguardia12),
+          EsGuardia24: isTruthy(row.esguardia24),
+        }
+      });
+      imported++;
+    }
+
+    res.json({ message: 'Importacion completada', count: imported });
+  } catch (error) {
+    console.error('Error importing personal:', error);
+    res.status(500).json({ error: 'Error al importar datos' });
   }
 });
 

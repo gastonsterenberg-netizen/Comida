@@ -59,12 +59,14 @@ IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='Usuarios' AND xtype='U')
 CREATE TABLE Usuarios (
     Id                   INT IDENTITY(1,1) PRIMARY KEY,
     NombreUsuario        NVARCHAR(50)  UNIQUE NOT NULL,
+    NombreCompleto       NVARCHAR(200) NULL,
     ContrasenaHash       NVARCHAR(255) NOT NULL,
     RolId                INT NOT NULL FOREIGN KEY REFERENCES Roles(Id),
     HospitalId           INT NULL FOREIGN KEY REFERENCES Hospitales(Id),
     ServicioId           INT NULL FOREIGN KEY REFERENCES Servicios(Id),
     TwoFactorSecret      NVARCHAR(128) NULL,
-    TwoFactorHabilitado  BIT DEFAULT 0
+    TwoFactorHabilitado  BIT DEFAULT 0,
+    DebeCambiarContrasena BIT DEFAULT 0
 );
 GO
 
