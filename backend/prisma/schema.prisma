@@ -20,13 +20,14 @@ model Hospitales {
 }
 
 model Servicios {
-  Id         Int         @id @default(autoincrement())
-  HospitalId Int
-  Nombre     String      @db.NVarChar(100)
-  Hospital   Hospitales  @relation(fields: [HospitalId], references: [Id])
-  Personal   Personal[]
-  Usuarios   Usuarios[]
-  Padron     PadronHabilitados[]
+  Id                Int                 @id @default(autoincrement())
+  HospitalId        Int
+  Nombre            String              @db.NVarChar(100)
+  VoucherIndividual Boolean             @default(false)
+  Hospital          Hospitales          @relation(fields: [HospitalId], references: [Id])
+  Personal          Personal[]
+  Usuarios          Usuarios[]
+  Padron            PadronHabilitados[]
 
   @@unique([HospitalId, Nombre])
 }

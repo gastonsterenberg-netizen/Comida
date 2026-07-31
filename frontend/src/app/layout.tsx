@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SisAC - Sistema de Administración de Comida",
-  description: "Sistema de Pedidos de Comida",
+  title: "SisAR - Sistema de Administración de Raciones",
+  description: "Sistema de Pedidos de Raciones",
 };
 
 export default function RootLayout({

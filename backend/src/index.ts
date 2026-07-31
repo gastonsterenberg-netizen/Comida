@@ -204,7 +204,7 @@ app.post('/api/auth/logout', authenticateToken, async (req: Request, res: Respon
 
 // 3.1 Crear/Actualizar Servicio
 app.post('/api/services', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
-  const { nombre } = req.body;
+  const { nombre, voucherIndividual } = req.body;
   const hospitalId = req.user?.hospitalId;
 
   if (!hospitalId || !nombre) {
@@ -214,7 +214,11 @@ app.post('/api/services', authenticateToken, isGerente, async (req: Request, res
 
   try {
     const service = await prisma.servicios.create({
-      data: { Nombre: nombre, HospitalId: hospitalId }
+      data: { 
+        Nombre: nombre, 
+        HospitalId: hospitalId,
+        VoucherIndividual: !!voucherIndividual
+      }
     });
     res.json({ message: 'Servicio creado exitosamente', service });
   } catch (error) {
@@ -247,6 +251,39 @@ app.get('/api/services', authenticateToken, isGerente, async (req: Request, res:
     res.json(services);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener servicios' });
+  }
+});
+
+// 3.1.c Alternar tipo de voucher (Consolidado/Individual)
+app.put('/api/services/:id/toggle-voucher', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const id = Number(req.params.id);
+  const hospitalId = req.user?.hospitalId;
+
+  if (!id || !hospitalId) {
+    res.status(400).json({ error: 'ID de servicio y hospital requerido' });
+    return;
+  }
+
+  try {
+    const service = await prisma.servicios.findFirst({
+      where: { Id: id, HospitalId: hospitalId }
+    });
+
+    if (!service) {
+      res.status(404).json({ error: 'Servicio no encontrado' });
+      return;
+    }
+
+    const updatedService = await prisma.servicios.update({
+      where: { Id: id },
+      data: { VoucherIndividual: !service.VoucherIndividual }
+    });
+
+    await logAudit(req, 'MODIFICACION_SERVICIO', `Servicio ${service.Nombre} cambiado a voucher individual: ${updatedService.VoucherIndividual}`);
+    res.json({ message: 'Servicio actualizado exitosamente', service: updatedService });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Error al actualizar el servicio' });
   }
 });
 
@@ -1419,7 +1456,7 @@ app.get('/api/hospitals', authenticateToken, async (req: Request, res: Response)
         Servicios: true,
         Usuarios: {
           where: { RolId: 2 }, // Gerentes
-          select: { Id: true, NombreUsuario: true }
+          select: { Id: true, NombreUsuario: true, NombreCompleto: true, Activo: true }
         }
       }
     });
@@ -1434,24 +1471,34 @@ app.post('/api/users/gerente', authenticateToken, async (req: Request, res: Resp
     res.status(403).json({ error: 'No autorizado. Solo RRHH/Admin.' });
     return;
   }
-  const { username, password, hospitalId } = req.body;
-  if (!isPasswordSecure(password)) {
-    res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres, incluir una letra mayúscula, una letra minúscula, un número y un carácter especial.' });
+  const { username, nombreCompleto, hospitalId } = req.body;
+  const password = req.body.password || '123456';
+
+  if (!username || !nombreCompleto || !hospitalId) {
+    res.status(400).json({ error: 'Faltan campos requeridos (Nombre completo, usuario y hospital)' });
     return;
   }
+
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await prisma.usuarios.create({
       data: {
         NombreUsuario: username,
+        NombreCompleto: nombreCompleto,
         ContrasenaHash: hashedPassword,
         RolId: 2, // GERENTE
         HospitalId: Number(hospitalId),
+        DebeCambiarContrasena: true
       }
     });
-    res.json({ message: 'Gerente creado exitosamente' });
-  } catch (error) {
-    res.status(500).json({ error: 'Error al crear gerente' });
+    res.json({ message: 'Gerente creado exitosamente', userId: user.Id });
+  } catch (error: any) {
+    console.error(error);
+    if (error.code === 'P2002') {
+      res.status(400).json({ error: 'Ese nombre de usuario ya está en uso. Por favor, elige otro.' });
+    } else {
+      res.status(500).json({ error: 'Error al crear gerente' });
+    }
   }
 });
 

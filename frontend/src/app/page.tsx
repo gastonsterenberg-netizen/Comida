@@ -1,5 +1,7 @@
 "use client";
 
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
 import { useState, useEffect } from "react";
 import { useTheme } from "next-themes";
 import Swal from 'sweetalert2';
@@ -42,7 +44,7 @@ export default function Home() {
 
   useEffect(() => {
     if (token) {
-      fetch("http://localhost:3001/api/hospital/config", { headers: { Authorization: `Bearer ${token}` } })
+      fetch(`${API_URL}/api/hospital/config`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => {
         if (d && d.LimiteAlmuerzo) setLimiteAlmuerzo(d.LimiteAlmuerzo);
@@ -105,7 +107,7 @@ export default function Home() {
               <Utensils className="w-5 h-5 text-white" />
             </div>
             <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">
-              SisAC - Sistema de Administración de Comida
+              SisAR - Sistema de Administración de Raciones
             </h1>
           </div>
           
@@ -206,7 +208,7 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
     setIsLoading(true);
     setError("");
     try {
-      const res = await fetch("http://localhost:3001/api/auth/login", {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password })
@@ -238,7 +240,7 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
     setIsLoading(true);
     setError("");
     try {
-      const res = await fetch("http://localhost:3001/api/auth/2fa/verify", {
+      const res = await fetch(`${API_URL}/api/auth/2fa/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ tempToken, token: totp })
@@ -266,7 +268,7 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
     }
 
     try {
-      const res = await fetch("http://localhost:3001/api/auth/change-password", {
+      const res = await fetch(`${API_URL}/api/auth/change-password`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -292,8 +294,8 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
           <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-3 rounded-2xl shadow-lg mb-4">
             <Utensils className="w-8 h-8 text-white" />
           </div>
-          <h2 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">SisAC</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sistema de Administración de Comida</p>
+          <h2 className="text-3xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">SisAR</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sistema de Administración de Raciones</p>
         </div>
         
         {error && (
@@ -443,7 +445,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
   // Emergency form state
   const [emgNombre, setEmgNombre] = useState("");
   const [emgDni, setEmgDni] = useState("");
-  const [emgComida, setEmgComida] = useState("Almuerzo");
+  const [emgComida, setEmgComida] = useState(isPastAlmuerzo ? "Cena" : "Almuerzo");
   const [emgDieta, setEmgDieta] = useState("Normal");
   const [emgDietaCena, setEmgDietaCena] = useState("Normal");
   const [emgDuracion, setEmgDuracion] = useState("hoy");
@@ -491,7 +493,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
   const fetchStaff = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/staff/active", {
+      const res = await fetch(`${API_URL}/api/staff/active`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -512,7 +514,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
   const fetchHistorialEmergencias = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/emergencies/history", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_URL}/api/emergencies/history`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setHistorialEmergencias(await res.json());
     } catch (e) {
       console.error(e);
@@ -521,7 +523,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
   const fetchPadron = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/staff/padron", { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_URL}/api/staff/padron`, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) setPadron(await res.json());
     } catch (e) {
       console.error(e);
@@ -591,7 +593,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     try {
       // 1. Process Removals / Updates (Bajas)
       for (const s of agentsToRemove) {
-        const bajaRes = await fetch(`http://localhost:3001/api/staff/${s.Id}/baja`, {
+        const bajaRes = await fetch(`${API_URL}/api/staff/${s.Id}/baja`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ tipo: "DEFINITIVA", motivo: "Reconfiguración de Plantel" })
@@ -607,7 +609,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
       // 2. Process Additions
       if (agentsToAdd.length > 0) {
-        const res = await fetch("http://localhost:3001/api/staff/plantel", {
+        const res = await fetch(`${API_URL}/api/staff/plantel`, {
            method: "POST",
            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
            body: JSON.stringify({ plantel: agentsToAdd })
@@ -634,7 +636,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0];
-    fetch(`http://localhost:3001/api/reports?fechaInicio=${today}&fechaFin=${today}`, {
+    fetch(`${API_URL}/api/reports?fechaInicio=${today}&fechaFin=${today}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     .then(r => r.json())
@@ -681,10 +683,9 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
             title: "Guardia 12h",
             text: `El agente (Guardia 12h) ya posee ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} registrado cuyo horario de pedido ya cerró. Solo se permite 1 comida por día.`,
             icon: "warning",
-            toast: true,
-            position: 'top-end',
-            showConfirmButton: false,
-            timer: 3500,
+            timer: 5000,
+            timerProgressBar: true,
+            confirmButtonColor: '#3b82f6',
             background: theme === 'dark' ? '#1f2937' : '#fff',
             color: theme === 'dark' ? '#fff' : '#000'
           });
@@ -694,10 +695,9 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
             title: "Guardia 12h",
             text: `Agente con Guardia 12h: se reemplazó la selección de ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} por ${tipoComida === "almuerzo" ? "Almuerzo" : "Cena"}.`,
             icon: "info",
-            toast: true,
-            position: 'top-end',
-            showConfirmButton: false,
-            timer: 3000,
+            timer: 5000,
+            timerProgressBar: true,
+            confirmButtonColor: '#3b82f6',
             background: theme === 'dark' ? '#1f2937' : '#fff',
             color: theme === 'dark' ? '#fff' : '#000'
           });
@@ -721,9 +721,50 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
         }
       };
     });
+
+    if (isSelecting) {
+      const currentIndex = staff.findIndex(s => s.Id === personalId);
+      if (currentIndex !== -1) {
+        let nextAgent = null;
+        for (let i = currentIndex + 1; i < staff.length; i++) {
+          if (!staff[i].bajaProvisoriaHoy) {
+            nextAgent = staff[i];
+            break;
+          }
+        }
+        if (nextAgent) {
+          setTimeout(() => {
+            const el = document.getElementById(`fila-agente-${nextAgent!.Id}`);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }, 100);
+        }
+      }
+    }
   };
 
   const handleGuardarPedidos = async () => {
+    const agentesSinDieta = staff.filter(p => !p.bajaProvisoriaHoy && !selections[p.Id]?.[planillaTab]);
+    if (agentesSinDieta.length > 0) {
+      const nombres = agentesSinDieta.map(p => p.NombreCompleto || `${p.Nombre || ''} ${p.Apellido || ''}`).join(", ");
+      const confirm = await Swal.fire({
+        title: "¿Guardar con agentes sin dieta?",
+        text: `Hay ${agentesSinDieta.length} agente(s) activo(s) sin dieta asignada para ${planillaTab === 'almuerzo' ? 'el almuerzo' : 'la cena'}: ${nombres.substring(0, 150)}${nombres.length > 150 ? '...' : ''}. ¿Deseas guardar de todas formas?`,
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: '#3b82f6',
+        cancelButtonColor: '#ef4444',
+        confirmButtonText: 'Sí, guardar de todas formas',
+        cancelButtonText: 'Cancelar y revisar',
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+      if (!confirm.isConfirmed) {
+        return;
+      }
+    }
+
     const ordersToSave = Object.keys(selections).map(id => ({
       personalId: Number(id),
       almuerzoDieta: planillaTab === "almuerzo" ? selections[Number(id)].almuerzo : undefined,
@@ -736,7 +777,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     }
 
     try {
-      const res = await fetch("http://localhost:3001/api/orders/bulk", {
+      const res = await fetch(`${API_URL}/api/orders/bulk`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -779,7 +820,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
       const start = isHoy ? new Date().toISOString() : emgPeriodoInicio;
       const end = isHoy ? new Date().toISOString() : emgPeriodoFin;
 
-      const res = await fetch("http://localhost:3001/api/emergencies", {
+      const res = await fetch(`${API_URL}/api/emergencies`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
@@ -883,7 +924,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
     if (formValues) {
       try {
-        const res = await fetch(`http://localhost:3001/api/staff/${p.Id}/baja`, {
+        const res = await fetch(`${API_URL}/api/staff/${p.Id}/baja`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ tipo: "PROVISORIA", desde: formValues.desde, hasta: formValues.hasta, motivo: formValues.motivo })
@@ -925,7 +966,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
     if (isConfirmed) {
       try {
-        const res = await fetch(`http://localhost:3001/api/staff/${p.Id}/revertir-baja`, {
+        const res = await fetch(`${API_URL}/api/staff/${p.Id}/revertir-baja`, {
           method: "POST",
           headers: { Authorization: `Bearer ${token}` }
         });
@@ -943,7 +984,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
   const generarReporte = async () => {
     try {
-      const res = await fetch(`http://localhost:3001/api/reports?fechaInicio=${repDesde}&fechaFin=${repHasta}`, {
+      const res = await fetch(`${API_URL}/api/reports?fechaInicio=${repDesde}&fechaFin=${repHasta}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -1089,15 +1130,15 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
             </button>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
-            <thead className="bg-gray-50 dark:bg-gray-800/50">
+        <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[320px] border border-gray-200 dark:border-gray-800 rounded-xl relative">
+          <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 border-collapse">
+            <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0 z-20">
               <tr>
-                <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky left-0 bg-gray-50 dark:bg-gray-800/90 z-10">Personal</th>
+                <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky top-0 left-0 bg-gray-50 dark:bg-gray-800 z-30 border-b border-r border-gray-200 dark:border-gray-800">Personal</th>
                 {dietas.map(d => (
-                  <th key={d} scope="col" className="px-4 py-4 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">{d}</th>
+                  <th key={d} scope="col" className="px-4 py-4 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-50 dark:bg-gray-800 z-20 border-b border-gray-200 dark:border-gray-800">{d}</th>
                 ))}
-                <th scope="col" className="px-4 py-4 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky right-0 bg-gray-50 dark:bg-gray-800/90 z-10">Estado</th>
+                <th scope="col" className="px-4 py-4 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky top-0 right-0 bg-gray-50 dark:bg-gray-800 z-30 border-b border-l border-gray-200 dark:border-gray-800">Estado</th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800/50">
@@ -1106,7 +1147,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                 const currentSelection = planillaTab === 'almuerzo' ? pSelections.almuerzo : pSelections.cena;
                 const isDisabled = planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena;
                 return (
-                  <tr key={p.Id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
+                  <tr key={p.Id} id={`fila-agente-${p.Id}`} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors scroll-mt-12">
                     <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white dark:bg-gray-900 z-10 border-r border-gray-100 dark:border-gray-800">
                       <div className="flex flex-col">
                         <div className="flex items-center">
@@ -1300,7 +1341,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                   <select value={emgReemplazaId} onChange={e => setEmgReemplazaId(e.target.value)} required={emgTipo === 'reemplazo'} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
                     <option value="">-- Seleccionar a quién reemplaza --</option>
                     {staff.filter(p => p.bajaProvisoriaHoy || p.bajaDefinitivaHoy).map(p => (
-                      <option key={p.Id} value={p.Id}>{p.Nombre} {p.Apellido} (DNI: {p.DNI})</option>
+                      <option key={p.Id} value={p.Id}>{p.NombreCompleto || `${p.Nombre || ''} ${p.Apellido || ''}`.trim()} (DNI: {p.DNI})</option>
                     ))}
                   </select>
                 )}
@@ -1690,7 +1731,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
 
   const fetchEmergencias = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/emergencies/pending", {
+      const res = await fetch(`${API_URL}/api/emergencies/pending`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -1704,7 +1745,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
 
   const fetchServicios = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/services", {
+      const res = await fetch(`${API_URL}/api/services`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) setServicios(await res.json());
@@ -1716,7 +1757,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
   useEffect(() => {
     fetchEmergencias();
     fetchServicios();
-    fetch("http://localhost:3001/api/hospital/config", { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${API_URL}/api/hospital/config`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => {
         if (d && d.LimiteAlmuerzo) setConfigAlmuerzo(d.LimiteAlmuerzo);
@@ -1733,7 +1774,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     }
 
     try {
-      const res = await fetch(`http://localhost:3001/api/emergencies/${id}/resolve`, {
+      const res = await fetch(`${API_URL}/api/emergencies/${id}/resolve`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ estado, justificacionResolucion: justificacion })
@@ -1768,7 +1809,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
 
     if (nombreServicio) {
       try {
-        const res = await fetch("http://localhost:3001/api/services", {
+        const res = await fetch(`${API_URL}/api/services`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ nombre: nombreServicio })
@@ -1783,6 +1824,34 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
       } catch (e) {
         Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
+    }
+  };
+
+  const toggleVoucherIndividual = async (servicioId: number, nombre: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/services/${servicioId}/toggle-voucher`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        Swal.fire({ 
+          title: "Éxito", 
+          text: `Configuración del servicio ${nombre} actualizada`, 
+          icon: "success", 
+          timer: 1500,
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+        fetchServicios();
+        if (reportes.length > 0) {
+          generarReporte();
+        }
+      } else {
+        const data = await res.json();
+        Swal.fire({ title: "Error", text: data.error || "No se pudo actualizar", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    } catch (e) {
+      Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
@@ -1812,7 +1881,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
 
     if (formValues) {
       try {
-        const res = await fetch("http://localhost:3001/api/users/jefe-servicio", {
+        const res = await fetch(`${API_URL}/api/users/jefe-servicio`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           body: JSON.stringify({ username: formValues.username, nombreCompleto: formValues.nombreCompleto, servicioId })
@@ -1843,7 +1912,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
-          const res = await fetch(`http://localhost:3001/api/users/${id}/reset-password`, {
+          const res = await fetch(`${API_URL}/api/users/${id}/reset-password`, {
             method: "PUT",
             headers: { Authorization: `Bearer ${token}` }
           });
@@ -1875,7 +1944,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
-          const res = await fetch(`http://localhost:3001/api/users/${id}/disable`, {
+          const res = await fetch(`${API_URL}/api/users/${id}/disable`, {
             method: "PUT",
             headers: { Authorization: `Bearer ${token}` }
           });
@@ -1908,7 +1977,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
-          const res = await fetch(`http://localhost:3001/api/users/${id}`, {
+          const res = await fetch(`${API_URL}/api/users/${id}`, {
             method: "DELETE",
             headers: { Authorization: `Bearer ${token}` }
           });
@@ -1934,9 +2003,22 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     return "Sin Servicio";
   };
 
+  const esServicioIndividual = (r: any) => {
+    const sId = r.ServicioId || r.Personal?.ServicioId || r.PersonalReemplazado?.ServicioId || r.SolicitadoPor?.ServicioId;
+    if (sId) {
+      const servActual = servicios.find(s => s.Id === sId);
+      if (servActual) return servActual.VoucherIndividual;
+    }
+    if (r.Servicio && typeof r.Servicio.VoucherIndividual === 'boolean') return r.Servicio.VoucherIndividual;
+    if (r.Personal?.Servicio && typeof r.Personal.Servicio.VoucherIndividual === 'boolean') return r.Personal.Servicio.VoucherIndividual;
+    if (r.PersonalReemplazado?.Servicio && typeof r.PersonalReemplazado.Servicio.VoucherIndividual === 'boolean') return r.PersonalReemplazado.Servicio.VoucherIndividual;
+    if (r.SolicitadoPor?.Servicio && typeof r.SolicitadoPor.Servicio.VoucherIndividual === 'boolean') return r.SolicitadoPor.Servicio.VoucherIndividual;
+    return false;
+  };
+
   const generarReporte = async () => {
     try {
-      const res = await fetch(`http://localhost:3001/api/reports?fechaInicio=${repDesde}&fechaFin=${repHasta}`, {
+      const res = await fetch(`${API_URL}/api/reports?fechaInicio=${repDesde}&fechaFin=${repHasta}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -1950,7 +2032,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
 
   const guardarConfiguracion = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/hospital/config", {
+      const res = await fetch(`${API_URL}/api/hospital/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ limiteAlmuerzo: configAlmuerzo, limiteCena: configCena })
@@ -2128,24 +2210,93 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     const fDesdeStr = repDesde.split('-').reverse().join('/');
     const fHastaStr = repHasta.split('-').reverse().join('/');
 
-    let rowsHTML = '';
-    filtered.forEach((r, idx) => {
-      const fechaOrder = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const servicioName = getServicioNombre(r);
-      const nombreAgente = r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`;
-      const dniAgente = r.Personal ? (r.Personal.DNI || "-") : (r.EmergenciaDNI || "-");
 
+    const individuales = filtered.filter(r => esServicioIndividual(r));
+    const consolidados = filtered.filter(r => !esServicioIndividual(r));
+
+    interface FilaEntrega {
+      fechaOriginal: string;
+      fechaOrder: string;
+      servicioName: string;
+      agenteDetalle: string;
+      comidaDietaDetalle: string;
+      cantidadRaciones: number;
+    }
+
+    const filasParaImprimir: FilaEntrega[] = [];
+
+    // Agregar las individuales
+    individuales.forEach(p => {
+      const fechaOrder = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
+      const nombreAgente = p.Personal ? `${p.Personal.NombreCompleto}` : `${p.EmergenciaNombreCompleto}`;
+      const dniAgente = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
+
+      filasParaImprimir.push({
+        fechaOriginal: p.FechaPedido,
+        fechaOrder: fechaOrder,
+        servicioName: getServicioNombre(p),
+        agenteDetalle: `<strong>${nombreAgente}</strong><br/><span style="color: #555; font-size: 10px;">DNI: ${dniAgente}</span>`,
+        comidaDietaDetalle: `<strong>${p.TipoComida}</strong> (${p.TipoDieta})`,
+        cantidadRaciones: 1
+      });
+    });
+
+    // Agrupar y agregar las consolidadas
+    const gruposConsolidados: Record<string, {
+      FechaPedido: string;
+      ServicioNombre: string;
+      TipoComida: string;
+      TipoDieta: string;
+      Cantidad: number;
+    }> = {};
+
+    consolidados.forEach(r => {
+      const fecha = r.FechaPedido.split('T')[0];
+      const servicioName = getServicioNombre(r);
+      const key = `${fecha}_${servicioName}_${r.TipoComida}_${r.TipoDieta}`;
+      if (!gruposConsolidados[key]) {
+        gruposConsolidados[key] = {
+          FechaPedido: r.FechaPedido,
+          ServicioNombre: servicioName,
+          TipoComida: r.TipoComida,
+          TipoDieta: r.TipoDieta,
+          Cantidad: 0
+        };
+      }
+      gruposConsolidados[key].Cantidad += 1;
+    });
+
+    Object.values(gruposConsolidados).forEach(g => {
+      const fechaOrder = g.FechaPedido.split('T')[0].split('-').reverse().join('/');
+      filasParaImprimir.push({
+        fechaOriginal: g.FechaPedido,
+        fechaOrder: fechaOrder,
+        servicioName: g.ServicioNombre,
+        agenteDetalle: `<strong>CONSOLIDADO</strong><br/><span style="color: #2563eb; font-size: 10px; font-weight: bold;">CANTIDAD: ${g.Cantidad} RACION(ES)</span>`,
+        comidaDietaDetalle: `<strong>${g.TipoComida}</strong> (${g.TipoDieta})`,
+        cantidadRaciones: g.Cantidad
+      });
+    });
+
+    // Ordenar por fecha y luego por nombre del servicio
+    filasParaImprimir.sort((a, b) => {
+      const cmpFecha = a.fechaOriginal.localeCompare(b.fechaOriginal);
+      if (cmpFecha !== 0) return cmpFecha;
+      return a.servicioName.localeCompare(b.servicioName);
+    });
+
+    let rowsHTML = '';
+    filasParaImprimir.forEach((f, idx) => {
       rowsHTML += `
         <tr>
           <td style="padding: 8px 6px; border: 1px solid #999; text-align: center; font-size: 11px;">${idx + 1}</td>
-          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px; white-space: nowrap;">${fechaOrder}</td>
-          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">${servicioName}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px; white-space: nowrap;">${f.fechaOrder}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">${f.servicioName}</td>
           <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
-            <strong>${nombreAgente}</strong><br/>
-            <span style="color: #555; font-size: 10px;">DNI: ${dniAgente}</span>
+            ${f.agenteDetalle}
           </td>
           <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
-            <strong>${r.TipoComida}</strong> (${r.TipoDieta})
+            ${f.comidaDietaDetalle}
           </td>
           <td style="padding: 8px 6px; border: 1px solid #999; width: 190px; text-align: center; vertical-align: bottom;">
             <div style="border-bottom: 1px solid #444; height: 35px; width: 90%; margin: 0 auto 3px auto;"></div>
@@ -2232,6 +2383,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     }
     
     const filtered = reportes.filter(r => {
+      if (r.Estado !== "Aprobado") return false;
       if (r.TipoComida !== tipo) return false;
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
@@ -2245,11 +2397,15 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
       return;
     }
 
-    const grupos: Record<string, any[]> = {};
-    filtered.forEach(r => {
+
+    const individuales = filtered.filter(r => esServicioIndividual(r));
+    const consolidados = filtered.filter(r => !esServicioIndividual(r));
+
+    const gruposConsolidados: Record<string, any[]> = {};
+    consolidados.forEach(r => {
       const servicioName = getServicioNombre(r);
-      if (!grupos[servicioName]) grupos[servicioName] = [];
-      grupos[servicioName].push(r);
+      if (!gruposConsolidados[servicioName]) gruposConsolidados[servicioName] = [];
+      gruposConsolidados[servicioName].push(r);
     });
 
     const printWindow = window.open('', '_blank');
@@ -2264,7 +2420,9 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     const usuarioImpresion = username || 'Usuario';
 
     let vouchersHTML = '';
-    Object.entries(grupos).forEach(([servicio, platos]) => {
+
+    // Vouchers consolidados
+    Object.entries(gruposConsolidados).forEach(([servicio, platos]) => {
       const date = platos[0].FechaPedido.split('T')[0].split('-').reverse().join('/');
       const totalPlatos = platos.length;
       const counts: Record<string, number> = {};
@@ -2275,7 +2433,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
 
       vouchersHTML += `
         <div class="voucher">
-          <div class="watermark">SisAC ORIGINAL - SisAC ORIGINAL</div>
+          <div class="watermark">SisAR ORIGINAL - SisAR ORIGINAL</div>
           <div class="v-header">
              <div class="v-logo">
                 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
@@ -2294,8 +2452,8 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
                 </svg>
              </div>
              <div class="v-title">
-                <div class="v-title-main">SisAC - VAUCHER DE COMIDA</div>
-                <div class="v-title-sub">Sistema de Administracion de Comida</div>
+                <div class="v-title-main">SisAR - VOUCHER DE COMIDA</div>
+                <div class="v-title-sub">Sistema de Administracion de Raciones</div>
              </div>
           </div>
           <div class="v-body">
@@ -2307,6 +2465,65 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
                 </div>
                 <div class="v-total">TOTAL PLATOS: ${totalPlatos}</div>
                 <div class="v-diets">Dietas: ${dietasText}</div>
+             </div>
+             <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
+          </div>
+          <div class="v-footer">
+             Impreso el ${fechaImpresion} a las ${horaImpresion} hs | Usuario: ${usuarioImpresion}
+          </div>
+        </div>
+        <div class="cut-line"></div>
+      `;
+    });
+
+    // Vouchers individuales
+    individuales.forEach(p => {
+      const servicio = getServicioNombre(p);
+      const date = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
+      const agenteNombre = p.Personal ? p.Personal.NombreCompleto : (p.EmergenciaNombreCompleto || "Emergencia/Reemplazo");
+      const agenteDNI = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
+      const dieta = p.TipoDieta;
+      
+      const qrData = encodeURIComponent(`${servicio}-${tipo}-${date}-Agente:${agenteNombre}-DNI:${agenteDNI}-Dieta:${dieta}`);
+      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
+
+      vouchersHTML += `
+        <div class="voucher">
+          <div class="watermark">INDIVIDUAL - SisAR ORIGINAL</div>
+          <div class="v-header">
+             <div class="v-logo">
+                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+                  <defs>
+                    <linearGradient id="bg-ind" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#10b981" />
+                      <stop offset="100%" stop-color="#059669" />
+                    </linearGradient>
+                  </defs>
+                  <rect width="64" height="64" rx="16" fill="url(#bg-ind)" />
+                  <g transform="translate(14, 14) scale(1.5)">
+                    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M7 2v20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                  </g>
+                </svg>
+             </div>
+             <div class="v-title">
+                <div class="v-title-main">SisAR - VOUCHER INDIVIDUAL</div>
+                <div class="v-title-sub">Sistema de Administracion de Raciones</div>
+             </div>
+          </div>
+          <div class="v-body">
+             <div class="v-info">
+                <div class="v-row space-between">
+                   <div>TIPO: <strong>${tipo.toUpperCase()}</strong></div>
+                   <div>Servicio: ${servicio}</div>
+                   <div>Fecha: ${date}</div>
+                </div>
+                <div class="v-total">AGENTE: ${agenteNombre}</div>
+                <div class="v-row" style="margin-bottom: 5px;">
+                   <div>DNI: <strong>${agenteDNI}</strong></div>
+                </div>
+                <div class="v-diets">Dieta: <strong>${dieta}</strong></div>
              </div>
              <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
           </div>
@@ -2386,14 +2603,14 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "Reportes");
-    XLSX.writeFile(workbook, `Reportes_SisAC_${repDesde}_${repHasta}.xlsx`);
+    XLSX.writeFile(workbook, `Reportes_SisAR_${repDesde}_${repHasta}.xlsx`);
   };
 
   const exportPDF = () => {
     if (reportes.length === 0) return;
     
     const doc = new jsPDF();
-    doc.text(`Reportes de Comida SisAC (${repDesde} a ${repHasta})`, 14, 15);
+    doc.text(`Reportes de Raciones SisAR (${repDesde} a ${repHasta})`, 14, 15);
     
     const tableData = reportes.map(r => [
       r.FechaPedido.split('T')[0].split('-').reverse().join('/'),
@@ -2413,7 +2630,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
       headStyles: { fillColor: [79, 70, 229] }
     });
 
-    doc.save(`Reportes_SisAC_${repDesde}_${repHasta}.pdf`);
+    doc.save(`Reportes_SisAR_${repDesde}_${repHasta}.pdf`);
   };
 
   const tabs = [
@@ -2558,10 +2775,13 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
                     return (
                       <div key={s.Id} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                         <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
+                          <div className="flex items-center flex-wrap gap-2 mb-2">
                             <span className="font-extrabold text-gray-900 dark:text-gray-100 text-base">{s.Nombre}</span>
                             <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-300 text-xs px-2.5 py-0.5 rounded-full font-semibold">
                               {s._count?.Personal || 0} Agentes
+                            </span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${s.VoucherIndividual ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'}`}>
+                              Voucher {s.VoucherIndividual ? 'Individual' : 'Consolidado'}
                             </span>
                           </div>
 
@@ -2633,13 +2853,24 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
                           </div>
                         </div>
 
-                        <div className="flex items-start">
+                        <div className="flex flex-col sm:items-end gap-2 shrink-0">
                           <button 
                             onClick={() => asignarJefeModal(s.Id, s.Nombre)} 
-                            className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-3 py-1.5 rounded-lg transition-colors flex items-center text-xs font-bold shadow-sm"
+                            className="w-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center text-xs font-bold shadow-sm"
                             title="Asignar Jefe de Servicio"
                           >
                             <UserPlus className="w-4 h-4 mr-1.5" /> Asignar Jefe
+                          </button>
+                          <button
+                            onClick={() => toggleVoucherIndividual(s.Id, s.Nombre)}
+                            className={`w-full px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center text-xs font-bold shadow-sm border ${
+                              s.VoucherIndividual 
+                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30' 
+                                : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30'
+                            }`}
+                            title={s.VoucherIndividual ? 'Cambiar a voucher consolidado para todo el servicio' : 'Cambiar a vouchers individuales por agente'}
+                          >
+                            Configurar Voucher
                           </button>
                         </div>
                       </div>
@@ -2814,10 +3045,16 @@ function RRHHPanel({ token }: { token: string }) {
   const [activeTab, setActiveTab] = useState("Hospitales");
   const [hospitales, setHospitales] = useState<any[]>([]);
   const [nuevoHospital, setNuevoHospital] = useState("");
+  const [buscarHospital, setBuscarHospital] = useState("");
+  const [hospitalesPage, setHospitalesPage] = useState(1);
   const [gerenteUser, setGerenteUser] = useState("");
   const [gerentePass, setGerentePass] = useState("");
   const [gerenteHospitalId, setGerenteHospitalId] = useState("");
   const { theme } = useTheme();
+
+  const hospitalesFiltrados = hospitales.filter((h: any) =>
+    h.Nombre.toLowerCase().includes(buscarHospital.toLowerCase())
+  );
 
   const [openServicios, setOpenServicios] = useState<{ [hospitalId: number]: boolean }>({});
   const toggleServicios = (id: number) => {
@@ -2832,9 +3069,68 @@ function RRHHPanel({ token }: { token: string }) {
   const [cargandoAuditoria, setCargandoAuditoria] = useState(false);
   const [filtroAuditoria, setFiltroAuditoria] = useState("");
 
+  // Estados para Reporte de Costos
+  const [costosDesde, setCostosDesde] = useState(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+  });
+  const [costosHasta, setCostosHasta] = useState(getTodayStr());
+  const [costosFiltroHospital, setCostosFiltroHospital] = useState("");
+  const [costosFiltroDieta, setCostosFiltroDieta] = useState("Todas");
+  const [costosPedidos, setCostosPedidos] = useState<any[]>([]);
+  const [cargandoCostos, setCargandoCostos] = useState(false);
+  const [valoresDieta, setValoresDieta] = useState<{ [dieta: string]: number }>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("sisar_valores_dieta") || localStorage.getItem("sisac_valores_dieta");
+      if (saved) {
+        try { return JSON.parse(saved); } catch (e) {}
+      }
+    }
+    return {
+      "Normal": 2000,
+      "Gastrica": 2200,
+      "Diabetica": 2200,
+      "Hepatico": 2200,
+      "Vegetariano": 2000,
+      "Celiaca": 2500
+    };
+  });
+
+  const handleCambiarCostoDieta = (dieta: string, valor: number) => {
+    setValoresDieta(prev => {
+      const next = { ...prev, [dieta]: valor };
+      if (typeof window !== "undefined") {
+        localStorage.setItem("sisar_valores_dieta", JSON.stringify(next));
+      }
+      return next;
+    });
+  };
+
+  const fetchCostosPedidos = async () => {
+    setCargandoCostos(true);
+    try {
+      const res = await fetch(`${API_URL}/api/reports?fechaInicio=${costosDesde}&fechaFin=${costosHasta}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setCostosPedidos(await res.json());
+      }
+    } catch (e) {
+      console.error("Error al obtener reporte de costos:", e);
+    } finally {
+      setCargandoCostos(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "ReporteCostos") {
+      fetchCostosPedidos();
+    }
+  }, [costosDesde, costosHasta, activeTab]);
+
   const fetchHospitales = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/hospitals", {
+      const res = await fetch(`${API_URL}/api/hospitals`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) setHospitales(await res.json());
@@ -2845,7 +3141,7 @@ function RRHHPanel({ token }: { token: string }) {
 
   const fetchGerentes = async () => {
     try {
-      const res = await fetch("http://localhost:3001/api/users/gerentes", {
+      const res = await fetch(`${API_URL}/api/users/gerentes`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) setGerentes(await res.json());
@@ -2857,7 +3153,7 @@ function RRHHPanel({ token }: { token: string }) {
   const fetchAuditoria = async () => {
     setCargandoAuditoria(true);
     try {
-      const res = await fetch("http://localhost:3001/api/admin/auditoria", {
+      const res = await fetch(`${API_URL}/api/admin/auditoria`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) setLogsAuditoria(await res.json());
@@ -2934,10 +3230,181 @@ function RRHHPanel({ token }: { token: string }) {
     doc.save(`Auditoria_${getTodayStr()}.pdf`);
   };
 
+  // Cálculos para el reporte de costos
+  const pedidosAprobadosFiltrados = costosPedidos.filter((p: any) => {
+    if (p.Estado !== "Aprobado") return false;
+    if (costosFiltroDieta !== "Todas" && p.TipoDieta !== costosFiltroDieta) return false;
+    const pIdHospital = p.Personal?.HospitalId || p.SolicitadoPor?.HospitalId;
+    if (costosFiltroHospital && pIdHospital !== Number(costosFiltroHospital)) return false;
+    return true;
+  });
+
+  const resumenPorDieta = Object.keys(valoresDieta).map(dieta => {
+    const cantidad = pedidosAprobadosFiltrados.filter((p: any) => p.TipoDieta === dieta).length;
+    const costoUnitario = valoresDieta[dieta] || 0;
+    const total = cantidad * costoUnitario;
+    return {
+      dieta,
+      cantidad,
+      costoUnitario,
+      total
+    };
+  });
+
+  const totalCantidadViandas = resumenPorDieta.reduce((sum, item) => sum + item.cantidad, 0);
+  const totalCostoGeneral = resumenPorDieta.reduce((sum, item) => sum + item.total, 0);
+
+  const desgloseEfectores = pedidosAprobadosFiltrados.reduce((acc: any, p: any) => {
+    const hospNombre = p.Personal?.Hospital?.Nombre || p.SolicitadoPor?.Hospital?.Nombre || "Sin Sede / Hospital";
+    const servNombre = p.Servicio?.Nombre || "Sin Servicio";
+    const dieta = p.TipoDieta;
+    const costo = valoresDieta[dieta] || 0;
+    
+    if (!acc[hospNombre]) {
+      acc[hospNombre] = {
+        nombre: hospNombre,
+        servicios: {},
+        totalViandas: 0,
+        totalCosto: 0
+      };
+    }
+    
+    if (!acc[hospNombre].servicios[servNombre]) {
+      acc[hospNombre].servicios[servNombre] = {
+        nombre: servNombre,
+        viandas: 0,
+        costo: 0,
+        dietas: {}
+      };
+    }
+    
+    acc[hospNombre].totalViandas += 1;
+    acc[hospNombre].totalCosto += costo;
+    
+    acc[hospNombre].servicios[servNombre].viandas += 1;
+    acc[hospNombre].servicios[servNombre].costo += costo;
+    acc[hospNombre].servicios[servNombre].dietas[dieta] = (acc[hospNombre].servicios[servNombre].dietas[dieta] || 0) + 1;
+    
+    return acc;
+  }, {});
+
+  const exportarCostosExcel = () => {
+    if (pedidosAprobadosFiltrados.length === 0) return;
+    const dataResumen = resumenPorDieta.map(item => ({
+      "Tipo de Dieta": item.dieta,
+      "Cantidad de Viandas": item.cantidad,
+      "Costo Unitario ($)": item.costoUnitario,
+      "Costo Subtotal ($)": item.total
+    }));
+    dataResumen.push({
+      "Tipo de Dieta": "TOTAL GENERAL",
+      "Cantidad de Viandas": totalCantidadViandas,
+      "Costo Unitario ($)": "",
+      "Costo Subtotal ($)": totalCostoGeneral
+    } as any);
+
+    const dataDesglose: any[] = [];
+    Object.values(desgloseEfectores).forEach((h: any) => {
+      Object.values(h.servicios).forEach((s: any) => {
+        dataDesglose.push({
+          "Efector / Hospital": h.nombre,
+          "Servicio": s.nombre,
+          "Cantidad de Viandas": s.viandas,
+          "Costo Estimado ($)": s.costo
+        });
+      });
+      dataDesglose.push({
+        "Efector / Hospital": `SUBTOTAL ${h.nombre.toUpperCase()}`,
+        "Servicio": "",
+        "Cantidad de Viandas": h.totalViandas,
+        "Costo Estimado ($)": h.totalCosto
+      });
+    });
+    
+    const worksheetResumen = XLSX.utils.json_to_sheet(dataResumen);
+    const worksheetDesglose = XLSX.utils.json_to_sheet(dataDesglose);
+    const workbook = XLSX.utils.book_new();
+    
+    XLSX.utils.book_append_sheet(workbook, worksheetResumen, "Resumen General");
+    XLSX.utils.book_append_sheet(workbook, worksheetDesglose, "Detalle por Sectores");
+    XLSX.writeFile(workbook, `Reporte_Costos_Raciones_${costosDesde}_a_${costosHasta}.xlsx`);
+  };
+
+  const exportarCostosPDF = () => {
+    if (pedidosAprobadosFiltrados.length === 0) return;
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text("Reporte de Costos de Viandas - SisAR", 14, 15);
+    doc.setFontSize(10);
+    doc.text(`Período: ${costosDesde.split('-').reverse().join('/')} al ${costosHasta.split('-').reverse().join('/')}`, 14, 22);
+    doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 28);
+    
+    doc.setFontSize(12);
+    doc.text("Resumen General por Dieta", 14, 38);
+    
+    const rowsResumen = resumenPorDieta.map(item => [
+      item.dieta,
+      item.cantidad.toString(),
+      `$${item.costoUnitario}`,
+      `$${item.total}`
+    ]);
+    rowsResumen.push([
+      "TOTAL GENERAL",
+      totalCantidadViandas.toString(),
+      "",
+      `$${totalCostoGeneral}`
+    ]);
+    
+    (doc as any).autoTable({
+      head: [['Tipo de Dieta', 'Cantidad de Viandas', 'Costo Unitario', 'Subtotal']],
+      body: rowsResumen,
+      startY: 42,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [59, 130, 246] }
+    });
+    
+    const currentY = (doc as any).lastAutoTable.finalY + 12;
+    doc.text("Desglose de Costos por Hospital y Servicio", 14, currentY);
+    
+    const rowsDesglose: any[] = [];
+    Object.values(desgloseEfectores).forEach((h: any) => {
+      Object.values(h.servicios).forEach((s: any) => {
+        rowsDesglose.push([
+          h.nombre,
+          s.nombre,
+          s.viandas.toString(),
+          `$${s.costo}`
+        ]);
+      });
+      rowsDesglose.push([
+        `SUBTOTAL ${h.nombre}`,
+        "",
+        h.totalViandas.toString(),
+        `$${h.totalCosto}`
+      ]);
+    });
+    
+    (doc as any).autoTable({
+      head: [['Efector / Sede', 'Servicio', 'Cantidad de Viandas', 'Costo Estimado']],
+      body: rowsDesglose,
+      startY: currentY + 4,
+      styles: { fontSize: 9 },
+      headStyles: { fillColor: [79, 70, 229] },
+      didParseCell: function(data: any) {
+        if (data.row.raw[0].startsWith('SUBTOTAL')) {
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = [243, 244, 246];
+        }
+      }
+    });
+    
+    doc.save(`Reporte_Costos_Viandas_${costosDesde}_a_${costosHasta}.pdf`);
+  };
+
   const crearHospital = async () => {
     if (!nuevoHospital) return;
     try {
-      const res = await fetch("http://localhost:3001/api/hospitals", {
+      const res = await fetch(`${API_URL}/api/hospitals`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ nombre: nuevoHospital })
@@ -2955,17 +3422,104 @@ function RRHHPanel({ token }: { token: string }) {
     }
   };
 
+  const crearEfectorModal = async () => {
+    const { value: nombreEfector } = await Swal.fire({
+      title: 'Nuevo Efector (Sede/Hospital)',
+      input: 'text',
+      inputLabel: 'Nombre del Efector',
+      inputPlaceholder: 'Ej. Hospital Padilla',
+      showCancelButton: true,
+      confirmButtonText: 'Crear',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000',
+      inputValidator: (value) => {
+        if (!value) return 'Debes escribir un nombre para el efector';
+      }
+    });
+
+    if (nombreEfector) {
+      try {
+        const res = await fetch(`${API_URL}/api/hospitals`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ nombre: nombreEfector })
+        });
+        if (res.ok) {
+          Swal.fire({ title: "Éxito", text: "Efector creado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          fetchHospitales();
+        } else {
+          const data = await res.json();
+          Swal.fire({ title: "Error", text: data.error || "Error al crear", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      } catch (e) {
+        Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    }
+  };
+
+  const asignarGerenteModal = async (hospitalId: number, hospitalNombre: string) => {
+    const { value: formValues } = await Swal.fire({
+      title: `Asignar Gerente a ${hospitalNombre}`,
+      html:
+        '<p style="font-size:13px; color:#6b7280; margin-bottom:12px;">Se creará la cuenta con la contraseña por defecto <strong>123456</strong>. El usuario deberá cambiarla obligatoriamente en su primer ingreso.</p>' +
+        '<input id="swal-input-nombre" class="swal2-input" placeholder="Nombre Completo (Ej. Dra. Ana Gómez)">' +
+        '<input id="swal-input-user" class="swal2-input" placeholder="Nombre de usuario (Ej. agomez)">',
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Crear Cuenta',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000',
+      preConfirm: () => {
+        const nombreCompleto = (document.getElementById('swal-input-nombre') as HTMLInputElement).value;
+        const username = (document.getElementById('swal-input-user') as HTMLInputElement).value;
+        if (!nombreCompleto || !username) {
+          Swal.showValidationMessage('El Nombre Completo y el Nombre de Usuario son obligatorios');
+          return false;
+        }
+        return { nombreCompleto, username };
+      }
+    });
+
+    if (formValues) {
+      try {
+        const res = await fetch(`${API_URL}/api/users/gerente`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ 
+            username: formValues.username, 
+            nombreCompleto: formValues.nombreCompleto, 
+            hospitalId 
+          })
+        });
+        if (res.ok) {
+          Swal.fire({ title: "Éxito", text: "Gerente asignado exitosamente", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          fetchHospitales();
+          fetchGerentes();
+        } else {
+          const data = await res.json();
+          Swal.fire({ title: "Error", text: data.error || "Error al asignar gerente", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      } catch (e) {
+        Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    }
+  };
+
   const crearGerente = async () => {
     if (!gerenteUser || !gerentePass || !gerenteHospitalId) return;
     try {
-      const res = await fetch("http://localhost:3001/api/users/gerente", {
+      const res = await fetch(`${API_URL}/api/users/gerente`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ username: gerenteUser, password: gerentePass, hospitalId: gerenteHospitalId })
+        body: JSON.stringify({ username: gerenteUser, password: gerentePass, hospitalId: gerenteHospitalId, nombreCompleto: gerenteUser })
       });
       if (res.ok) {
         Swal.fire({ title: "Éxito", text: "Gerente creado exitosamente", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         setGerenteUser(""); setGerentePass(""); setGerenteHospitalId("");
+        fetchHospitales();
+        fetchGerentes();
       } else {
         const data = await res.json();
         Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
@@ -2975,39 +3529,42 @@ function RRHHPanel({ token }: { token: string }) {
     }
   };
 
-  const resetGerente = async (id: number) => {
+  const resetGerente = async (id: number, displayName?: string) => {
     try {
-      const res = await fetch(`http://localhost:3001/api/users/${id}/reset-password`, {
+      const res = await fetch(`${API_URL}/api/users/${id}/reset-password`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        Swal.fire({ title: "Éxito", text: "Contraseña reseteada a '1234'", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        Swal.fire({ title: "Éxito", text: `Contraseña de ${displayName || 'Gerente'} reseteada a '123456'`, icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        fetchHospitales();
+        fetchGerentes();
       }
     } catch (e) {
       Swal.fire({ title: "Error", text: "No se pudo resetear la contraseña", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
-  const toggleGerente = async (id: number) => {
+  const toggleGerente = async (id: number, displayName?: string, activo?: boolean) => {
     try {
-      const res = await fetch(`http://localhost:3001/api/users/${id}/disable`, {
+      const res = await fetch(`${API_URL}/api/users/${id}/disable`, {
         method: "PUT",
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
         fetchGerentes();
-        Swal.fire({ title: "Éxito", text: "Estado actualizado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        fetchHospitales();
+        Swal.fire({ title: "Éxito", text: `Estado de ${displayName || 'Gerente'} actualizado`, icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch (e) {
       Swal.fire({ title: "Error", text: "No se pudo actualizar", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
-  const deleteGerente = async (id: number) => {
+  const deleteGerente = async (id: number, displayName?: string) => {
     Swal.fire({
       title: '¿Eliminar usuario?',
-      text: "¿Seguro que deseas eliminar este usuario? Esta acción no se puede deshacer.",
+      text: `¿Seguro que deseas eliminar el usuario de ${displayName || 'este gerente'}? Esta acción no se puede deshacer.`,
       icon: 'warning',
       showCancelButton: true,
       confirmButtonColor: '#ef4444',
@@ -3019,12 +3576,13 @@ function RRHHPanel({ token }: { token: string }) {
     }).then(async (result) => {
       if (result.isConfirmed) {
         try {
-          const res = await fetch(`http://localhost:3001/api/users/${id}`, {
+          const res = await fetch(`${API_URL}/api/users/${id}`, {
             method: "DELETE",
             headers: { Authorization: `Bearer ${token}` }
           });
           if (res.ok) {
             fetchGerentes();
+            fetchHospitales();
             Swal.fire({ title: "Éxito", text: "Usuario eliminado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
           }
         } catch (e) {
@@ -3061,7 +3619,7 @@ function RRHHPanel({ token }: { token: string }) {
         
         for (let i = 0; i < data.length; i += CHUNK_SIZE) {
           const chunk = data.slice(i, i + CHUNK_SIZE);
-          const res = await fetch("http://localhost:3001/api/personal/bulk", {
+          const res = await fetch(`${API_URL}/api/personal/bulk`, {
             method: "POST",
             headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
             body: JSON.stringify({ data: chunk })
@@ -3095,7 +3653,7 @@ function RRHHPanel({ token }: { token: string }) {
 
   const tabs = [
     { id: "Hospitales", label: "Efectores", icon: <Building className="w-4 h-4 mr-2" /> },
-    { id: "Administracion", label: "Administración Global", icon: <Settings className="w-4 h-4 mr-2" /> },
+    { id: "ReporteCostos", label: "Reporte de Costos", icon: <FileText className="w-4 h-4 mr-2" /> },
     { id: "Importacion", label: "Importar Personal", icon: <Upload className="w-4 h-4 mr-2" /> },
     { id: "Auditoria", label: "Auditoría", icon: <Shield className="w-4 h-4 mr-2" /> }
   ];
@@ -3136,195 +3694,400 @@ function RRHHPanel({ token }: { token: string }) {
       </div>
 
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
-          <Building className="w-5 h-5 mr-2 text-indigo-500" /> Red de Efectores Activos
-        </h2>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 gap-4">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+            <Building className="w-5 h-5 mr-2 text-indigo-500" /> Red de Efectores Activos
+          </h2>
+          <button onClick={crearEfectorModal} className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-800/60 px-3.5 py-2 rounded-xl transition-all flex items-center justify-center shadow-sm font-bold text-sm">
+            <Plus className="w-4.5 h-4.5 mr-1.5" /> Nuevo Efector
+          </button>
+        </div>
         <div className="p-6">
-          {hospitales.length === 0 ? (
+          <div className="mb-6 relative">
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <Search className="h-4 w-4 text-gray-400" />
+            </div>
+            <input 
+              type="text" 
+              value={buscarHospital} 
+              onChange={e => { setBuscarHospital(e.target.value); setHospitalesPage(1); }} 
+              placeholder="Buscar efector..." 
+              className="block w-full pl-10 pr-3 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl leading-5 bg-white dark:bg-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 sm:text-sm transition-all text-gray-900 dark:text-gray-100" 
+            />
+          </div>
+
+          {hospitalesFiltrados.length === 0 ? (
             <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-8 text-center border border-gray-100 dark:border-gray-800">
               <Building className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
-              <p className="text-gray-500 dark:text-gray-400 font-medium">No hay efectores registrados en el sistema.</p>
+              <p className="text-gray-500 dark:text-gray-400 font-medium">No hay efectores registrados en el sistema o que coincidan con la búsqueda.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              {hospitales.map(h => (
-                <div key={h.Id} className="border border-gray-200 dark:border-gray-700 rounded-2xl p-6 bg-white dark:bg-gray-800/50 hover:shadow-md transition-shadow">
-                  <h3 className="font-extrabold text-gray-900 dark:text-white text-xl flex items-center justify-between mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
-                    <span className="flex items-center">
-                      <div className="bg-indigo-100 dark:bg-indigo-900/50 p-2 rounded-lg mr-3">
-                        <Building className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                      </div>
-                      {h.Nombre}
-                    </span>
-                  </h3>
-                  
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div>
-                      <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3 flex items-center">
-                        <User className="w-3.5 h-3.5 mr-1.5" /> Gerentes
-                      </h4>
-                      {h.Usuarios && h.Usuarios.length > 0 ? (
-                        <ul className="space-y-2">
-                          {h.Usuarios.map((u: any) => (
-                            <li key={u.Id} className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center bg-gray-50 dark:bg-gray-800 p-2 rounded-lg">
-                              <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center mr-2 text-xs font-bold text-gray-600 dark:text-gray-300">
-                                {u.NombreUsuario.charAt(0).toUpperCase()}
-                              </div>
-                              {u.NombreUsuario}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="text-sm text-red-500 dark:text-red-400 font-medium italic bg-red-50 dark:bg-red-900/10 p-2 rounded-lg">Falta asignar gerente</p>
-                      )}
-                    </div>
-                    
-                    <div>
-                      <button 
-                        type="button"
-                        onClick={() => toggleServicios(h.Id)}
-                        className="w-full flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700/60 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 transition-colors"
-                      >
-                        <span className="flex items-center">
-                          <Utensils className="w-3.5 h-3.5 mr-1.5 text-indigo-500" />
-                          Servicios ({h.Servicios?.length || 0})
-                        </span>
-                        {openServicios[h.Id] ? (
-                          <ChevronUp className="w-4 h-4 text-gray-500" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4 text-gray-500" />
-                        )}
-                      </button>
-
-                      {openServicios[h.Id] && (
-                        <div className="mt-2.5 p-3 bg-gray-50/50 dark:bg-gray-800/30 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-wrap gap-2 max-h-60 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
-                          {h.Servicios && h.Servicios.length > 0 ? (
-                            h.Servicios.map((s: any) => (
-                              <span key={s.Id} className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
-                                {s.Nombre}
-                              </span>
-                            ))
-                          ) : (
-                            <p className="text-sm text-gray-500 dark:text-gray-500 italic p-1">Sin servicios creados</p>
-                          )}
+            <div className="flex flex-col space-y-6">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                {hospitalesFiltrados.slice((hospitalesPage - 1) * 10, hospitalesPage * 10).map(h => (
+                  <div key={h.Id} className="border border-gray-200 dark:border-gray-700 rounded-2xl p-6 bg-white dark:bg-gray-800/50 hover:shadow-md transition-shadow">
+                    <h3 className="font-extrabold text-gray-900 dark:text-white text-xl flex items-center justify-between mb-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+                      <span className="flex items-center">
+                        <div className="bg-indigo-100 dark:bg-indigo-900/50 p-2 rounded-lg mr-3">
+                          <Building className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
                         </div>
-                      )}
+                        {h.Nombre}
+                      </span>
+                    </h3>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center">
+                          <User className="w-3.5 h-3.5 mr-1.5 text-indigo-500" /> Gerentes:
+                        </h4>
+                        {h.Usuarios && h.Usuarios.length > 0 ? (
+                          <div className="flex flex-col space-y-1.5">
+                            {h.Usuarios.map((u: any) => {
+                              const displayName = u.NombreCompleto || u.NombreUsuario;
+                              return (
+                                <div 
+                                  key={u.Id} 
+                                  className={`flex items-center justify-between bg-gray-50 dark:bg-gray-800/80 px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-700/60 ${!u.Activo ? 'opacity-60 bg-red-50/40 dark:bg-red-950/20' : ''}`}
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    <span className={`text-sm font-semibold ${!u.Activo ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-800 dark:text-gray-200'}`}>
+                                      {displayName}
+                                    </span>
+                                    {u.NombreCompleto && (
+                                      <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">
+                                        ({u.NombreUsuario})
+                                      </span>
+                                    )}
+                                    {!u.Activo && (
+                                      <span className="text-[10px] bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-1.5 py-0.5 rounded font-bold">
+                                        Inhabilitado
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center space-x-1">
+                                    <button
+                                      onClick={() => resetGerente(u.Id, displayName)}
+                                      className="p-1 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded transition-colors"
+                                      title="Resetear Contraseña a '123456'"
+                                    >
+                                      <Lock className="w-4 h-4" />
+                                    </button>
+                                    <button
+                                      onClick={() => toggleGerente(u.Id, displayName, u.Activo)}
+                                      className={`p-1 rounded transition-colors ${
+                                        u.Activo
+                                          ? 'text-amber-600 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+                                          : 'text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40'
+                                      }`}
+                                      title={u.Activo ? 'Inhabilitar usuario' : 'Habilitar usuario'}
+                                    >
+                                      {u.Activo ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
+                                    </button>
+                                    <button
+                                      onClick={() => deleteGerente(u.Id, displayName)}
+                                      className="p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded transition-colors"
+                                      title="Eliminar usuario"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="text-xs text-gray-400 dark:text-gray-500 italic bg-gray-50 dark:bg-gray-800/40 px-3 py-2 rounded-lg border border-gray-100 dark:border-gray-800">
+                            Sin Gerente asignado
+                          </p>
+                        )}
+                      </div>
+                      
+                      <div className="flex flex-col gap-3">
+                        <button 
+                          type="button"
+                          onClick={() => asignarGerenteModal(h.Id, h.Nombre)} 
+                          className="w-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-3.5 py-2.5 rounded-xl transition-all flex items-center justify-center text-xs font-bold shadow-sm"
+                          title="Asignar Gerente al Efector"
+                        >
+                          <UserPlus className="w-4 h-4 mr-1.5" /> Asignar Gerente
+                        </button>
+
+                        <button 
+                          type="button"
+                          onClick={() => toggleServicios(h.Id)}
+                          className="w-full flex items-center justify-between text-xs font-bold text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700/60 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 transition-colors"
+                        >
+                          <span className="flex items-center">
+                            <Utensils className="w-3.5 h-3.5 mr-1.5 text-indigo-500" />
+                            Servicios ({h.Servicios?.length || 0})
+                          </span>
+                          {openServicios[h.Id] ? (
+                            <ChevronUp className="w-4 h-4 text-gray-500" />
+                          ) : (
+                            <ChevronDown className="w-4 h-4 text-gray-500" />
+                          )}
+                        </button>
+
+                        {openServicios[h.Id] && (
+                          <div className="p-3 bg-gray-50/50 dark:bg-gray-800/30 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-wrap gap-2 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
+                            {h.Servicios && h.Servicios.length > 0 ? (
+                              h.Servicios.map((s: any) => (
+                                <span key={s.Id} className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
+                                  {s.Nombre}
+                                </span>
+                              ))
+                            ) : (
+                              <p className="text-sm text-gray-500 dark:text-gray-500 italic p-1">Sin servicios creados</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
+                ))}
+              </div>
+
+              {hospitalesFiltrados.length > 10 && (
+                <div className="flex justify-between items-center mt-6">
+                  <button onClick={() => setHospitalesPage(p => Math.max(1, p - 1))} disabled={hospitalesPage === 1} className="text-sm px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-md disabled:opacity-50 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">Anterior</button>
+                  <span className="text-sm text-gray-500 font-medium">Página {hospitalesPage} de {Math.ceil(hospitalesFiltrados.length / 10)}</span>
+                  <button onClick={() => setHospitalesPage(p => Math.min(Math.ceil(hospitalesFiltrados.length / 10), p + 1))} disabled={hospitalesPage === Math.ceil(hospitalesFiltrados.length / 10)} className="text-sm px-3 py-1.5 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-md disabled:opacity-50 transition-colors hover:bg-gray-200 dark:hover:bg-gray-700">Siguiente</button>
                 </div>
-              ))}
+              )}
             </div>
           )}
         </div>
       </div>
       </>
       )}
-
-      {activeTab === "Administracion" && (
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-            <Settings className="w-5 h-5 mr-2 text-gray-500" /> Panel de Administración Global
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Alta de nuevas sedes y credenciales gerenciales.</p>
-        </div>
-        <div className="p-8 grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
-          <div className="bg-gray-50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center uppercase tracking-wider">
-              <Building className="w-4 h-4 mr-2 text-indigo-500" />
-              Alta de Sede (Efector)
-            </h3>
-            <div className="flex flex-col space-y-3">
-              <input type="text" value={nuevoHospital} onChange={e => setNuevoHospital(e.target.value)} placeholder="Nombre oficial del Efector" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
-              <button onClick={crearHospital} className="w-full bg-indigo-600 dark:bg-indigo-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-indigo-700 dark:hover:bg-indigo-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
-                Registrar Efector
+      {/* SECCION: REPORTE DE COSTOS */}
+      {activeTab === "ReporteCostos" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden transition-colors animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                <FileText className="w-5 h-5 mr-2 text-indigo-500" /> Reporte Financiero de Comidas
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Cálculo estimado de costos de viandas para la toma de decisiones directivas.</p>
+            </div>
+            <div className="flex gap-2">
+              <button 
+                onClick={exportarCostosExcel} 
+                disabled={pedidosAprobadosFiltrados.length === 0} 
+                className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md transition-all transform hover:scale-[1.02] active:scale-95 flex items-center disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <Download className="w-4 h-4 mr-2" /> Excel
+              </button>
+              <button 
+                onClick={exportarCostosPDF} 
+                disabled={pedidosAprobadosFiltrados.length === 0} 
+                className="bg-red-600 hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-md transition-all transform hover:scale-[1.02] active:scale-95 flex items-center disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <Download className="w-4 h-4 mr-2" /> PDF
               </button>
             </div>
           </div>
 
-          <div className="bg-gray-50/50 dark:bg-gray-800/30 p-6 rounded-2xl border border-gray-100 dark:border-gray-800">
-            <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 mb-4 uppercase tracking-wider flex items-center">
-              <span className="bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-400 w-6 h-6 flex items-center justify-center rounded-full mr-2">2</span>
-              Asignar Cuenta Gerencial
-            </h3>
-            <div className="flex flex-col space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <input type="text" value={gerenteUser} onChange={e => setGerenteUser(e.target.value)} placeholder="Usuario" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
-                <input type="password" value={gerentePass} onChange={e => setGerentePass(e.target.value)} placeholder="Contraseña" className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow" />
-              </div>
-              <div className="relative">
-                <select value={gerenteHospitalId} onChange={e => setGerenteHospitalId(e.target.value)} className="w-full rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 sm:text-sm px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-shadow appearance-none">
-                  <option value="" disabled>Seleccione Sede para el Gerente...</option>
-                  {hospitales.map(h => <option key={h.Id} value={h.Id}>{h.Nombre}</option>)}
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-              </div>
-              <button onClick={crearGerente} className="w-full bg-blue-600 dark:bg-blue-500 text-white px-4 py-3 rounded-xl text-sm font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95">
-                Generar Credenciales
-              </button>
-            </div>
-          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* FILTROS Y TARIFAS */}
+              <div className="space-y-6">
+                {/* FILTROS */}
+                <div className="bg-gray-50/50 dark:bg-gray-800/30 p-5 rounded-2xl border border-gray-150 dark:border-gray-800 space-y-4">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center">
+                    <Search className="w-4 h-4 mr-2 text-indigo-500" /> Filtros del Reporte
+                  </h3>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Fecha Desde</label>
+                      <input 
+                        type="date" 
+                        value={costosDesde} 
+                        onChange={e => setCostosDesde(e.target.value)} 
+                        className="w-full text-sm rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Fecha Hasta</label>
+                      <input 
+                        type="date" 
+                        value={costosHasta} 
+                        onChange={e => setCostosHasta(e.target.value)} 
+                        className="w-full text-sm rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" 
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Efector / Hospital</label>
+                      <select 
+                        value={costosFiltroHospital} 
+                        onChange={e => setCostosFiltroHospital(e.target.value)} 
+                        className="w-full text-sm rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors"
+                      >
+                        <option value="">Todos los Efectores</option>
+                        {hospitales.map(h => <option key={h.Id} value={h.Id}>{h.Nombre}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Tipo de Dieta</label>
+                      <select 
+                        value={costosFiltroDieta} 
+                        onChange={e => setCostosFiltroDieta(e.target.value)} 
+                        className="w-full text-sm rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors"
+                      >
+                        <option value="Todas">Todas las dietas</option>
+                        {Object.keys(valoresDieta).map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
 
-          <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800 mt-4">
-            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center">
-              <Users className="w-5 h-5 mr-2 text-blue-500" />
-              Directorio de Gerentes
-            </h3>
-            
-            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-              <table className="w-full text-sm text-left">
-                <thead className="text-xs text-gray-700 uppercase bg-gray-50 dark:bg-gray-700 dark:text-gray-300">
-                  <tr>
-                    <th className="px-6 py-4 font-bold">Usuario</th>
-                    <th className="px-6 py-4 font-bold">Efector</th>
-                    <th className="px-6 py-4 font-bold text-center">Estado</th>
-                    <th className="px-6 py-4 font-bold text-center">Acciones</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {gerentes.length === 0 ? (
-                    <tr>
-                      <td colSpan={4} className="px-6 py-8 text-center text-gray-500 font-medium">
-                        No hay gerentes registrados
-                      </td>
-                    </tr>
-                  ) : (
-                    gerentes.map((g) => (
-                      <tr key={g.Id} className={`bg-white dark:bg-gray-800 ${!g.Activo ? 'opacity-60' : ''}`}>
-                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
-                          {g.NombreUsuario}
-                        </td>
-                        <td className="px-6 py-4 text-gray-600 dark:text-gray-300">
-                          {g.Hospital ? g.Hospital.Nombre : '-'}
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${g.Activo ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {g.Activo ? 'Activo' : 'Inactivo'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="flex justify-center space-x-2">
-                            <button onClick={() => resetGerente(g.Id)} className="p-1.5 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg" title="Resetear a 1234">
-                              <Lock className="w-4 h-4" />
-                            </button>
-                            <button onClick={() => toggleGerente(g.Id)} className={`p-1.5 rounded-lg ${g.Activo ? 'bg-orange-100 text-orange-600 hover:bg-orange-200' : 'bg-green-100 text-green-600 hover:bg-green-200'}`} title={g.Activo ? 'Inhabilitar' : 'Habilitar'}>
-                              {g.Activo ? <X className="w-4 h-4" /> : <Check className="w-4 h-4" />}
-                            </button>
-                            <button onClick={() => deleteGerente(g.Id)} className="p-1.5 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg" title="Eliminar">
-                              <AlertTriangle className="w-4 h-4" />
-                            </button>
+                {/* TARIFAS CONFIGURABLES */}
+                <div className="bg-gray-50/50 dark:bg-gray-800/30 p-5 rounded-2xl border border-gray-150 dark:border-gray-800 space-y-4">
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 uppercase tracking-wider flex items-center">
+                    <Settings className="w-4 h-4 mr-2 text-indigo-500" /> Tarifas de Dietas
+                  </h3>
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {Object.keys(valoresDieta).map(dieta => (
+                      <div key={dieta} className="flex justify-between items-center bg-white dark:bg-gray-900 px-3 py-2 rounded-xl border border-gray-100 dark:border-gray-850 shadow-sm">
+                        <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{dieta}</span>
+                        <div className="flex items-center space-x-1">
+                          <span className="text-xs text-gray-400 font-bold">$</span>
+                          <input 
+                            type="number" 
+                            value={valoresDieta[dieta]} 
+                            onChange={e => handleCambiarCostoDieta(dieta, Number(e.target.value))} 
+                            className="w-20 text-xs font-mono font-bold text-right rounded-lg border-gray-300 dark:border-gray-700 py-1 px-1.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
+                            min="0"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* RESULTADOS */}
+              <div className="lg:col-span-2 space-y-6">
+                {cargandoCostos ? (
+                  <div className="bg-gray-50 dark:bg-gray-800/20 rounded-2xl p-16 text-center border border-gray-100 dark:border-gray-800 flex flex-col items-center justify-center">
+                    <RefreshCw className="w-10 h-10 text-indigo-500 animate-spin mb-3" />
+                    <p className="text-gray-500 dark:text-gray-400 font-bold">Generando reporte de costos...</p>
+                  </div>
+                ) : pedidosAprobadosFiltrados.length === 0 ? (
+                  <div className="bg-gray-50 dark:bg-gray-800/20 rounded-2xl p-16 text-center border border-gray-100 dark:border-gray-800">
+                    <FileText className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                    <p className="text-gray-500 dark:text-gray-400 font-bold">No hay pedidos de comidas aprobados para el período o filtros seleccionados.</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* KPIS */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="bg-gradient-to-br from-blue-500/10 to-indigo-500/10 dark:from-blue-500/5 dark:to-indigo-500/5 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30 flex flex-col justify-between">
+                        <span className="text-[10px] uppercase font-extrabold text-blue-700 dark:text-blue-400 tracking-wider">Total Viandas</span>
+                        <h3 className="text-3xl font-extrabold text-gray-900 dark:text-white mt-1">{totalCantidadViandas}</h3>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">Pedidos Aprobados</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 dark:from-indigo-500/5 dark:to-purple-500/5 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-900/30 flex flex-col justify-between">
+                        <span className="text-[10px] uppercase font-extrabold text-indigo-700 dark:text-indigo-400 tracking-wider">Costo Promedio</span>
+                        <h3 className="text-3xl font-extrabold text-gray-900 dark:text-white mt-1">
+                          ${(totalCantidadViandas > 0 ? Math.round(totalCostoGeneral / totalCantidadViandas) : 0).toLocaleString('es-AR')}
+                        </h3>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">Por vianda aprobada</p>
+                      </div>
+                      <div className="bg-gradient-to-br from-emerald-500/10 to-teal-500/10 dark:from-emerald-500/5 dark:to-teal-500/5 p-5 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 flex flex-col justify-between">
+                        <span className="text-[10px] uppercase font-extrabold text-emerald-700 dark:text-emerald-400 tracking-wider">Monto Total a Pagar</span>
+                        <h3 className="text-3xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">
+                          ${totalCostoGeneral.toLocaleString('es-AR')}
+                        </h3>
+                        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-1">Estimación acumulada</p>
+                      </div>
+                    </div>
+
+                    {/* RESUMEN POR DIETA */}
+                    <div className="bg-white dark:bg-gray-955 rounded-2xl border border-gray-200 dark:border-gray-800 p-5 space-y-3.5 shadow-sm">
+                      <h3 className="text-sm font-extrabold text-gray-900 dark:text-white flex items-center">
+                        <FileText className="w-4.5 h-4.5 mr-2 text-indigo-500" /> Resumen Consolidado por Dieta
+                      </h3>
+                      <div className="overflow-x-auto border border-gray-150 dark:border-gray-800 rounded-xl">
+                        <table className="min-w-full divide-y divide-gray-250 dark:divide-gray-800">
+                          <thead className="bg-gray-50 dark:bg-gray-900/50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-bold text-gray-500 dark:text-white uppercase tracking-wider">Dieta</th>
+                              <th className="px-4 py-3 text-center text-xs font-bold text-gray-500 dark:text-white uppercase tracking-wider">Viandas</th>
+                              <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-white uppercase tracking-wider">Costo Unitario</th>
+                              <th className="px-4 py-3 text-right text-xs font-bold text-gray-500 dark:text-white uppercase tracking-wider">Subtotal</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white dark:bg-gray-950 divide-y divide-gray-100 dark:divide-gray-850">
+                            {resumenPorDieta.map(item => (
+                              <tr key={item.dieta} className="hover:bg-gray-50/50 dark:hover:bg-gray-900/30 transition-colors">
+                                <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-gray-900 dark:text-gray-100">{item.dieta}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-center font-bold text-gray-600 dark:text-gray-400">{item.cantidad}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-mono text-gray-500 dark:text-gray-400">${item.costoUnitario}</td>
+                                <td className="px-4 py-3 whitespace-nowrap text-sm text-right font-extrabold font-mono text-gray-950 dark:text-white">${item.total.toLocaleString('es-AR')}</td>
+                              </tr>
+                            ))}
+                            <tr className="bg-gray-50/80 dark:bg-gray-900/30 font-bold border-t border-gray-200 dark:border-gray-800">
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">TOTAL GENERAL</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-center text-gray-900 dark:text-gray-100 font-extrabold">{totalCantidadViandas}</td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-right"></td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-right text-indigo-600 dark:text-indigo-400 font-extrabold font-mono">${totalCostoGeneral.toLocaleString('es-AR')}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* DESGLOSE POR HOSPITAL Y SERVICIO */}
+                    <div className="space-y-4">
+                      <h3 className="text-sm font-extrabold text-gray-900 dark:text-white flex items-center">
+                        <Building className="w-4.5 h-4.5 mr-2 text-indigo-500" /> Desglose por Efector y Servicio
+                      </h3>
+                      <div className="space-y-4">
+                        {Object.values(desgloseEfectores).map((h: any) => (
+                          <div key={h.nombre} className="border border-gray-200 dark:border-gray-800 rounded-xl overflow-hidden bg-white dark:bg-gray-955 shadow-sm transition-all">
+                            <div className="bg-gray-50/80 dark:bg-gray-900/40 px-5 py-3.5 flex justify-between items-center border-b border-gray-200 dark:border-gray-800 flex-wrap gap-2">
+                              <span className="font-extrabold text-sm text-gray-900 dark:text-gray-100 uppercase tracking-wide flex items-center">
+                                <Building className="w-4 h-4 mr-2 text-indigo-600 dark:text-indigo-400 animate-pulse" /> {h.nombre}
+                              </span>
+                              <div className="flex items-center space-x-4 text-xs">
+                                <span className="text-gray-500 dark:text-gray-400 font-semibold">Viandas: <strong className="text-gray-800 dark:text-gray-200 font-bold">{h.totalViandas}</strong></span>
+                                <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">Subtotal: ${h.totalCosto.toLocaleString('es-AR')}</span>
+                              </div>
+                            </div>
+                            <div className="p-4 bg-white dark:bg-gray-950">
+                              <div className="overflow-x-auto rounded-xl border border-gray-150 dark:border-gray-800">
+                                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                                  <thead className="bg-gray-50/50 dark:bg-gray-900/20">
+                                    <tr>
+                                      <th className="px-4 py-2 text-left text-xs font-bold text-gray-500 dark:text-white uppercase">Servicio</th>
+                                      <th className="px-4 py-2 text-center text-xs font-bold text-gray-500 dark:text-white uppercase">Cantidad Viandas</th>
+                                      <th className="px-4 py-2 text-right text-xs font-bold text-gray-500 dark:text-white uppercase">Costo Estimado</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-gray-150 dark:divide-gray-800 text-xs">
+                                    {Object.values(h.servicios).map((s: any) => (
+                                      <tr key={s.nombre} className="hover:bg-gray-50/20 dark:hover:bg-gray-900/10 transition-colors">
+                                        <td className="px-4 py-2.5 font-bold text-gray-700 dark:text-gray-300">{s.nombre}</td>
+                                        <td className="px-4 py-2.5 text-center font-bold text-gray-600 dark:text-gray-400">{s.viandas}</td>
+                                        <td className="px-4 py-2.5 text-right font-bold font-mono text-gray-955 dark:text-white">${s.costo.toLocaleString('es-AR')}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
                           </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
       )}
 
       {activeTab === "Importacion" && (
