@@ -1,8 +1,8 @@
 "use client";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+const API_URL = "";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useTheme } from "next-themes";
 import Swal from 'sweetalert2';
 import { 
@@ -11,9 +11,20 @@ import {
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 type Role = "Jefe" | "Gerente" | "RRHH" | "Admin";
+
+const DIETAS_DISPONIBLES = ["Normal", "Gastrica", "Diabetica", "Hepatico", "Vegetariano", "Celiaca"];
+
+const getRacionLabel = (horario: string) => {
+  if (!horario) return "Almuerzo o Cena";
+  const h = horario.toLowerCase();
+  if (h.includes("24") || h.includes("y cena") || h === "almuerzo y cena") {
+    return "Almuerzo y Cena";
+  }
+  return "Almuerzo o Cena";
+};
 
 const getTodayStr = () => {
   const today = new Date();
@@ -41,6 +52,9 @@ export default function Home() {
 
   const [limiteAlmuerzo, setLimiteAlmuerzo] = useState("09:00");
   const [limiteCena, setLimiteCena] = useState("17:00");
+  const [limiteAuthAlmuerzo, setLimiteAuthAlmuerzo] = useState("11:00");
+  const [limiteAuthCena, setLimiteAuthCena] = useState("18:00");
+  const [dietasHabilitadas, setDietasHabilitadas] = useState<string[]>(DIETAS_DISPONIBLES);
 
   useEffect(() => {
     if (token) {
@@ -49,6 +63,12 @@ export default function Home() {
       .then(d => {
         if (d && d.LimiteAlmuerzo) setLimiteAlmuerzo(d.LimiteAlmuerzo);
         if (d && d.LimiteCena) setLimiteCena(d.LimiteCena);
+        if (d && d.LimiteAutorizacionAlmuerzo) setLimiteAuthAlmuerzo(d.LimiteAutorizacionAlmuerzo);
+        if (d && d.LimiteAutorizacionCena) setLimiteAuthCena(d.LimiteAutorizacionCena);
+        if (d && d.DietasHabilitadas) {
+          const arr = d.DietasHabilitadas.split(',').map((x: string) => x.trim()).filter(Boolean);
+          if (arr.length > 0) setDietasHabilitadas(arr);
+        }
       }).catch(console.error);
     }
   }, [token]);
@@ -58,6 +78,11 @@ export default function Home() {
   const isPastAlmuerzo = currentTotalMins >= (lAh * 60 + lAm);
   const [lCh, lCm] = limiteCena.split(':').map(Number);
   const isPastCena = currentTotalMins >= (lCh * 60 + lCm);
+
+  const [lAuthAh, lAuthAm] = limiteAuthAlmuerzo.split(':').map(Number);
+  const isPastAuthAlmuerzo = currentTotalMins >= (lAuthAh * 60 + lAuthAm);
+  const [lAuthCh, lAuthCm] = limiteAuthCena.split(':').map(Number);
+  const isPastAuthCena = currentTotalMins >= (lAuthCh * 60 + lAuthCm);
 
   const handleLogin = (jwtToken: string, userRole: number, id: number, hospName: string | null, servName: string | null, userLoginName: string) => {
     setToken(jwtToken);
@@ -172,15 +197,17 @@ export default function Home() {
           </div>
         )}
 
-        {role === "Jefe" && <JefePanel isPastAlmuerzo={isPastAlmuerzo} isPastCena={isPastCena} limiteAlmuerzo={limiteAlmuerzo} limiteCena={limiteCena} token={token} userId={userId} servicioName={servicioName} />}
+        {role === "Jefe" && <JefePanel isPastAlmuerzo={isPastAlmuerzo} isPastCena={isPastCena} isPastAuthAlmuerzo={isPastAuthAlmuerzo} isPastAuthCena={isPastAuthCena} limiteAlmuerzo={limiteAlmuerzo} limiteCena={limiteCena} limiteAuthAlmuerzo={limiteAuthAlmuerzo} limiteAuthCena={limiteAuthCena} token={token} userId={userId} servicioName={servicioName} dietasProp={dietasHabilitadas} />}
         {role === "Gerente" && (
           <GerentePanel 
             token={token} 
             hospitalName={hospitalName}
             username={username}
-            onConfigUpdated={(alm, cen) => {
+            dietasHabilitadasProp={dietasHabilitadas}
+            onConfigUpdated={(alm, cen, dietasArr) => {
               setLimiteAlmuerzo(alm);
               setLimiteCena(cen);
+              if (dietasArr) setDietasHabilitadas(dietasArr);
             }} 
           />
         )}
@@ -202,6 +229,17 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
   const [qrCodeUrl, setQrCodeUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const { theme } = useTheme();
+
+  const usernameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (step === 1) {
+      const timer = setTimeout(() => {
+        usernameInputRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [step]);
 
   const doLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -313,6 +351,8 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
                   <User className="h-5 w-5 text-gray-400" />
                 </div>
                 <input 
+                  ref={usernameInputRef}
+                  autoFocus
                   type="text" 
                   value={username} 
                   onChange={e => setUsername(e.target.value)} 
@@ -430,7 +470,168 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
   );
 }
 
-function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, token, userId, servicioName }: { isPastAlmuerzo: boolean, isPastCena: boolean, limiteAlmuerzo: string, limiteCena: string, token: string, userId: number | null, servicioName?: string | null }) {
+function AgentSearchableSelect({
+  options,
+  selectedId,
+  onSelect,
+  placeholder = "Buscar agente por nombre o DNI",
+  label,
+  accentColor = "orange",
+  required = false
+}: {
+  options: any[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  placeholder?: string;
+  label?: string;
+  accentColor?: "orange" | "purple" | "blue";
+  required?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const selectedAgent = options.find(o => String(o.Id) === String(selectedId));
+
+  const filteredOptions = options.filter(o => {
+    if (!search.trim()) return true;
+    const term = search.toLowerCase();
+    const nombre = (o.NombreCompleto || `${o.Nombre || ''} ${o.Apellido || ''}`).toLowerCase();
+    const dni = (o.DNI || "").toLowerCase();
+    return nombre.includes(term) || dni.includes(term);
+  });
+
+  const isPurple = accentColor === "purple";
+  const borderFocus = isPurple ? "focus:border-purple-500 focus:ring-purple-500/50" : "focus:border-orange-500 focus:ring-orange-500/50";
+  const bgSelected = isPurple ? "bg-purple-50 dark:bg-purple-900/30 text-purple-900 dark:text-purple-100" : "bg-blue-50 dark:bg-blue-900/30 text-blue-900 dark:text-blue-100";
+
+  return (
+    <div className="relative" ref={containerRef}>
+      {label && <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">{label}</label>}
+
+      <div className="relative">
+        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+          <Search className="h-4 w-4 text-gray-400" />
+        </div>
+
+        <input
+          type="text"
+          value={isOpen ? search : (selectedAgent ? `${selectedAgent.NombreCompleto || `${selectedAgent.Nombre || ''} ${selectedAgent.Apellido || ''}`} (DNI: ${selectedAgent.DNI})` : search)}
+          onFocus={() => {
+            setIsOpen(true);
+            setSearch("");
+          }}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            if (!isOpen) setIsOpen(true);
+          }}
+          placeholder={placeholder}
+          className={`block w-full pl-9 pr-8 py-2.5 border rounded-xl shadow-sm text-sm bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 border-gray-300 dark:border-gray-700 ${borderFocus} transition-all`}
+        />
+
+        {selectedId ? (
+          <button
+            type="button"
+            onClick={() => {
+              onSelect("");
+              setSearch("");
+              setIsOpen(true);
+            }}
+            className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+            title="Limpiar selección"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        ) : (
+          <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-gray-400">
+            <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          </div>
+        )}
+      </div>
+
+      {required && (
+        <input
+          type="text"
+          value={selectedId}
+          readOnly
+          required
+          className="opacity-0 absolute inset-0 pointer-events-none h-0 w-0"
+        />
+      )}
+
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl max-h-60 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-800 animate-in fade-in duration-150">
+          {filteredOptions.length === 0 ? (
+            <div className="p-3 text-xs text-center text-gray-500 dark:text-gray-400">
+              No se encontraron agentes coincidentes
+            </div>
+          ) : (
+            filteredOptions.map((item) => {
+              const isSelected = String(item.Id) === String(selectedId);
+              const nombre = item.NombreCompleto || `${item.Nombre || ''} ${item.Apellido || ''}`.trim();
+              return (
+                <div
+                  key={item.Id}
+                  onClick={() => {
+                    onSelect(String(item.Id));
+                    setIsOpen(false);
+                    setSearch("");
+                  }}
+                  className={`p-3 text-left cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/40 ${isSelected ? bgSelected : ''}`}
+                >
+                  <div className="font-bold text-sm text-gray-900 dark:text-gray-100">
+                    {nombre}
+                  </div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    DNI: <span className="font-semibold text-gray-700 dark:text-gray-300">{item.DNI}</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function JefePanel({ 
+  isPastAlmuerzo, 
+  isPastCena, 
+  isPastAuthAlmuerzo = false,
+  isPastAuthCena = false,
+  limiteAlmuerzo, 
+  limiteCena, 
+  limiteAuthAlmuerzo,
+  limiteAuthCena,
+  token, 
+  userId, 
+  servicioName, 
+  dietasProp 
+}: { 
+  isPastAlmuerzo: boolean, 
+  isPastCena: boolean, 
+  isPastAuthAlmuerzo?: boolean,
+  isPastAuthCena?: boolean,
+  limiteAlmuerzo: string, 
+  limiteCena: string, 
+  limiteAuthAlmuerzo?: string,
+  limiteAuthCena?: string,
+  token: string, 
+  userId: number | null, 
+  servicioName?: string | null, 
+  dietasProp?: string[] 
+}) {
   const [activeTab, setActiveTab] = useState("Planilla");
   const [planillaTab, setPlanillaTab] = useState<"almuerzo" | "cena">("almuerzo");
   const [staff, setStaff] = useState<any[]>([]);
@@ -442,17 +643,39 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
   const [expandedServices, setExpandedServices] = useState<{ [key: string]: boolean }>({});
   const [padronSearchTerm, setPadronSearchTerm] = useState("");
 
+  const dietas = (dietasProp && dietasProp.length > 0) ? dietasProp : DIETAS_DISPONIBLES;
+
   // Emergency form state
   const [emgNombre, setEmgNombre] = useState("");
   const [emgDni, setEmgDni] = useState("");
-  const [emgComida, setEmgComida] = useState(isPastAlmuerzo ? "Cena" : "Almuerzo");
-  const [emgDieta, setEmgDieta] = useState("Normal");
-  const [emgDietaCena, setEmgDietaCena] = useState("Normal");
+  const [emgComida, setEmgComida] = useState(isPastAuthAlmuerzo ? "Cena" : "Almuerzo");
+  const [emgDieta, setEmgDieta] = useState(dietas[0] || "Normal");
+  const [emgDietaCena, setEmgDietaCena] = useState(dietas[0] || "Normal");
+
+  useEffect(() => {
+    if (dietas.length > 0) {
+      if (!dietas.includes(emgDieta)) setEmgDieta(dietas[0]);
+      if (!dietas.includes(emgDietaCena)) setEmgDietaCena(dietas[0]);
+    }
+  }, [dietasProp]);
+
   const [emgDuracion, setEmgDuracion] = useState("hoy");
   const [emgPeriodoInicio, setEmgPeriodoInicio] = useState("");
   const [emgPeriodoFin, setEmgPeriodoFin] = useState("");
-  const [emgTipo, setEmgTipo] = useState("reemplazo");
+  const [emgTipo, setEmgTipo] = useState((isPastAuthAlmuerzo && isPastAuthCena) ? "reemplazo_excepcional" : "reemplazo");
+
+  useEffect(() => {
+    if (isPastAuthAlmuerzo && isPastAuthCena) {
+      if (emgTipo !== 'reemplazo_excepcional') {
+        setEmgTipo('reemplazo_excepcional');
+        setEmgJustificacion("Reemplazo excepcional de última hora");
+      }
+    } else if (isPastAuthAlmuerzo && (emgComida === 'Almuerzo' || emgComida === 'Ambos')) {
+      setEmgComida('Cena');
+    }
+  }, [isPastAuthAlmuerzo, isPastAuthCena]);
   const [emgReemplazaId, setEmgReemplazaId] = useState("");
+  const [emgSearchTerm, setEmgSearchTerm] = useState("");
   const [emgJustificacion, setEmgJustificacion] = useState("por reemplazo de personal");
   // Reportes
   const [repDesde, setRepDesde] = useState(getTodayStr());
@@ -489,7 +712,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     return 0;
   });
 
-  const dietas = ["Normal", "Gastrica", "Diabetica", "Hepatico", "Vegetariano", "Celiaca"];
+  // dietas dinámicas utilizadas desde dietasProp / DIETAS_DISPONIBLES
 
   const fetchStaff = async () => {
     try {
@@ -504,7 +727,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
         setPlantelDraft(activeData.map((p: any) => ({
           DNI: p.DNI,
           NombreCompleto: p.NombreCompleto,
-          Horario: p.Horario === "24h" ? "Guardia 24h" : "Guardia 12h"
+          Horario: getRacionLabel(p.Horario)
         })));
       }
     } catch (e) {
@@ -519,6 +742,39 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     } catch (e) {
       console.error(e);
     }
+  };
+
+  const deleteEmergency = async (id: number) => {
+    Swal.fire({
+      title: '¿Eliminar solicitud?',
+      text: 'Esta solicitud de emergencia pendiente será eliminada.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`${API_URL}/api/emergencies/${id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            Swal.fire({ title: "Eliminada", text: "Solicitud de emergencia eliminada con éxito.", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+            fetchHistorialEmergencias();
+          } else {
+            const data = await res.json();
+            Swal.fire({ title: "Error", text: data.error || "No se pudo eliminar la solicitud", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          }
+        } catch (e) {
+          Swal.fire({ title: "Error", text: "Error de conexión al eliminar la solicitud.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      }
+    });
   };
 
   const fetchPadron = async () => {
@@ -580,7 +836,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
   const handleGuardarPlantel = async () => {
     // Convertir el Horario de la BD al formato del Draft para comparar
-    const getDraftHorario = (dbHorario: string) => dbHorario === "24h" ? "Guardia 24h" : "Guardia 12h";
+    const getDraftHorario = (dbHorario: string) => getRacionLabel(dbHorario);
 
     const agentsToAdd = plantelDraft.filter(p => !staff.some(s => s.DNI === p.DNI && getDraftHorario(s.Horario) === p.Horario));
     const agentsToRemove = staff.filter(s => !plantelDraft.some(p => p.DNI === s.DNI && p.Horario === getDraftHorario(s.Horario)));
@@ -666,13 +922,13 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
     if (isDeadline) return;
 
     const p = staff.find(s => s.Id === personalId);
-    const is12h = p ? !p.Horario.includes("24h") : false;
+    const is1Racion = p ? (getRacionLabel(p.Horario) === "Almuerzo o Cena") : false;
 
     const current = selections[personalId] || { almuerzo: null, cena: null };
     const isSame = current[tipoComida] === tipoDieta;
     const isSelecting = !isSame;
 
-    if (is12h && isSelecting) {
+    if (is1Racion && isSelecting) {
       const otherMeal = tipoComida === "almuerzo" ? "cena" : "almuerzo";
       const otherDeadline = otherMeal === "almuerzo" ? isPastAlmuerzo : isPastCena;
       const otherValue = current[otherMeal];
@@ -680,8 +936,8 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
       if (otherValue) {
         if (otherDeadline) {
           Swal.fire({
-            title: "Guardia 12h",
-            text: `El agente (Guardia 12h) ya posee ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} registrado cuyo horario de pedido ya cerró. Solo se permite 1 comida por día.`,
+            title: "Almuerzo o Cena (1 ración)",
+            text: `El agente (Almuerzo o Cena) ya posee ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} registrado cuyo horario de pedido ya cerró. Solo se permite 1 ración por día.`,
             icon: "warning",
             timer: 5000,
             timerProgressBar: true,
@@ -714,10 +970,10 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
         [personalId]: {
           almuerzo: tipoComida === "almuerzo" 
             ? (same ? null : tipoDieta) 
-            : (is12h && !same ? null : cur.almuerzo),
+            : (is1Racion && !same ? null : cur.almuerzo),
           cena: tipoComida === "cena" 
             ? (same ? null : tipoDieta) 
-            : (is12h && !same ? null : cur.cena)
+            : (is1Racion && !same ? null : cur.cena)
         }
       };
     });
@@ -745,7 +1001,24 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
   };
 
   const handleGuardarPedidos = async () => {
-    const agentesSinDieta = staff.filter(p => !p.bajaProvisoriaHoy && !selections[p.Id]?.[planillaTab]);
+    const agentesSinDieta = staff.filter(p => {
+      if (p.bajaProvisoriaHoy) return false;
+      
+      const tieneAlmuerzo = !!selections[p.Id]?.almuerzo;
+      const tieneCena = !!selections[p.Id]?.cena;
+      const tieneSeleccionActual = !!selections[p.Id]?.[planillaTab];
+      
+      if (tieneSeleccionActual) return false;
+
+      const isGuardia24h = Boolean(p.EsGuardia24h);
+      if (!isGuardia24h) {
+        const tieneSeleccionEnOtraComida = planillaTab === 'almuerzo' ? tieneCena : tieneAlmuerzo;
+        if (tieneSeleccionEnOtraComida) return false;
+      }
+
+      return true;
+    });
+
     if (agentesSinDieta.length > 0) {
       const nombres = agentesSinDieta.map(p => p.NombreCompleto || `${p.Nombre || ''} ${p.Apellido || ''}`).join(", ");
       const confirm = await Swal.fire({
@@ -815,8 +1088,18 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
   const submitEmergency = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!/^\d{7,8}$/.test(emgDni.trim())) {
+      Swal.fire({ 
+        title: "DNI Inválido", 
+        text: "El DNI debe ser únicamente numérico y contener 7 u 8 dígitos.", 
+        icon: "warning", 
+        background: theme === 'dark' ? '#1f2937' : '#fff', 
+        color: theme === 'dark' ? '#fff' : '#000' 
+      });
+      return;
+    }
     try {
-      const isHoy = emgDuracion === "hoy";
+      const isHoy = emgTipo === "reemplazo_excepcional" || emgDuracion === "hoy";
       const start = isHoy ? new Date().toISOString() : emgPeriodoInicio;
       const end = isHoy ? new Date().toISOString() : emgPeriodoFin;
 
@@ -836,21 +1119,30 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
           tipoComida: emgComida,
           tipoDieta: emgDieta,
           tipoDietaCena: emgComida === 'Ambos' ? emgDietaCena : undefined,
-          justificacion: emgTipo === "reemplazo" ? "por reemplazo de personal" : emgJustificacion,
-          reemplazaId: emgTipo === "reemplazo" ? emgReemplazaId : undefined,
+          justificacion: emgTipo === "reemplazo" ? "por reemplazo de personal" : (emgTipo === "reemplazo_excepcional" ? (emgJustificacion || "Reemplazo excepcional de última hora") : emgJustificacion),
+          reemplazaId: (emgTipo === "reemplazo" || emgTipo === "reemplazo_excepcional") ? emgReemplazaId : undefined,
+          tipoSolicitud: emgTipo,
+          esExcepcional: emgTipo === "reemplazo_excepcional",
           solicitadoPorUsuarioId: userId
         })
       });
       if (res.ok) {
-        Swal.fire({ title: "Enviado", text: "Solicitud de emergencia creada", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-        setEmgNombre(""); setEmgDni(""); setEmgJustificacion(emgTipo === "reemplazo" ? "por reemplazo de personal" : "");
+        Swal.fire({ 
+          title: "Éxito", 
+          text: emgTipo === "reemplazo_excepcional" ? "Reemplazo excepcional registrado con éxito" : "Solicitud de emergencia creada", 
+          icon: "success", 
+          background: theme === 'dark' ? '#1f2937' : '#fff', 
+          color: theme === 'dark' ? '#fff' : '#000' 
+        });
+        setEmgNombre(""); setEmgDni(""); setEmgReemplazaId("");
+        setEmgJustificacion(emgTipo === "reemplazo" ? "por reemplazo de personal" : "");
         fetchHistorialEmergencias();
       } else {
         const data = await res.json();
         Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch (e) {
-      Swal.fire({ title: "Error", text: "Error al crear emergencia", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      Swal.fire({ title: "Error", text: "Error de red", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
   };
 
@@ -998,7 +1290,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
 
   const exportExcel = () => {
     if (reportes.length === 0) return Swal.fire({ title: "Aviso", text: "No hay reportes para exportar.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-    let csv = "Fecha,Tipo,Personal/Paciente,DNI,Dieta,Estado\n";
+    
     const filtered = sortedReportes.filter(r => {
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
@@ -1006,23 +1298,26 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
       const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
       return name.includes(term) || dni.includes(term);
     });
-    filtered.forEach(r => {
-      const fecha = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const name = r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`;
-      const dni = r.Personal ? r.Personal.DNI : r.EmergenciaDNI;
-      csv += `${fecha},${r.TipoComida},"${name}",${dni},${r.TipoDieta},${r.Estado}\n`;
-    });
-    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csv], { type: 'text/csv;charset=utf-8;' }); // BOM for Excel
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Reporte_${repDesde}_al_${repHasta}.csv`;
-    link.click();
+
+    const exportData = filtered.map(r => ({
+      'Fecha': r.FechaPedido.split('T')[0].split('-').reverse().join('/'),
+      'Tipo': r.TipoComida,
+      'Personal / Paciente': r.Personal ? r.Personal.NombreCompleto : r.EmergenciaNombreCompleto,
+      'DNI': r.Personal ? r.Personal.DNI : r.EmergenciaDNI,
+      'Dieta': r.TipoDieta,
+      'Estado': r.Estado
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reporte de Comidas");
+
+    XLSX.writeFile(workbook, `Reporte_SisAR_${repDesde}_al_${repHasta}.xlsx`);
   };
 
   const exportPDF = () => {
     if (reportes.length === 0) return Swal.fire({ title: "Aviso", text: "No hay reportes para exportar.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-    const printWindow = window.open('', '', 'width=800,height=600');
-    if (!printWindow) return;
+    
     const filtered = sortedReportes.filter(r => {
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
@@ -1030,25 +1325,31 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
       const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
       return name.includes(term) || dni.includes(term);
     });
-    let html = `<html><head><title>Reporte de Comidas</title><style>
-      body { font-family: sans-serif; padding: 20px; }
-      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-      th { background-color: #f2f2f2; -webkit-print-color-adjust: exact; }
-    </style></head><body>
-      <h2>Reporte de Comidas (${repDesde.split('-').reverse().join('/')} al ${repHasta.split('-').reverse().join('/')})</h2>
-      <table><thead><tr><th>Fecha</th><th>Tipo</th><th>Personal / Paciente</th><th>DNI</th><th>Dieta</th><th>Estado</th></tr></thead><tbody>`;
-    filtered.forEach(r => {
-      const fecha = r.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const name = r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`;
-      const dni = r.Personal ? r.Personal.DNI : r.EmergenciaDNI;
-      html += `<tr><td>${fecha}</td><td>${r.TipoComida}</td><td>${name}</td><td>${dni}</td><td>${r.TipoDieta}</td><td>${r.Estado}</td></tr>`;
+
+    if (filtered.length === 0) return Swal.fire({ title: "Aviso", text: "No hay reportes para exportar con el filtro actual.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(`Reporte de Comidas SisAR (${repDesde.split('-').reverse().join('/')} al ${repHasta.split('-').reverse().join('/')})`, 14, 15);
+    
+    const tableData = filtered.map(r => [
+      r.FechaPedido.split('T')[0].split('-').reverse().join('/'),
+      r.TipoComida,
+      r.Personal ? r.Personal.NombreCompleto : r.EmergenciaNombreCompleto,
+      r.Personal ? r.Personal.DNI : (r.EmergenciaDNI || "-"),
+      r.TipoDieta,
+      r.Estado
+    ]);
+
+    autoTable(doc, {
+      head: [['Fecha', 'Tipo', 'Personal / Paciente', 'DNI', 'Dieta', 'Estado']],
+      body: tableData,
+      startY: 22,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [59, 130, 246] }
     });
-    html += `</tbody></table></body></html>`;
-    printWindow.document.write(html);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
+
+    doc.save(`Reporte_SisAR_${repDesde}_al_${repHasta}.pdf`);
   };
 
   const tabs = [
@@ -1158,7 +1459,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                             </span>
                           )}
                         </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">DNI: {p.DNI} • {p.Horario}</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">DNI: {p.DNI} • {getRacionLabel(p.Horario)}</span>
                       </div>
                     </td>
                     {dietas.map(d => {
@@ -1226,138 +1527,228 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Para reemplazos de personal inhabilitado o agregados extra justificados.</p>
           </div>
 
+          {isPastAuthAlmuerzo && isPastAuthCena && (
+            <div className="bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 p-4 rounded-xl flex items-center space-x-3 text-purple-900 dark:text-purple-300">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 text-purple-600 dark:text-purple-400" />
+              <div className="text-xs sm:text-sm">
+                <strong>Horarios de autorización de emergencias expirados:</strong> Las solicitudes de emergencia normal de hoy han cerrado. Únicamente puede registrar <strong>⚡ Reemplazos Excepcionales de Última Hora</strong>.
+              </div>
+            </div>
+          )}
+
           <form className="flex flex-col gap-6" onSubmit={submitEmergency}>
             
-            {/* ROW 1: Nombre y DNI */}
+            {/* ROW 1: Tipo de Solicitud */}
+            <div className="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+              <label className="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Tipo de Solicitud</label>
+              <div className="flex flex-wrap gap-5">
+                <label className={`flex items-center gap-2 ${isPastAuthAlmuerzo && isPastAuthCena ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                  <input 
+                    type="radio" 
+                    name="emgTipo" 
+                    value="reemplazo" 
+                    disabled={isPastAuthAlmuerzo && isPastAuthCena}
+                    checked={emgTipo === 'reemplazo'} 
+                    onChange={() => {
+                      setEmgTipo('reemplazo');
+                      setEmgJustificacion("por reemplazo de personal");
+                    }} 
+                    className="accent-orange-500 w-4 h-4" 
+                  /> 
+                  <span className="text-sm font-semibold">Reemplazo de Personal</span>
+                </label>
+
+                <label className={`flex items-center gap-2 ${isPastAuthAlmuerzo && isPastAuthCena ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                  <input 
+                    type="radio" 
+                    name="emgTipo" 
+                    value="extra" 
+                    disabled={isPastAuthAlmuerzo && isPastAuthCena}
+                    checked={emgTipo === 'extra'} 
+                    onChange={() => {
+                      setEmgTipo('extra');
+                      setEmgJustificacion("");
+                    }} 
+                    className="accent-orange-500 w-4 h-4" 
+                  /> 
+                  <span className="text-sm font-semibold">Agregado Extra</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="emgTipo" 
+                    value="reemplazo_excepcional" 
+                    checked={emgTipo === 'reemplazo_excepcional'} 
+                    onChange={() => {
+                      setEmgTipo('reemplazo_excepcional');
+                      setEmgJustificacion("Reemplazo excepcional de última hora");
+                    }} 
+                    className="accent-purple-600 w-4 h-4" 
+                  /> 
+                  <span className="text-sm font-bold text-purple-700 dark:text-purple-400">⚡ Reemplazo Excepcional (Última Hora)</span>
+                </label>
+              </div>
+
+              {/* Selector "A quién reemplaza" para Reemplazo Normal */}
+              {emgTipo === 'reemplazo' && (() => {
+                const idsYaReemplazados = new Set(
+                  historialEmergencias
+                    .filter(h => h.EmergenciaReemplazaId !== null && h.Estado !== 'Rechazado')
+                    .map(h => h.EmergenciaReemplazaId)
+                );
+                const disponibles = staff.filter(p => (p.bajaProvisoriaHoy || p.bajaDefinitivaHoy) && !idsYaReemplazados.has(p.Id));
+
+                return (
+                  <div className="mt-3">
+                    <AgentSearchableSelect
+                      options={disponibles}
+                      selectedId={emgReemplazaId}
+                      onSelect={setEmgReemplazaId}
+                      label="Seleccionar a quién reemplaza (Agente de licencia/baja):"
+                      placeholder="Buscar por nombre o DNI..."
+                      accentColor="orange"
+                      required
+                    />
+                    {disponibles.length === 0 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 font-semibold">
+                        * Todos los agentes de licencia/baja ya poseen un reemplazo registrado.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Selector "A quién reemplaza" para Reemplazo Excepcional */}
+              {emgTipo === 'reemplazo_excepcional' && (() => {
+                const agentesConViandaHoy = staff.filter(p => !p.bajaProvisoriaHoy);
+
+                return (
+                  <div className="mt-3">
+                    <AgentSearchableSelect
+                      options={agentesConViandaHoy}
+                      selectedId={emgReemplazaId}
+                      onSelect={setEmgReemplazaId}
+                      label="Selecciona a quién reemplaza a última hora (Agente activo en planilla hoy):"
+                      placeholder="Buscar por nombre o DNI..."
+                      accentColor="purple"
+                      required
+                    />
+                  </div>
+                );
+              })()}
+
+              {/* Justificación para Agregado Extra */}
+              {emgTipo === 'extra' && (
+                <div className="mt-3">
+                  <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Justificación Obligatoria</label>
+                  <textarea value={emgJustificacion} onChange={e => setEmgJustificacion(e.target.value)} required={emgTipo === 'extra'} rows={2} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Escribe aquí la justificación obligatoria..."></textarea>
+                </div>
+              )}
+            </div>
+
+            {/* ROW 2: Nombre y DNI del Reemplazante */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">Nombre y Apellido</label>
-                <input type="text" value={emgNombre} onChange={e => setEmgNombre(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Ej. Carlos Ruiz" required />
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                  {emgTipo === 'reemplazo_excepcional' ? 'Nombre y Apellido de la persona que retira' : 'Nombre y Apellido'}
+                </label>
+                <input type="text" value={emgNombre} onChange={e => setEmgNombre(e.target.value)} disabled={emgTipo !== 'reemplazo_excepcional' && isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Ej. Carlos Ruiz" required />
               </div>
               <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">DNI</label>
-                <input type="text" value={emgDni} onChange={e => setEmgDni(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Ej. 11223344" required />
+                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
+                  {emgTipo === 'reemplazo_excepcional' ? 'DNI de la persona que retira' : 'DNI'}
+                </label>
+                <input 
+                  type="text" 
+                  value={emgDni} 
+                  onChange={e => {
+                    const val = e.target.value.replace(/\D/g, '').slice(0, 8);
+                    setEmgDni(val);
+                  }} 
+                  maxLength={8}
+                  pattern="\d{7,8}"
+                  title="El DNI debe contener 7 u 8 dígitos numéricos"
+                  disabled={emgTipo !== 'reemplazo_excepcional' && isPastAlmuerzo && isPastCena} 
+                  className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
+                  placeholder="Ej. 11223344 (8 dígitos)" 
+                  required 
+                />
               </div>
             </div>
 
-            {/* ROW 2: Comida, Dieta, Duracion */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-5 bg-gray-50 dark:bg-gray-800/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Comida</label>
-                <div className="flex gap-4">
-                  {!isPastAlmuerzo && (
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="emgComida" value="Almuerzo" checked={emgComida === 'Almuerzo'} onChange={() => setEmgComida('Almuerzo')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Almuerzo</span>
-                    </label>
-                  )}
-                  {!isPastCena && (
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="emgComida" value="Cena" checked={emgComida === 'Cena'} onChange={() => setEmgComida('Cena')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Cena</span>
-                    </label>
-                  )}
-                  {(!isPastAlmuerzo && !isPastCena) && (
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="emgComida" value="Ambos" checked={emgComida === 'Ambos'} onChange={() => setEmgComida('Ambos')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Ambos</span>
-                    </label>
-                  )}
-                </div>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                  {emgComida === 'Ambos' ? 'Dieta Almuerzo' : 'Dieta'}
-                </label>
-                <select value={emgDieta} onChange={e => setEmgDieta(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                  {dietas.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-                
-                {emgComida === 'Ambos' && (
-                  <div className="mt-3">
-                    <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Dieta Cena</label>
-                    <select value={emgDietaCena} onChange={e => setEmgDietaCena(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                      {dietas.map(d => <option key={d} value={d}>{d}</option>)}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Duración</label>
-                <div className="flex flex-col gap-2">
+            {/* ROW 3: Comida, Dieta, Duracion (Oculto en reemplazo_excepcional) */}
+            {emgTipo !== 'reemplazo_excepcional' && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 bg-gray-50 dark:bg-gray-800/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Comida</label>
                   <div className="flex gap-4">
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="emgDuracion" value="hoy" checked={emgDuracion === 'hoy'} onChange={() => setEmgDuracion('hoy')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Solo por hoy</span>
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input type="radio" name="emgDuracion" value="rango" checked={emgDuracion === 'rango'} onChange={() => setEmgDuracion('rango')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Rango de fechas</span>
-                    </label>
+                    {!isPastAuthAlmuerzo && (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="emgComida" value="Almuerzo" checked={emgComida === 'Almuerzo'} onChange={() => setEmgComida('Almuerzo')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Almuerzo</span>
+                      </label>
+                    )}
+                    {!isPastAuthCena && (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="emgComida" value="Cena" checked={emgComida === 'Cena'} onChange={() => setEmgComida('Cena')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Cena</span>
+                      </label>
+                    )}
+                    {(!isPastAuthAlmuerzo && !isPastAuthCena) && (
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="emgComida" value="Ambos" checked={emgComida === 'Ambos'} onChange={() => setEmgComida('Ambos')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Ambos</span>
+                      </label>
+                    )}
                   </div>
-                  {emgDuracion === 'rango' && (
-                    <div className="flex gap-2 mt-1">
-                      <input type="date" value={emgPeriodoInicio} onChange={e => setEmgPeriodoInicio(e.target.value)} className="w-full rounded border-gray-300 dark:border-gray-700 sm:text-xs px-2 py-1 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
-                      <input type="date" value={emgPeriodoFin} onChange={e => setEmgPeriodoFin(e.target.value)} className="w-full rounded border-gray-300 dark:border-gray-700 sm:text-xs px-2 py-1 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                    {emgComida === 'Ambos' ? 'Dieta Almuerzo' : 'Dieta'}
+                  </label>
+                  <select value={emgDieta} onChange={e => setEmgDieta(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                    {dietas.map(d => <option key={d} value={d}>{d}</option>)}
+                  </select>
+                  
+                  {emgComida === 'Ambos' && (
+                    <div className="mt-3">
+                      <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Dieta Cena</label>
+                      <select value={emgDietaCena} onChange={e => setEmgDietaCena(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                        {dietas.map(d => <option key={d} value={d}>{d}</option>)}
+                      </select>
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
 
-            {/* ROW 3: Tipo de Emergencia */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Tipo de Solicitud</label>
-                <div className="flex gap-4 mb-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="radio" 
-                      name="emgTipo" 
-                      value="reemplazo" 
-                      checked={emgTipo === 'reemplazo'} 
-                      onChange={() => {
-                        setEmgTipo('reemplazo');
-                        setEmgJustificacion("por reemplazo de personal");
-                      }} 
-                      className="accent-orange-500 w-4 h-4" 
-                    /> 
-                    <span className="text-sm">Reemplazo de Personal</span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input 
-                      type="radio" 
-                      name="emgTipo" 
-                      value="extra" 
-                      checked={emgTipo === 'extra'} 
-                      onChange={() => {
-                        setEmgTipo('extra');
-                        setEmgJustificacion("");
-                      }} 
-                      className="accent-orange-500 w-4 h-4" 
-                    /> 
-                    <span className="text-sm">Agregado Extra</span>
-                  </label>
-                </div>
-                
-                {emgTipo === 'reemplazo' && (
-                  <select value={emgReemplazaId} onChange={e => setEmgReemplazaId(e.target.value)} required={emgTipo === 'reemplazo'} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
-                    <option value="">-- Seleccionar a quién reemplaza --</option>
-                    {staff.filter(p => p.bajaProvisoriaHoy || p.bajaDefinitivaHoy).map(p => (
-                      <option key={p.Id} value={p.Id}>{p.NombreCompleto || `${p.Nombre || ''} ${p.Apellido || ''}`.trim()} (DNI: {p.DNI})</option>
-                    ))}
-                  </select>
-                )}
-                
-                {emgTipo === 'extra' && (
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">Justificación Obligatoria</label>
-                    <textarea value={emgJustificacion} onChange={e => setEmgJustificacion(e.target.value)} required={emgTipo === 'extra'} rows={2} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Escribe aquí la justificación obligatoria..."></textarea>
+                <div>
+                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Duración</label>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="emgDuracion" value="hoy" checked={emgDuracion === 'hoy'} onChange={() => setEmgDuracion('hoy')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Solo por hoy</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" name="emgDuracion" value="rango" checked={emgDuracion === 'rango'} onChange={() => setEmgDuracion('rango')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Rango de fechas</span>
+                      </label>
+                    </div>
+                    {emgDuracion === 'rango' && (
+                      <div className="flex gap-2 mt-1">
+                        <input type="date" value={emgPeriodoInicio} onChange={e => setEmgPeriodoInicio(e.target.value)} className="w-full rounded border-gray-300 dark:border-gray-700 sm:text-xs px-2 py-1 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+                        <input type="date" value={emgPeriodoFin} onChange={e => setEmgPeriodoFin(e.target.value)} className="w-full rounded border-gray-300 dark:border-gray-700 sm:text-xs px-2 py-1 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
+                      </div>
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex justify-end mt-2 pt-4 border-t border-gray-200 dark:border-gray-800">
-              <button type="submit" disabled={isPastAlmuerzo && isPastCena} className="inline-flex items-center justify-center py-2.5 px-6 border border-transparent shadow-sm text-sm font-bold rounded-lg text-white bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-95">
-                <CheckCircle className="w-4 h-4 mr-2" /> Enviar Solicitud de Emergencia
+              <button 
+                type="submit" 
+                disabled={emgTipo !== 'reemplazo_excepcional' && isPastAlmuerzo && isPastCena} 
+                className={`inline-flex items-center justify-center py-2.5 px-6 border border-transparent shadow-sm text-sm font-bold rounded-lg text-white transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 ${emgTipo === 'reemplazo_excepcional' ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700' : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600'}`}
+              >
+                <CheckCircle className="w-4 h-4 mr-2" /> 
+                {emgTipo === 'reemplazo_excepcional' ? '⚡ Registrar Reemplazo Excepcional' : 'Enviar Solicitud de Emergencia'}
               </button>
             </div>
           </form>
@@ -1433,20 +1824,36 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                           {h.TipoComida} <span className="text-gray-400 text-xs">({h.TipoDieta})</span>
                         </td>
                         <td className="p-4 text-sm text-gray-700 dark:text-gray-300">
-                          {isReemplazo ? (
+                          {h.EsExcepcional ? (
+                            <span className="inline-flex items-center text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 px-2.5 py-0.5 rounded-full text-xs font-bold border border-purple-300 dark:border-purple-700">
+                              ⚡ Reemplazo Excepcional ({reemplazadoNombre || 'Agente'})
+                            </span>
+                          ) : isReemplazo ? (
                             <span className="inline-flex items-center text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2.5 py-0.5 rounded-full text-xs border border-blue-200 dark:border-blue-800">
                               Reemplazo a: {reemplazadoNombre || 'Agente'}
                             </span>
                           ) : (
-                            <span className="inline-flex items-center text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 px-2.5 py-0.5 rounded-full text-xs border border-purple-200 dark:border-purple-800">
+                            <span className="inline-flex items-center text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 px-2.5 py-0.5 rounded-full text-xs border border-orange-200 dark:border-orange-800">
                               Agregado Extra
                             </span>
                           )}
                         </td>
                         <td className="p-4 text-sm">
-                          <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeClass}`}>
-                            {h.Estado}
-                          </span>
+                          <div className="flex items-center space-x-2">
+                            <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${badgeClass}`}>
+                              {h.Estado}
+                            </span>
+                            {h.Estado === 'Pendiente' && (
+                              <button
+                                type="button"
+                                onClick={() => deleteEmergency(h.Id)}
+                                className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                title="Eliminar / Cancelar Solicitud de Emergencia"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1509,17 +1916,21 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                           const isSelected = !!draftEntry;
                           const dbAssigned = staff.find(s => s.DNI === p.DNI);
                           
-                          // Global assignments from backend excluding THIS service's DB state
-                          const externalHas24h = dbAssigned?.Horario.includes('24h') ? false : p.has24h;
-                          const externalCount12h = p.count12h - (dbAssigned?.Horario.includes('12h') ? 1 : 0);
+                          const getRacionesCount = (h: string) => (h && (h.toLowerCase().includes("24") || h.toLowerCase().includes("y cena"))) ? 2 : 1;
 
-                          const isAssignedElsewhere = !isSelected && (externalHas24h || externalCount12h > 0);
-                          const disable12h = externalHas24h || externalCount12h >= 2;
-                          const disable24h = externalHas24h || externalCount12h > 0;
+                          const dbAssignedRaciones = dbAssigned ? getRacionesCount(dbAssigned.Horario) : 0;
+                          const totalExternalRaciones = (p.has24h ? 2 : (p.count12h || 0)) - dbAssignedRaciones;
+
+                          const isAssignedElsewhere = !isSelected && totalExternalRaciones > 0;
+                          const isGuardia24h = Boolean(p.EsGuardia24h);
+                          const maxAllowedRaciones = isGuardia24h ? 2 : 1;
+
+                          const disable12h = totalExternalRaciones >= maxAllowedRaciones;
+                          const disable24h = !isGuardia24h || totalExternalRaciones >= 1;
 
                           // For selected agents, disable the button of their CURRENT draft shift
-                          const isDraft12h = draftEntry?.Horario?.includes('12h');
-                          const isDraft24h = draftEntry?.Horario?.includes('24h');
+                          const isDraft12h = draftEntry?.Horario === "Almuerzo o Cena";
+                          const isDraft24h = draftEntry?.Horario === "Almuerzo y Cena";
 
                           // Color classes
                           let containerClass = "p-3 text-sm flex justify-between items-center transition-colors group ";
@@ -1542,25 +1953,25 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                               <p className={textClass}>{p.NombreCompleto}</p>
                               <p className={`text-xs ${isSelected ? 'text-gray-400 opacity-60' : 'text-gray-500 dark:text-gray-400'}`}>
                                 DNI: {p.DNI}
-                                {isAssignedElsewhere && <span className="ml-2 text-blue-500 text-[10px] uppercase font-bold tracking-wider">Otro Servicio</span>}
+                                {isAssignedElsewhere && <span className="ml-2 text-blue-500 text-[10px] uppercase font-bold tracking-wider">Otro Servicio ({totalExternalRaciones} {totalExternalRaciones === 1 ? 'Ración' : 'Raciones'})</span>}
                               </p>
                             </div>
                             <div className="flex space-x-2">
                               <button
-                                onClick={() => addAgent(p, "Guardia 12h")}
+                                onClick={() => addAgent(p, "Almuerzo o Cena")}
                                 disabled={disable12h || isDraft12h}
                                 className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable12h || isDraft12h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300'}`}
-                                title="Asignar Guardia 12h"
+                                title="Asignar Almuerzo o Cena (1 ración)"
                               >
-                                {isDraft12h ? '✓ 12h' : '12h'}
+                                {isDraft12h ? '✓ Alm. o Cena' : 'Alm. o Cena'}
                               </button>
                               <button
-                                onClick={() => addAgent(p, "Guardia 24h")}
+                                onClick={() => addAgent(p, "Almuerzo y Cena")}
                                 disabled={disable24h || isDraft24h}
                                 className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable24h || isDraft24h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300'}`}
-                                title="Asignar Guardia 24h"
+                                title="Asignar Almuerzo y Cena (2 raciones)"
                               >
-                                {isDraft24h ? '✓ 24h' : '24h'}
+                                {isDraft24h ? '✓ Alm. y Cena' : 'Alm. y Cena'}
                               </button>
                             </div>
                           </div>
@@ -1577,7 +1988,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
               <div className="p-4 border-b border-indigo-200 dark:border-indigo-900/30 bg-indigo-50/50 dark:bg-indigo-900/10 flex justify-between items-center">
                 <div>
                   <h3 className="font-bold text-indigo-900 dark:text-indigo-100">Agentes del Plantel</h3>
-                  <p className="text-xs text-indigo-500 dark:text-indigo-400">Define el horario para cada uno</p>
+                  <p className="text-xs text-indigo-500 dark:text-indigo-400">Define las raciones permitidas para cada uno</p>
                 </div>
                 <span className="bg-indigo-200 dark:bg-indigo-800 text-indigo-800 dark:text-indigo-200 text-xs font-bold px-3 py-1 rounded-full">
                   {plantelDraft.length}
@@ -1598,7 +2009,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
                       </div>
                       <div className="flex items-center space-x-3">
                         <span className="text-xs font-bold px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-md">
-                          {p.Horario}
+                          {getRacionLabel(p.Horario)}
                         </span>
                         <button 
                           onClick={() => removeAgent(p.DNI)}
@@ -1707,7 +2118,7 @@ function JefePanel({ isPastAlmuerzo, isPastCena, limiteAlmuerzo, limiteCena, tok
   );
 }
 
-function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { token: string, hospitalName?: string | null, username?: string | null, onConfigUpdated?: (almuerzo: string, cena: string) => void }) {
+function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, onConfigUpdated }: { token: string, hospitalName?: string | null, username?: string | null, dietasHabilitadasProp?: string[], onConfigUpdated?: (almuerzo: string, cena: string, dietas?: string[]) => void }) {
   const [emergencias, setEmergencias] = useState<any[]>([]);
   const [resolucionTxt, setResolucionTxt] = useState<{ [id: number]: string }>({});
   const [activeTab, setActiveTab] = useState("Bandeja");
@@ -1718,8 +2129,6 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
   const [buscarServicio, setBuscarServicio] = useState("");
   const serviciosFiltrados = servicios.filter(s => s.Nombre.toLowerCase().includes(buscarServicio.toLowerCase()));
 
-
-
   // Reportes & Config
   const [repDesde, setRepDesde] = useState(getTodayStr());
   const [repHasta, setRepHasta] = useState(getTodayStr());
@@ -1727,7 +2136,22 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
   const [reportes, setReportes] = useState<any[]>([]);
   const [configAlmuerzo, setConfigAlmuerzo] = useState("09:00");
   const [configCena, setConfigCena] = useState("17:00");
+  const [configAuthAlmuerzo, setConfigAuthAlmuerzo] = useState("11:00");
+  const [configAuthCena, setConfigAuthCena] = useState("18:00");
+  const [dietasConfig, setDietasConfig] = useState<string[]>(dietasHabilitadasProp || DIETAS_DISPONIBLES);
   const { theme } = useTheme();
+
+  const toggleDietaConfig = (dietaNombre: string) => {
+    if (dietasConfig.includes(dietaNombre)) {
+      if (dietasConfig.length === 1) {
+        Swal.fire({ title: "Atención", text: "Debe haber al menos un menú habilitado", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        return;
+      }
+      setDietasConfig(dietasConfig.filter(d => d !== dietaNombre));
+    } else {
+      setDietasConfig([...dietasConfig, dietaNombre]);
+    }
+  };
 
   const fetchEmergencias = async () => {
     try {
@@ -1762,6 +2186,12 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
       .then(d => {
         if (d && d.LimiteAlmuerzo) setConfigAlmuerzo(d.LimiteAlmuerzo);
         if (d && d.LimiteCena) setConfigCena(d.LimiteCena);
+        if (d && d.LimiteAutorizacionAlmuerzo) setConfigAuthAlmuerzo(d.LimiteAutorizacionAlmuerzo);
+        if (d && d.LimiteAutorizacionCena) setConfigAuthCena(d.LimiteAutorizacionCena);
+        if (d && d.DietasHabilitadas) {
+          const arr = d.DietasHabilitadas.split(',').map((x: string) => x.trim()).filter(Boolean);
+          if (arr.length > 0) setDietasConfig(arr);
+        }
       })
       .catch(console.error);
   }, [token]);
@@ -2031,17 +2461,54 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
   };
 
   const guardarConfiguracion = async () => {
+    const toMins = (hStr: string) => {
+      if (!hStr) return 0;
+      const [h, m] = hStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    if (toMins(configAuthAlmuerzo) <= toMins(configAlmuerzo)) {
+      Swal.fire({
+        title: "Horario Inválido",
+        text: `La hora tope para autorizar emergencias de Almuerzo (${configAuthAlmuerzo}) debe ser estrictamente posterior a la hora de cierre de pedidos (${configAlmuerzo}).`,
+        icon: "warning",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+      return;
+    }
+
+    if (toMins(configAuthCena) <= toMins(configCena)) {
+      Swal.fire({
+        title: "Horario Inválido",
+        text: `La hora tope para autorizar emergencias de Cena (${configAuthCena}) debe ser estrictamente posterior a la hora de cierre de pedidos (${configCena}).`,
+        icon: "warning",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+      return;
+    }
+
     try {
       const res = await fetch(`${API_URL}/api/hospital/config`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ limiteAlmuerzo: configAlmuerzo, limiteCena: configCena })
+        body: JSON.stringify({
+          limiteAlmuerzo: configAlmuerzo,
+          limiteCena: configCena,
+          limiteAutorizacionAlmuerzo: configAuthAlmuerzo,
+          limiteAutorizacionCena: configAuthCena,
+          dietasHabilitadas: dietasConfig.join(",")
+        })
       });
       if (res.ok) {
-        Swal.fire({ title: "Guardado", text: "Configuración guardada", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        Swal.fire({ title: "Guardado", text: "Configuración de horarios y menús guardada con éxito", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         if (onConfigUpdated) {
-          onConfigUpdated(configAlmuerzo, configCena);
+          onConfigUpdated(configAlmuerzo, configCena, dietasConfig);
         }
+      } else {
+        const data = await res.json();
+        Swal.fire({ title: "Error", text: data.error || "Error al guardar la configuración.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     } catch {
       Swal.fire({ title: "Error", text: "No se pudo guardar la configuración.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
@@ -2398,15 +2865,15 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
     }
 
 
-    const individuales = filtered.filter(r => esServicioIndividual(r));
-    const consolidados = filtered.filter(r => !esServicioIndividual(r));
-
-    const gruposConsolidados: Record<string, any[]> = {};
-    consolidados.forEach(r => {
+    // Agrupar los reportes filtrados por servicio
+    const porServicio: Record<string, any[]> = {};
+    filtered.forEach(r => {
       const servicioName = getServicioNombre(r);
-      if (!gruposConsolidados[servicioName]) gruposConsolidados[servicioName] = [];
-      gruposConsolidados[servicioName].push(r);
+      if (!porServicio[servicioName]) porServicio[servicioName] = [];
+      porServicio[servicioName].push(r);
     });
+
+    const serviciosKeys = Object.keys(porServicio).sort((a, b) => a.localeCompare(b));
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -2421,118 +2888,129 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
 
     let vouchersHTML = '';
 
-    // Vouchers consolidados
-    Object.entries(gruposConsolidados).forEach(([servicio, platos]) => {
-      const date = platos[0].FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const totalPlatos = platos.length;
-      const counts: Record<string, number> = {};
-      platos.forEach(p => { counts[p.TipoDieta] = (counts[p.TipoDieta] || 0) + 1; });
-      const dietasText = Object.entries(counts).map(([dieta, cant]) => `${dieta} (${cant})`).join(' | ');
-      const qrData = encodeURIComponent(`${servicio}-${tipo}-${date}-Total:${totalPlatos}`);
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
+    serviciosKeys.forEach((servicio, sIdx) => {
+      const reportesServicio = porServicio[servicio];
+      const esUltimoServicio = sIdx === serviciosKeys.length - 1;
 
-      vouchersHTML += `
-        <div class="voucher">
-          <div class="watermark">SisAR ORIGINAL - SisAR ORIGINAL</div>
-          <div class="v-header">
-             <div class="v-logo">
-                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-                  <defs>
-                    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stop-color="#3b82f6" />
-                      <stop offset="100%" stop-color="#4f46e5" />
-                    </linearGradient>
-                  </defs>
-                  <rect width="64" height="64" rx="16" fill="url(#bg)" />
-                  <g transform="translate(14, 14) scale(1.5)">
-                    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 2v20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </g>
-                </svg>
-             </div>
-             <div class="v-title">
-                <div class="v-title-main">SisAR - VOUCHER DE COMIDA</div>
-                <div class="v-title-sub">Sistema de Administracion de Raciones</div>
-             </div>
-          </div>
-          <div class="v-body">
-             <div class="v-info">
-                <div class="v-row space-between">
-                   <div>TIPO: <strong>${tipo.toUpperCase()}</strong></div>
-                   <div>Servicio: ${servicio}</div>
-                   <div>Fecha: ${date}</div>
-                </div>
-                <div class="v-total">TOTAL PLATOS: ${totalPlatos}</div>
-                <div class="v-diets">Dietas: ${dietasText}</div>
-             </div>
-             <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
-          </div>
-          <div class="v-footer">
-             Impreso el ${fechaImpresion} a las ${horaImpresion} hs | Usuario: ${usuarioImpresion}
-          </div>
-        </div>
-        <div class="cut-line"></div>
-      `;
-    });
+      const individuales = reportesServicio.filter(r => esServicioIndividual(r));
+      const consolidados = reportesServicio.filter(r => !esServicioIndividual(r));
 
-    // Vouchers individuales
-    individuales.forEach(p => {
-      const servicio = getServicioNombre(p);
-      const date = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const agenteNombre = p.Personal ? p.Personal.NombreCompleto : (p.EmergenciaNombreCompleto || "Emergencia/Reemplazo");
-      const agenteDNI = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
-      const dieta = p.TipoDieta;
-      
-      const qrData = encodeURIComponent(`${servicio}-${tipo}-${date}-Agente:${agenteNombre}-DNI:${agenteDNI}-Dieta:${dieta}`);
-      const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
+      vouchersHTML += `<div class="servicio-group ${esUltimoServicio ? '' : 'page-break'}">`;
 
-      vouchersHTML += `
-        <div class="voucher">
-          <div class="watermark">INDIVIDUAL - SisAR ORIGINAL</div>
-          <div class="v-header">
-             <div class="v-logo">
-                <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-                  <defs>
-                    <linearGradient id="bg-ind" x1="0%" y1="0%" x2="100%" y2="100%">
-                      <stop offset="0%" stop-color="#10b981" />
-                      <stop offset="100%" stop-color="#059669" />
-                    </linearGradient>
-                  </defs>
-                  <rect width="64" height="64" rx="16" fill="url(#bg-ind)" />
-                  <g transform="translate(14, 14) scale(1.5)">
-                    <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M7 2v20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                    <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                  </g>
-                </svg>
-             </div>
-             <div class="v-title">
-                <div class="v-title-main">SisAR - VOUCHER INDIVIDUAL</div>
-                <div class="v-title-sub">Sistema de Administracion de Raciones</div>
-             </div>
+      // Vouchers consolidados para este servicio
+      if (consolidados.length > 0) {
+        const date = consolidados[0].FechaPedido.split('T')[0].split('-').reverse().join('/');
+        const totalPlatos = consolidados.length;
+        const counts: Record<string, number> = {};
+        consolidados.forEach(p => { counts[p.TipoDieta] = (counts[p.TipoDieta] || 0) + 1; });
+        const dietasText = Object.entries(counts).map(([dieta, cant]) => `${dieta} (${cant})`).join(' | ');
+        const qrData = encodeURIComponent(`${servicio}-${tipo}-${date}-Total:${totalPlatos}`);
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
+
+        vouchersHTML += `
+          <div class="voucher">
+            <div class="watermark">SisAR ORIGINAL - SisAR ORIGINAL</div>
+            <div class="v-header">
+               <div class="v-logo">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+                    <defs>
+                      <linearGradient id="bg-${sIdx}" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#3b82f6" />
+                        <stop offset="100%" stop-color="#4f46e5" />
+                      </linearGradient>
+                    </defs>
+                    <rect width="64" height="64" rx="16" fill="url(#bg-${sIdx})" />
+                    <g transform="translate(14, 14) scale(1.5)">
+                      <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M7 2v20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </g>
+                  </svg>
+               </div>
+               <div class="v-title">
+                  <div class="v-title-main">SisAR - VOUCHER DE COMIDA</div>
+                  <div class="v-title-sub">Sistema de Administracion de Raciones</div>
+               </div>
+            </div>
+            <div class="v-body">
+               <div class="v-info">
+                  <div class="v-row space-between">
+                     <div>TIPO: <strong>${tipo.toUpperCase()}</strong></div>
+                     <div>Servicio: ${servicio}</div>
+                     <div>Fecha: ${date}</div>
+                  </div>
+                  <div class="v-total">TOTAL PLATOS: ${totalPlatos}</div>
+                  <div class="v-diets">Dietas: ${dietasText}</div>
+               </div>
+               <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
+            </div>
+            <div class="v-footer">
+               Impreso el ${fechaImpresion} a las ${horaImpresion} hs | Usuario: ${usuarioImpresion}
+            </div>
           </div>
-          <div class="v-body">
-             <div class="v-info">
-                <div class="v-row space-between">
-                   <div>TIPO: <strong>${tipo.toUpperCase()}</strong></div>
-                   <div>Servicio: ${servicio}</div>
-                   <div>Fecha: ${date}</div>
-                </div>
-                <div class="v-total">AGENTE: ${agenteNombre}</div>
-                <div class="v-row" style="margin-bottom: 5px;">
-                   <div>DNI: <strong>${agenteDNI}</strong></div>
-                </div>
-                <div class="v-diets">Dieta: <strong>${dieta}</strong></div>
-             </div>
-             <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
+          <div class="cut-line"></div>
+        `;
+      }
+
+      // Vouchers individuales para este servicio
+      individuales.forEach((p, pIdx) => {
+        const date = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
+        const agenteNombre = p.Personal ? p.Personal.NombreCompleto : (p.EmergenciaNombreCompleto || "Emergencia/Reemplazo");
+        const agenteDNI = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
+        const dieta = p.TipoDieta;
+        
+        const qrData = encodeURIComponent(`${servicio}-${tipo}-${date}-Agente:${agenteNombre}-DNI:${agenteDNI}-Dieta:${dieta}`);
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
+
+        vouchersHTML += `
+          <div class="voucher">
+            <div class="watermark">INDIVIDUAL - SisAR ORIGINAL</div>
+            <div class="v-header">
+               <div class="v-logo">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+                    <defs>
+                      <linearGradient id="bg-ind-${sIdx}-${pIdx}" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#10b981" />
+                        <stop offset="100%" stop-color="#059669" />
+                      </linearGradient>
+                    </defs>
+                    <rect width="64" height="64" rx="16" fill="url(#bg-ind-${sIdx}-${pIdx})" />
+                    <g transform="translate(14, 14) scale(1.5)">
+                      <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M7 2v20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </g>
+                  </svg>
+               </div>
+               <div class="v-title">
+                  <div class="v-title-main">SisAR - VOUCHER INDIVIDUAL</div>
+                  <div class="v-title-sub">Sistema de Administracion de Raciones</div>
+               </div>
+            </div>
+            <div class="v-body">
+               <div class="v-info">
+                  <div class="v-row space-between">
+                     <div>TIPO: <strong>${tipo.toUpperCase()}</strong></div>
+                     <div>Servicio: ${servicio}</div>
+                     <div>Fecha: ${date}</div>
+                  </div>
+                  <div class="v-total">AGENTE: ${agenteNombre}</div>
+                  <div class="v-row" style="margin-bottom: 5px;">
+                     <div>DNI: <strong>${agenteDNI}</strong></div>
+                  </div>
+                  <div class="v-diets">Dieta: <strong>${dieta}</strong></div>
+               </div>
+               <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
+            </div>
+            <div class="v-footer">
+               Impreso el ${fechaImpresion} a las ${horaImpresion} hs | Usuario: ${usuarioImpresion}
+            </div>
           </div>
-          <div class="v-footer">
-             Impreso el ${fechaImpresion} a las ${horaImpresion} hs | Usuario: ${usuarioImpresion}
-          </div>
-        </div>
-        <div class="cut-line"></div>
-      `;
+          <div class="cut-line"></div>
+        `;
+      });
+
+      vouchersHTML += `</div>`;
     });
 
     const html = `
@@ -2575,6 +3053,7 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
             @media print { 
               @page { size: A4 portrait; margin: 1cm; } 
               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } 
+              .page-break { page-break-after: always; break-after: page; }
             }
           </style>
         </head>
@@ -2607,14 +3086,25 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
   };
 
   const exportPDF = () => {
-    if (reportes.length === 0) return;
+    if (reportes.length === 0) return Swal.fire({ title: "Aviso", text: "No hay reportes para exportar.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     
+    const filtered = reportes.filter(r => {
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+
+    if (filtered.length === 0) return Swal.fire({ title: "Aviso", text: "No hay reportes para exportar con el filtro actual.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+
     const doc = new jsPDF();
-    doc.text(`Reportes de Raciones SisAR (${repDesde} a ${repHasta})`, 14, 15);
+    doc.setFontSize(14);
+    doc.text(`Reportes de Raciones SisAR (${repDesde.split('-').reverse().join('/')} al ${repHasta.split('-').reverse().join('/')})`, 14, 15);
     
-    const tableData = reportes.map(r => [
+    const tableData = filtered.map(r => [
       r.FechaPedido.split('T')[0].split('-').reverse().join('/'),
-      r.Personal ? r.Personal.DNI : (r.EmergenciaDNI || ""),
+      r.Personal ? r.Personal.DNI : (r.EmergenciaDNI || "-"),
       r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`,
       getServicioNombre(r),
       r.TipoComida,
@@ -2622,15 +3112,15 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
       r.Estado
     ]);
 
-    (doc as any).autoTable({
+    autoTable(doc, {
       head: [['Fecha', 'DNI', 'Nombre', 'Servicio', 'Comida', 'Dieta', 'Estado']],
       body: tableData,
-      startY: 20,
+      startY: 22,
       styles: { fontSize: 8 },
       headStyles: { fillColor: [79, 70, 229] }
     });
 
-    doc.save(`Reportes_SisAR_${repDesde}_${repHasta}.pdf`);
+    doc.save(`Reporte_SisAR_${repDesde}_al_${repHasta}.pdf`);
   };
 
   const tabs = [
@@ -3020,14 +3510,59 @@ function GerentePanel({ token, hospitalName, username, onConfigUpdated }: { toke
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Corte para Almuerzo</label>
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Corte Pedidos Almuerzo</label>
                   <input type="time" value={configAlmuerzo} onChange={e => setConfigAlmuerzo(e.target.value)} className="w-full text-lg font-mono rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500/50 px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Corte para Cena</label>
+                  <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Corte Pedidos Cena</label>
                   <input type="time" value={configCena} onChange={e => setConfigCena(e.target.value)} className="w-full text-lg font-mono rounded-xl border-gray-300 dark:border-gray-700 shadow-sm focus:border-blue-500 focus:ring-blue-500/50 px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" />
                 </div>
               </div>
+
+              <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6">
+                <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 mb-2 flex items-center">
+                  <Shield className="w-4 h-4 mr-2 text-orange-500" /> Horarios Límite para Autorización de Emergencias
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                  Define la hora máxima hasta la cual el Gerente puede aprobar solicitudes de emergencia. Debe ser estrictamente posterior a la hora de cierre de pedidos.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Límite Autorización Almuerzo</label>
+                    <input type="time" value={configAuthAlmuerzo} onChange={e => setConfigAuthAlmuerzo(e.target.value)} className="w-full text-lg font-mono rounded-xl border-orange-300 dark:border-orange-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">Límite Autorización Cena</label>
+                    <input type="time" value={configAuthCena} onChange={e => setConfigAuthCena(e.target.value)} className="w-full text-lg font-mono rounded-xl border-orange-300 dark:border-orange-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 px-4 py-3 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors" />
+                  </div>
+                </div>
+              </div>
+              
+              <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6">
+                <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 mb-2 flex items-center">
+                  <Utensils className="w-4 h-4 mr-2 text-indigo-500" /> Menús Habilitados en Planilla y Emergencias
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                  Selecciona qué dietas estarán disponibles como columnas en la planilla de personal y en los desplegables de emergencias.
+                </p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {DIETAS_DISPONIBLES.map(dieta => {
+                    const isChecked = dietasConfig.includes(dieta);
+                    return (
+                      <label key={dieta} className={`flex items-center p-3 rounded-xl border text-xs font-bold cursor-pointer transition-colors ${isChecked ? 'bg-indigo-50 border-indigo-300 text-indigo-900 dark:bg-indigo-900/30 dark:border-indigo-700 dark:text-indigo-200' : 'bg-white border-gray-200 text-gray-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400'}`}>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => toggleDietaConfig(dieta)}
+                          className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 mr-2"
+                        />
+                        {dieta}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
               <div className="mt-8 flex justify-end">
                 <button onClick={guardarConfiguracion} className="bg-blue-600 dark:bg-blue-500 text-white px-6 py-3 rounded-xl text-sm font-bold hover:bg-blue-700 dark:hover:bg-blue-600 shadow-md transition-all transform hover:scale-[1.02] active:scale-95 flex items-center">
                   <Save className="w-4 h-4 mr-2" /> Guardar Cambios

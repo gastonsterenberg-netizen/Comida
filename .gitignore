@@ -1,0 +1,13 @@
+# Archivos pesados y comprimidos
+*.tar
+*.7z
+*.zip
+*.rar
+*.gz
+
+# Dependencies & Builds
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+backend/dist/
+frontend/.next/

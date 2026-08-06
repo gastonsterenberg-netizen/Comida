@@ -716,6 +716,27 @@ const checkDeadlines = async (solicitadoPorUsuarioId: number, tipoComida: string
   return null;
 };
 
+const checkAuthDeadlines = async (solicitadoPorUsuarioId: number, tipoComida: string): Promise<string | null> => {
+  const user = await prisma.usuarios.findUnique({ where: { Id: solicitadoPorUsuarioId }, include: { Hospital: true } });
+  if (!user || !user.Hospital) return null;
+  
+  const config = user.Hospital;
+  const now = new Date();
+  const currentTotalMins = now.getHours() * 60 + now.getMinutes();
+  
+  if (tipoComida === 'Almuerzo' || tipoComida === 'Ambos') {
+    const limitAuthAlm = config.LimiteAutorizacionAlmuerzo || '11:00';
+    const [limitH, limitM] = limitAuthAlm.split(':').map(Number);
+    if (currentTotalMins >= limitH * 60 + limitM) return `El horario límite para autorizar emergencias de Almuerzo (${limitAuthAlm}) ha expirado.`;
+  }
+  if (tipoComida === 'Cena' || tipoComida === 'Ambos') {
+    const limitAuthCen = config.LimiteAutorizacionCena || '18:00';
+    const [limitH, limitM] = limitAuthCen.split(':').map(Number);
+    if (currentTotalMins >= limitH * 60 + limitM) return `El horario límite para autorizar emergencias de Cena (${limitAuthCen}) ha expirado.`;
+  }
+  return null;
+};
+
 // 4.1 Obtener personal activo del servicio
 
 // --- NUEVOS ENDPOINTS DE PLANTEL ---
@@ -771,33 +792,21 @@ app.post('/api/staff/plantel', authenticateToken, async (req: Request, res: Resp
     const now = new Date();
     const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
 
-    // Validar duplicados
+    // Validar límites de raciones según EsGuardia24h en el padrón
     for (const p of plantel) {
-      const existing = await prisma.personal.findMany({
-        where: {
-          DNI: p.DNI,
-          Activo: true,
-          PeriodoFin: { gte: today }
-        }
-      });
-      
-      const has24h = existing.some(e => e.Horario.includes('24h'));
-      if (has24h) {
-         res.status(400).json({ error: `El agente ${p.DNI} ya esta asignado a una Guardia de 24h activa.` });
-         return;
-      }
-      if (p.Horario.includes('24h') && existing.length > 0) {
-         res.status(400).json({ error: `No se puede asignar Guardia 24h al agente ${p.DNI} porque ya tiene guardias activas.` });
-         return;
-      }
-      if (p.Horario.includes('12h') && existing.length >= 2) {
-         res.status(400).json({ error: `El agente ${p.DNI} ya está asignado al máximo de 2 planteles con guardia de 12h.` });
-         return;
-      }
-      
-      const existingInService = existing.some(e => e.ServicioId === servicioId);
-      if (existingInService) {
-         res.status(400).json({ error: `El agente ${p.DNI} ya esta asignado a este servicio.` });
+      const padronReg = await prisma.padronHabilitados.findFirst({ where: { DNI: p.DNI, HospitalId: hospitalId } });
+      const isGuardia24h = padronReg ? Boolean(padronReg.EsGuardia24h) : false;
+
+      const getRacionesCount = (horario: string) => {
+        if (!horario) return 1;
+        const h = horario.toLowerCase();
+        return (h.includes("24") || h.includes("y cena")) ? 2 : 1;
+      };
+
+      const newRaciones = getRacionesCount(p.Horario);
+
+      if (!isGuardia24h && newRaciones > 1) {
+         res.status(400).json({ error: `El agente con DNI ${p.DNI} (${p.NombreCompleto}) no posee Guardia 24h asignada en el padrón y solo puede recibir 1 ración ('Almuerzo o Cena').` });
          return;
       }
     }
@@ -941,9 +950,38 @@ app.post('/api/staff/:id/baja', authenticateToken, async (req: Request, res: Res
 // 4.1.6 Revertir baja (Provisoria o Definitiva)
 app.post('/api/staff/:id/revertir-baja', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
+  const personalId = Number(id);
+
   try {
+    const agente = await prisma.personal.findUnique({ where: { Id: personalId } });
+    if (!agente) {
+      res.status(404).json({ error: 'Agente no encontrado' });
+      return;
+    }
+
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+
+    // Verificar si el agente titular posee un reemplazo activo (Pendiente o Aprobado) para hoy o fechas futuras
+    const reemplazoActivo = await prisma.pedidosComida.findFirst({
+      where: {
+        EmergenciaReemplazaId: personalId,
+        Estado: { in: ['Pendiente', 'Aprobado'] },
+        FechaPedido: { gte: today }
+      }
+    });
+
+    if (reemplazoActivo) {
+      const fStr = reemplazoActivo.FechaPedido.toISOString().split('T')[0].split('-').reverse().join('/');
+      const reemplazanteInfo = reemplazoActivo.EmergenciaNombreCompleto ? ` (${reemplazoActivo.EmergenciaNombreCompleto})` : '';
+      res.status(400).json({
+        error: `No se puede rehabilitar a "${agente.NombreCompleto}" porque posee una solicitud de reemplazo activa${reemplazanteInfo} en estado ${reemplazoActivo.Estado} para el día ${fStr}. Se debe anular o resolver dicho reemplazo antes de rehabilitar al titular.`
+      });
+      return;
+    }
+
     await prisma.personal.update({ 
-      where: { Id: Number(id) }, 
+      where: { Id: personalId }, 
       data: { 
         Activo: true, 
         BajaProvisoriaFecha: null,
@@ -1175,15 +1213,19 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
 // 5.2 Crear solicitud de emergencia
 app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> => {
   const nombreCompleto = req.body.nombreCompleto || req.body.nombre || (req.body.apellido ? `${req.body.apellido} ${req.body.nombre}` : '');
-  const { dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId } = req.body;
+  const { dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId, esExcepcional, tipoSolicitud } = req.body;
 
-  // Validate deadlines
-  const comidasToCheck = tipoComida === 'Ambos' ? ['Almuerzo', 'Cena'] : [tipoComida];
-  for (const tc of comidasToCheck) {
-    const errorMsg = await checkDeadlines(solicitadoPorUsuarioId, tc);
-    if (errorMsg) {
-      res.status(400).json({ error: `Para ${tc}: ${errorMsg}` });
-      return;
+  const isExcepcional = Boolean(esExcepcional || tipoSolicitud === 'reemplazo_excepcional');
+
+  // Validate authorization deadlines solo si NO es reemplazo excepcional
+  let comidasToCheck = tipoComida === 'Ambos' ? ['Almuerzo', 'Cena'] : [tipoComida || 'Almuerzo'];
+  if (!isExcepcional) {
+    for (const tc of comidasToCheck) {
+      const errorMsg = await checkAuthDeadlines(solicitadoPorUsuarioId, tc);
+      if (errorMsg) {
+        res.status(400).json({ error: `${errorMsg} Para emergencias de última hora utilice la opción ⚡ Reemplazo Excepcional.` });
+        return;
+      }
     }
   }
 
@@ -1199,6 +1241,92 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
       return;
     }
 
+    // Si es reemplazo excepcional con titular, obtener la comida/dieta del titular asignado si no se especificaron
+    let finalTipoDieta = tipoDieta || 'Normal';
+    if (isExcepcional && reemplazaId) {
+      const pedidoTitular = await prisma.pedidosComida.findFirst({
+        where: { PersonalId: Number(reemplazaId), FechaPedido: start }
+      });
+      if (pedidoTitular) {
+        comidasToCheck = [pedidoTitular.TipoComida];
+        finalTipoDieta = pedidoTitular.TipoDieta;
+      }
+    }
+
+    // Validar si ya existe un reemplazo activo para el agente titular en las fechas/comidas solicitadas
+    if (reemplazaId) {
+      const titular = await prisma.personal.findUnique({ where: { Id: Number(reemplazaId) } });
+      let currentCheck = new Date(start);
+      while (currentCheck <= end) {
+        for (const tc of comidasToCheck) {
+          const existente = await prisma.pedidosComida.findFirst({
+            where: {
+              EmergenciaReemplazaId: Number(reemplazaId),
+              FechaPedido: currentCheck,
+              TipoComida: tc,
+              Estado: { in: ['Pendiente', 'Aprobado'] }
+            }
+          });
+          if (existente) {
+            const fStr = currentCheck.toISOString().split('T')[0].split('-').reverse().join('/');
+            const titularNombre = titular ? titular.NombreCompleto : 'seleccionado';
+            res.status(400).json({
+              error: `El agente titular "${titularNombre}" ya posee un reemplazo registrado (${tc}) para la fecha ${fStr}.`
+            });
+            return;
+          }
+        }
+        currentCheck.setDate(currentCheck.getDate() + 1);
+      }
+    }
+
+    // Validar si la persona reemplazante / agregado extra (DNI) ya tiene una ración asignada en emergencias o en la planilla de personal
+    if (dni) {
+      let currentCheckDni = new Date(start);
+      while (currentCheckDni <= end) {
+        for (const tc of comidasToCheck) {
+          // 1. Validar si ya tiene una emergencia activa
+          const existenteDni = await prisma.pedidosComida.findFirst({
+            where: {
+              EmergenciaDNI: dni,
+              FechaPedido: currentCheckDni,
+              TipoComida: tc,
+              Estado: { in: ['Pendiente', 'Aprobado'] }
+            }
+          });
+          if (existenteDni) {
+            const fStr = currentCheckDni.toISOString().split('T')[0].split('-').reverse().join('/');
+            res.status(400).json({
+              error: `La persona con DNI ${dni} ya posee una solicitud de emergencia activa (${tc}) para la fecha ${fStr}.`
+            });
+            return;
+          }
+
+          // 2. Validar si es un agente que ya recibe ración en la planilla normal de personal
+          const existentePlanilla = await prisma.pedidosComida.findFirst({
+            where: {
+              FechaPedido: currentCheckDni,
+              TipoComida: tc,
+              Estado: { in: ['Pendiente', 'Aprobado'] },
+              Personal: { DNI: dni }
+            },
+            include: {
+              Personal: true
+            }
+          });
+          if (existentePlanilla) {
+            const fStr = currentCheckDni.toISOString().split('T')[0].split('-').reverse().join('/');
+            const agenteNombre = existentePlanilla.Personal?.NombreCompleto || `con DNI ${dni}`;
+            res.status(400).json({
+              error: `El agente "${agenteNombre}" (DNI ${dni}) ya posee asignada una ración de ${tc} en la planilla de personal para el día ${fStr}. No se puede cargar como emergencia.`
+            });
+            return;
+          }
+        }
+        currentCheckDni.setDate(currentCheckDni.getDate() + 1);
+      }
+    }
+
     const newOrders = [];
     let current = new Date(start);
     
@@ -1207,23 +1335,24 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
         newOrders.push({
           FechaPedido: new Date(current),
           TipoComida: tc,
-          TipoDieta: tc === 'Cena' && tipoComida === 'Ambos' && tipoDietaCena ? tipoDietaCena : (tipoDieta || 'Normal'),
+          TipoDieta: tc === 'Cena' && tipoComida === 'Ambos' && tipoDietaCena ? tipoDietaCena : finalTipoDieta,
           SolicitadoPorUsuarioId: solicitadoPorUsuarioId,
-          Estado: 'Pendiente',
+          Estado: isExcepcional ? 'Aprobado' : 'Pendiente',
           EmergenciaNombreCompleto: nombreCompleto || '',
           EmergenciaDNI: dni || '',
           EmergenciaPeriodoInicio: start,
           EmergenciaPeriodoFin: end,
           EmergenciaReemplazaId: reemplazaId ? Number(reemplazaId) : null,
-          JustificacionSolicitud: justificacion || null
+          JustificacionSolicitud: justificacion || (isExcepcional ? 'Reemplazo excepcional de última hora' : null),
+          EsExcepcional: isExcepcional
         });
       }
       current.setDate(current.getDate() + 1);
     }
 
     await prisma.pedidosComida.createMany({ data: newOrders });
-    await logAudit(req, 'ALTA_EMERGENCIA', `Solicitud de emergencia creada para DNI ${dni} del ${start.toISOString().split('T')[0]} al ${end.toISOString().split('T')[0]}`);
-    res.json({ message: 'Solicitudes de emergencia creadas y pendientes de aprobación.' });
+    await logAudit(req, isExcepcional ? 'REEMPLAZO_EXCEPCIONAL' : 'ALTA_EMERGENCIA', `Solicitud de emergencia (${isExcepcional ? 'Excepcional' : 'Normal'}) creada para DNI ${dni} del ${start.toISOString().split('T')[0]} al ${end.toISOString().split('T')[0]}`);
+    res.json({ message: isExcepcional ? 'Reemplazo excepcional registrado exitosamente.' : 'Solicitudes de emergencia creadas y pendientes de aprobación.' });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al crear solicitud de emergencia' });
@@ -1231,10 +1360,19 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
 });
 
 // 5.3 Obtener solicitudes de emergencia pendientes para el Gerente
-app.get('/api/emergencies/pending', async (req: Request, res: Response): Promise<void> => {
+app.get('/api/emergencies/pending', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  if (!hospitalId) {
+    res.status(403).json({ error: 'El usuario no tiene hospital asignado' });
+    return;
+  }
+
   try {
     const pending = await prisma.pedidosComida.findMany({
-      where: { Estado: 'Pendiente' },
+      where: { 
+        Estado: 'Pendiente',
+        SolicitadoPor: { HospitalId: hospitalId }
+      },
       include: { SolicitadoPor: true, PersonalReemplazado: true }
     });
 
@@ -1303,9 +1441,9 @@ app.get('/api/emergencies/history', authenticateToken, async (req: Request, res:
 });
 
 // 5.4 Aprobar o Rechazar emergencia
-app.post('/api/emergencies/:id/resolve', async (req: Request, res: Response): Promise<void> => {
+app.post('/api/emergencies/:id/resolve', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { estado, justificacionResolucion, evaluadoPorUsuarioId } = req.body; // estado: 'Aceptado' o 'Rechazado'
+  const { estado, justificacionResolucion, evaluadoPorUsuarioId } = req.body; // estado: 'Aprobado' o 'Rechazado'
 
   if (!justificacionResolucion || justificacionResolucion.trim() === '') {
     res.status(400).json({ error: 'La justificación es obligatoria.' });
@@ -1313,18 +1451,82 @@ app.post('/api/emergencies/:id/resolve', async (req: Request, res: Response): Pr
   }
 
   try {
+    const pedido = await prisma.pedidosComida.findUnique({
+      where: { Id: Number(id) },
+      include: { SolicitadoPor: { include: { Hospital: true } } }
+    });
+
+    if (!pedido) {
+      res.status(404).json({ error: 'Solicitud de emergencia no encontrada' });
+      return;
+    }
+
+    const hospital = pedido.SolicitadoPor?.Hospital;
+    if (hospital && estado === 'Aprobado') {
+      const now = new Date();
+      const currentTotalMins = now.getHours() * 60 + now.getMinutes();
+
+      if (pedido.TipoComida === 'Almuerzo' || pedido.TipoComida === 'Ambos') {
+        const limitAuthAlm = hospital.LimiteAutorizacionAlmuerzo || '11:00';
+        const [h, m] = limitAuthAlm.split(':').map(Number);
+        if (currentTotalMins >= h * 60 + m) {
+          res.status(400).json({ error: `La hora límite para autorizar emergencias de Almuerzo (${limitAuthAlm}) ha expirado.` });
+          return;
+        }
+      }
+
+      if (pedido.TipoComida === 'Cena' || pedido.TipoComida === 'Ambos') {
+        const limitAuthCen = hospital.LimiteAutorizacionCena || '18:00';
+        const [h, m] = limitAuthCen.split(':').map(Number);
+        if (currentTotalMins >= h * 60 + m) {
+          res.status(400).json({ error: `La hora límite para autorizar emergencias de Cena (${limitAuthCen}) ha expirado.` });
+          return;
+        }
+      }
+    }
+
     await prisma.pedidosComida.update({
       where: { Id: Number(id) },
       data: {
         Estado: estado,
         JustificacionResolucion: justificacionResolucion,
-        EvaluadoPorUsuarioId: evaluadoPorUsuarioId
+        EvaluadoPorUsuarioId: evaluadoPorUsuarioId || req.user?.userId
       }
     });
     await logAudit(req, 'AUTORIZACION_EMERGENCIA', `Solicitud de emergencia ID ${id} - ${estado}`);
     res.json({ message: `Solicitud ${estado.toLowerCase()} exitosamente.` });
   } catch (error) {
     res.status(500).json({ error: 'Error al resolver la solicitud' });
+  }
+});
+
+// 5.5 Eliminar solicitud de emergencia pendiente
+app.delete('/api/emergencies/:id', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const { id } = req.params;
+  try {
+    const pedido = await prisma.pedidosComida.findUnique({
+      where: { Id: Number(id) }
+    });
+
+    if (!pedido) {
+      res.status(404).json({ error: 'Solicitud de emergencia no encontrada.' });
+      return;
+    }
+
+    if (pedido.Estado !== 'Pendiente') {
+      res.status(400).json({ error: 'Solo se pueden eliminar solicitudes de emergencia en estado Pendiente.' });
+      return;
+    }
+
+    await prisma.pedidosComida.delete({
+      where: { Id: Number(id) }
+    });
+
+    await logAudit(req, 'ELIMINAR_EMERGENCIA', `Solicitud de emergencia ID ${id} eliminada`);
+    res.json({ message: 'Solicitud de emergencia eliminada exitosamente.' });
+  } catch (error) {
+    console.error('Error deleting emergency:', error);
+    res.status(500).json({ error: 'Error al eliminar la solicitud de emergencia.' });
   }
 });
 
@@ -1524,7 +1726,7 @@ app.get('/api/admin/auditoria', authenticateToken, async (req: Request, res: Res
     res.status(500).json({ error: 'Error al obtener registros de auditoría' });
   }
 });
-// 8. Configuracin de Horarios
+// 8. Configuración de Horarios
 app.get('/api/hospital/config', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
   if (!hospitalId) {
@@ -1535,31 +1737,64 @@ app.get('/api/hospital/config', authenticateToken, async (req: Request, res: Res
   try {
     const hospital = await prisma.hospitales.findUnique({
       where: { Id: hospitalId },
-      select: { LimiteAlmuerzo: true, LimiteCena: true }
+      select: { 
+        LimiteAlmuerzo: true, 
+        LimiteCena: true, 
+        LimiteAutorizacionAlmuerzo: true,
+        LimiteAutorizacionCena: true,
+        DietasHabilitadas: true 
+      }
     });
     res.json(hospital);
   } catch (error) {
-    res.status(500).json({ error: 'Error al obtener configuracin' });
+    res.status(500).json({ error: 'Error al obtener configuración' });
   }
 });
 
 app.put('/api/hospital/config', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
-  const { limiteAlmuerzo, limiteCena } = req.body;
+  const { limiteAlmuerzo, limiteCena, limiteAutorizacionAlmuerzo, limiteAutorizacionCena, dietasHabilitadas } = req.body;
   
   if (!hospitalId) {
     res.status(400).json({ error: 'Hospital no especificado' });
+    return;
+  }
+
+  const toMins = (hStr?: string) => {
+    if (!hStr) return null;
+    const [h, m] = hStr.split(':').map(Number);
+    return (isNaN(h) || isNaN(m)) ? null : h * 60 + m;
+  };
+
+  const almMins = toMins(limiteAlmuerzo);
+  const authAlmMins = toMins(limiteAutorizacionAlmuerzo);
+  const cenMins = toMins(limiteCena);
+  const authCenMins = toMins(limiteAutorizacionCena);
+
+  if (almMins !== null && authAlmMins !== null && authAlmMins <= almMins) {
+    res.status(400).json({ error: `La hora límite para autorizar emergencias de Almuerzo (${limiteAutorizacionAlmuerzo}) debe ser posterior a la hora de cierre de pedidos (${limiteAlmuerzo}).` });
+    return;
+  }
+
+  if (cenMins !== null && authCenMins !== null && authCenMins <= cenMins) {
+    res.status(400).json({ error: `La hora límite para autorizar emergencias de Cena (${limiteAutorizacionCena}) debe ser posterior a la hora de cierre de pedidos (${limiteCena}).` });
     return;
   }
   
   try {
     const updated = await prisma.hospitales.update({
       where: { Id: hospitalId },
-      data: { LimiteAlmuerzo: limiteAlmuerzo, LimiteCena: limiteCena }
+      data: { 
+        ...(limiteAlmuerzo ? { LimiteAlmuerzo: limiteAlmuerzo } : {}),
+        ...(limiteCena ? { LimiteCena: limiteCena } : {}),
+        ...(limiteAutorizacionAlmuerzo ? { LimiteAutorizacionAlmuerzo: limiteAutorizacionAlmuerzo } : {}),
+        ...(limiteAutorizacionCena ? { LimiteAutorizacionCena: limiteAutorizacionCena } : {}),
+        ...(dietasHabilitadas !== undefined ? { DietasHabilitadas: dietasHabilitadas } : {})
+      }
     });
-    res.json({ message: 'Configuracin actualizada', data: updated });
+    res.json({ message: 'Configuración actualizada', data: updated });
   } catch (error) {
-    res.status(500).json({ error: 'Error al actualizar configuracin' });
+    res.status(500).json({ error: 'Error al actualizar configuración' });
   }
 });
 

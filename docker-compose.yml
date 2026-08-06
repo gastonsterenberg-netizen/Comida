@@ -1,14 +1,17 @@
+name: ${COMPOSE_PROJECT_NAME:-comida-testing}
+
 services:
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     ports:
-      - "3001:3001"
+      - "${BACKEND_PORT:-3001}:3001"
     environment:
       - PORT=3001
       - DATABASE_URL=${DATABASE_URL:-sqlserver://host.docker.internal;database=ComidaDB;user=sa;password=YourPassword;trustServerCertificate=true;}
       - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_key_change_in_production}
+      - TZ=America/Argentina/Buenos_Aires
     extra_hosts:
       - "host.docker.internal:host-gateway" # Allows access to host machine's SQL Server
     restart: always
@@ -17,12 +20,12 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:3001}
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     environment:
       - PORT=3000
+      - TZ=America/Argentina/Buenos_Aires
+      - BACKEND_URL=http://backend:3001
     depends_on:
       - backend
     restart: always
