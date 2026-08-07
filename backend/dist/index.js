@@ -723,11 +723,30 @@ app.get('/api/staff/padron', auth_1.authenticateToken, (req, res) => __awaiter(v
         return;
     }
     try {
-        const padron = yield prisma.padronHabilitados.findMany({
-            where: { HospitalId: hospitalId, Activo: true },
+        let padron = yield prisma.padronHabilitados.findMany({
+            where: { HospitalId: hospitalId },
             include: { Servicio: true },
             orderBy: { NombreCompleto: 'asc' }
         });
+        if (padron.length === 0) {
+            const staffPersonal = yield prisma.personal.findMany({
+                where: { HospitalId: hospitalId },
+                include: { Servicio: true },
+                orderBy: { NombreCompleto: 'asc' }
+            });
+            padron = staffPersonal.map(p => ({
+                Id: p.Id,
+                DNI: p.DNI,
+                NombreCompleto: p.NombreCompleto,
+                EsGuardia24h: p.EsGuardia24,
+                Activo: p.Activo,
+                FechaCreacion: p.PeriodoInicio,
+                HospitalId: p.HospitalId,
+                ServicioId: p.ServicioId,
+                Hospital: null,
+                Servicio: p.Servicio
+            }));
+        }
         const now = new Date();
         const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
         const activeStaff = yield prisma.personal.findMany({
@@ -755,55 +774,64 @@ app.post('/api/staff/plantel', auth_1.authenticateToken, (req, res) => __awaiter
         res.status(403).json({ error: 'El usuario no tiene hospital o servicio asignado' });
         return;
     }
-    if (!Array.isArray(plantel) || plantel.length === 0) {
-        res.status(400).json({ error: 'El plantel esta vacio' });
+    if (!Array.isArray(plantel)) {
+        res.status(400).json({ error: 'El formato de plantel es invalido' });
         return;
     }
     try {
-        const now = new Date();
-        const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-        // Validar límites de raciones según EsGuardia24h en el padrón
-        for (const p of plantel) {
-            const padronReg = yield prisma.padronHabilitados.findFirst({ where: { DNI: p.DNI, HospitalId: hospitalId } });
-            const isGuardia24h = padronReg ? Boolean(padronReg.EsGuardia24h) : false;
-            const getRacionesCount = (horario) => {
-                if (!horario)
-                    return 1;
-                const h = horario.toLowerCase();
-                return (h.includes("24") || h.includes("y cena")) ? 2 : 1;
-            };
-            const newRaciones = getRacionesCount(p.Horario);
-            if (!isGuardia24h && newRaciones > 1) {
-                res.status(400).json({ error: `El agente con DNI ${p.DNI} (${p.NombreCompleto}) no posee Guardia 24h asignada en el padrón y solo puede recibir 1 ración ('Almuerzo o Cena').` });
-                return;
-            }
-        }
-        const inserted = yield prisma.$transaction(plantel.map(p => prisma.personal.upsert({
-            where: { DNI: p.DNI },
-            update: {
-                NombreCompleto: p.NombreCompleto,
-                HospitalId: hospitalId,
+        const inicioValido = new Date(2020, 0, 1);
+        const finValido = new Date(2035, 11, 31);
+        const dnisEnPlantel = plantel.map(p => p.DNI);
+        // Inactivar agentes de este servicio que ya no estén en la lista enviada
+        yield prisma.personal.updateMany({
+            where: {
                 ServicioId: servicioId,
-                Horario: p.Horario,
-                PeriodoInicio: today,
-                PeriodoFin: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-                Activo: true,
-                BajaProvisoriaFecha: null,
-                BajaProvisoriaHasta: null,
-                BajaMotivo: null
+                DNI: { notIn: dnisEnPlantel }
             },
-            create: {
-                DNI: p.DNI,
-                NombreCompleto: p.NombreCompleto,
-                HospitalId: hospitalId,
-                ServicioId: servicioId,
-                Horario: p.Horario,
-                PeriodoInicio: today,
-                PeriodoFin: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-                Activo: true
+            data: {
+                Activo: false,
+                PeriodoFin: new Date()
             }
-        })));
-        res.json({ message: 'Plantel guardado exitosamente', count: inserted.length });
+        });
+        for (const p of plantel) {
+            const is24h = p.Horario && (p.Horario.toLowerCase().includes("24") || p.Horario.toLowerCase().includes("y cena"));
+            yield prisma.padronHabilitados.updateMany({
+                where: { DNI: p.DNI },
+                data: {
+                    EsGuardia24h: Boolean(is24h),
+                    Activo: true,
+                    HospitalId: hospitalId,
+                    ServicioId: servicioId
+                }
+            });
+            yield prisma.personal.upsert({
+                where: { DNI: p.DNI },
+                update: {
+                    NombreCompleto: p.NombreCompleto,
+                    HospitalId: hospitalId,
+                    ServicioId: servicioId,
+                    Horario: p.Horario,
+                    PeriodoInicio: inicioValido,
+                    PeriodoFin: finValido,
+                    Activo: true,
+                    BajaProvisoriaFecha: null,
+                    BajaProvisoriaHasta: null,
+                    BajaMotivo: null
+                },
+                create: {
+                    DNI: p.DNI,
+                    NombreCompleto: p.NombreCompleto,
+                    HospitalId: hospitalId,
+                    ServicioId: servicioId,
+                    Horario: p.Horario,
+                    PeriodoInicio: inicioValido,
+                    PeriodoFin: finValido,
+                    Activo: true
+                }
+            });
+        }
+        yield (0, audit_1.logAudit)(req, 'GUARDAR_PLANTEL', `Se reconfiguró/guardó el plantel del servicio con ${plantel.length} agentes`);
+        res.json({ message: 'Plantel guardado exitosamente', count: plantel.length });
     }
     catch (error) {
         console.error('Error saving plantel:', error);
@@ -813,49 +841,48 @@ app.post('/api/staff/plantel', auth_1.authenticateToken, (req, res) => __awaiter
 // -----------------------------------
 app.get('/api/staff/active', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const servicioId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.servicioId) || Number(req.query.servicioId); // Usar token si está
-    if (!servicioId) {
+    const sId = ((_a = req.user) === null || _a === void 0 ? void 0 : _a.servicioId) || Number(req.query.servicioId);
+    if (!sId || isNaN(sId)) {
         res.status(400).json({ error: 'Servicio no especificado o usuario no asignado' });
         return;
     }
+    const servicioId = Number(sId);
     try {
         const now = new Date();
-        // Crear una fecha en UTC a la medianoche (ej. 2026-06-30T00:00:00.000Z) para que coincida exacto con la BD
-        const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+        const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+        const today = new Date(`${todayStr}T00:00:00.000Z`);
         const staff = yield prisma.personal.findMany({
             where: {
                 ServicioId: servicioId,
-                PeriodoInicio: { lte: today },
-                PeriodoFin: { gte: today },
-                OR: [
-                    { Activo: true },
-                    { PeriodoFin: today }
-                ]
+                Activo: true
             },
             include: {
                 PedidosComida: {
                     where: { FechaPedido: today }
                 }
-            }
+            },
+            orderBy: { NombreCompleto: 'asc' }
         });
-        // Filtro estricto: Solo devolver los que estén activos en el Padrón del Administrador
-        const activePadron = yield prisma.padronHabilitados.findMany({
-            where: { Activo: true }
-        });
-        const padronMap = new Map(activePadron.map(p => [p.DNI, p]));
-        const verifiedStaff = staff
-            .filter(s => padronMap.has(s.DNI))
-            .map(s => {
-            const p = padronMap.get(s.DNI);
+        const verifiedStaff = staff.map(s => {
             // @ts-ignore
             const isBajaHoy = s.BajaProvisoriaFecha && (new Date(s.BajaProvisoriaFecha).getTime() <= today.getTime() &&
                 (!s.BajaProvisoriaHasta || new Date(s.BajaProvisoriaHasta).getTime() >= today.getTime()));
-            return Object.assign(Object.assign({}, s), { bajaProvisoriaHoy: isBajaHoy, bajaDefinitivaHoy: !s.Activo, bajaMotivo: s.BajaMotivo });
+            return Object.assign(Object.assign({}, s), { bajaProvisoriaHoy: Boolean(isBajaHoy), bajaDefinitivaHoy: !s.Activo, bajaMotivo: s.BajaMotivo || null });
         });
         res.json(verifiedStaff);
     }
     catch (error) {
-        res.status(500).json({ error: 'Error al obtener personal' });
+        console.error('Error fetching active staff:', error);
+        try {
+            const basicStaff = yield prisma.personal.findMany({
+                where: { ServicioId: Number(servicioId), Activo: true },
+                orderBy: { NombreCompleto: 'asc' }
+            });
+            res.json(basicStaff.map(s => (Object.assign(Object.assign({}, s), { PedidosComida: [] }))));
+        }
+        catch (innerError) {
+            res.status(500).json({ error: 'Error al obtener personal activo' });
+        }
     }
 }));
 // 4.1.5 Dar de baja a personal (Provisoria o Definitiva)
@@ -1683,56 +1710,111 @@ app.post('/api/personal/bulk', auth_1.authenticateToken, (req, res) => __awaiter
     }
     try {
         let imported = 0;
+        const getRowVal = (r, ...possibleKeys) => {
+            for (const pk of possibleKeys) {
+                if (r[pk] !== undefined && r[pk] !== null)
+                    return r[pk];
+            }
+            const rKeys = Object.keys(r);
+            for (const pk of possibleKeys) {
+                const cleanPk = pk.toLowerCase().replace(/[^a-z0-9]/g, '');
+                const matchKey = rKeys.find(rk => rk.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanPk);
+                if (matchKey && r[matchKey] !== undefined && r[matchKey] !== null) {
+                    return r[matchKey];
+                }
+            }
+            return '';
+        };
         for (const row of data) {
-            if (!row.documento || !row.agente)
+            const docVal = getRowVal(row, 'documento', 'dni', 'num_doc', 'numdoc');
+            const agenteVal = getRowVal(row, 'agente', 'nombre', 'nombrecompleto', 'agente_nombre');
+            if (!docVal || !agenteVal)
                 continue;
-            let hospital = yield prisma.hospitales.findFirst({ where: { Nombre: String(row.efector).trim() } });
+            const efectorStr = String(getRowVal(row, 'efector', 'hospital', 'establecimiento') || '').trim();
+            const servicioStr = String(getRowVal(row, 'servicio', 'area', 'sector') || '').trim();
+            let hospital = yield prisma.hospitales.findFirst({ where: { Nombre: efectorStr } });
             if (!hospital) {
-                const uniqueCode = String(row.efector).trim().substring(0, 3).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
+                const todosHospitales = yield prisma.hospitales.findMany();
+                hospital = todosHospitales.find(h => h.Nombre.trim().toLowerCase() === efectorStr.toLowerCase()) || null;
+            }
+            if (!hospital) {
+                const uniqueCode = efectorStr.substring(0, 3).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
                 hospital = yield prisma.hospitales.create({
-                    data: { Nombre: String(row.efector).trim(), Codigo: uniqueCode }
+                    data: { Nombre: efectorStr, Codigo: uniqueCode }
                 });
             }
-            let servicio = yield prisma.servicios.findFirst({ where: { Nombre: String(row.servicio).trim(), HospitalId: hospital.Id } });
+            let servicio = yield prisma.servicios.findFirst({ where: { Nombre: servicioStr, HospitalId: hospital.Id } });
+            if (!servicio) {
+                const todosServicios = yield prisma.servicios.findMany({ where: { HospitalId: hospital.Id } });
+                servicio = todosServicios.find(s => s.Nombre.trim().toLowerCase() === servicioStr.toLowerCase()) || null;
+            }
             if (!servicio) {
                 servicio = yield prisma.servicios.create({
-                    data: { Nombre: String(row.servicio).trim(), HospitalId: hospital.Id }
+                    data: { Nombre: servicioStr, HospitalId: hospital.Id }
                 });
             }
-            const nombreCompleto = String(row.agente).trim();
-            const isTruthy = (v) => v === 'S' || v === true || v === 1 || String(v).toLowerCase() === 'true';
+            const nombreCompleto = String(agenteVal).trim();
+            const isTruthy = (v) => {
+                if (!v)
+                    return false;
+                const str = String(v).trim().toLowerCase();
+                return str === 's' || str === 'si' || str === 'sí' || str === 'true' || str === '1' || v === true || v === 1;
+            };
+            const isGuardia24 = isTruthy(getRowVal(row, 'esguardia24', 'esguardia24h', 'guardia24', 'guardia24h', 'g24'));
+            const isGuardia12 = isTruthy(getRowVal(row, 'esguardia12', 'esguardia12h', 'guardia12', 'guardia12h', 'g12'));
+            const conVianda = isTruthy(getRowVal(row, 'con_vianda', 'convianda', 'vianda'));
+            const dniStr = String(docVal).trim();
             yield prisma.personal.upsert({
-                where: { DNI: String(row.documento) },
+                where: { DNI: dniStr },
                 update: {
                     NombreCompleto: nombreCompleto,
                     HospitalId: hospital.Id,
                     ServicioId: servicio.Id,
-                    IdPuesto: String(row.idpuesto || ''),
-                    TipoFuncion: String(row.tipofuncion || ''),
-                    TipoPlanta: String(row.tipoplanta || ''),
-                    ConVianda: isTruthy(row.con_vianda),
-                    EsGuardia12: isTruthy(row.esguardia12),
-                    EsGuardia24: isTruthy(row.esguardia24),
+                    IdPuesto: String(getRowVal(row, 'idpuesto', 'puesto') || ''),
+                    TipoFuncion: String(getRowVal(row, 'tipofuncion', 'funcion') || ''),
+                    TipoPlanta: String(getRowVal(row, 'tipoplanta', 'planta') || ''),
+                    ConVianda: conVianda,
+                    EsGuardia12: isGuardia12,
+                    EsGuardia24: isGuardia24,
                 },
                 create: {
-                    DNI: String(row.documento),
+                    DNI: dniStr,
                     NombreCompleto: nombreCompleto,
                     HospitalId: hospital.Id,
                     ServicioId: servicio.Id,
-                    IdPersonal: String(row.idagente || ''),
-                    Horario: '08:00 a 16:00',
-                    PeriodoInicio: new Date(),
-                    PeriodoFin: new Date(new Date().setFullYear(new Date().getFullYear() + 1)),
-                    IdPuesto: String(row.idpuesto || ''),
-                    TipoFuncion: String(row.tipofuncion || ''),
-                    TipoPlanta: String(row.tipoplanta || ''),
-                    ConVianda: isTruthy(row.con_vianda),
-                    EsGuardia12: isTruthy(row.esguardia12),
-                    EsGuardia24: isTruthy(row.esguardia24),
+                    IdPersonal: String(getRowVal(row, 'idagente', 'idpersonal') || ''),
+                    Horario: isGuardia24 ? 'Guardia 24h (Almuerzo y Cena)' : '08:00 a 16:00',
+                    PeriodoInicio: new Date(2020, 0, 1),
+                    PeriodoFin: new Date(2035, 11, 31),
+                    IdPuesto: String(getRowVal(row, 'idpuesto', 'puesto') || ''),
+                    TipoFuncion: String(getRowVal(row, 'tipofuncion', 'funcion') || ''),
+                    TipoPlanta: String(getRowVal(row, 'tipoplanta', 'planta') || ''),
+                    ConVianda: conVianda,
+                    EsGuardia12: isGuardia12,
+                    EsGuardia24: isGuardia24,
+                }
+            });
+            yield prisma.padronHabilitados.upsert({
+                where: { DNI: dniStr },
+                update: {
+                    NombreCompleto: nombreCompleto,
+                    HospitalId: hospital.Id,
+                    ServicioId: servicio.Id,
+                    EsGuardia24h: isGuardia24,
+                    Activo: conVianda
+                },
+                create: {
+                    DNI: dniStr,
+                    NombreCompleto: nombreCompleto,
+                    HospitalId: hospital.Id,
+                    ServicioId: servicio.Id,
+                    EsGuardia24h: isGuardia24,
+                    Activo: conVianda
                 }
             });
             imported++;
         }
+        yield (0, audit_1.logAudit)(req, 'IMPORTACION_EXCEL', `Se procesaron e importaron ${imported} registros desde archivo Excel`);
         res.json({ message: 'Importacion completada', count: imported });
     }
     catch (error) {

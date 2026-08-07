@@ -799,20 +799,25 @@ function JefePanel({
     setEmgPeriodoFin(today);
   }, []);
 
+  const [openGroup, setOpenGroup] = useState<"mi_servicio" | "otros">("mi_servicio");
+
+  const miServicioNombre = servicioName || (padron.find(p => p.Servicio?.Nombre)?.Servicio?.Nombre) || "Mi Servicio";
+
   const filteredPadron = padron.filter(p => 
     p.NombreCompleto.toLowerCase().includes(padronSearchTerm.toLowerCase()) || 
     p.DNI.includes(padronSearchTerm)
   );
 
-  const padronByService = filteredPadron.reduce((acc, p) => {
-    const sName = p.Servicio?.Nombre || "Sin Servicio";
-    if (!acc[sName]) acc[sName] = [];
-    acc[sName].push(p);
-    return acc;
-  }, {} as Record<string, any[]>);
+  const miServicioAgents = filteredPadron
+    .filter(p => (p.Servicio?.Nombre || "").trim().toLowerCase() === miServicioNombre.trim().toLowerCase())
+    .sort((a, b) => a.NombreCompleto.localeCompare(b.NombreCompleto));
 
-  const toggleService = (sName: string) => {
-    setExpandedServices(prev => ({ ...prev, [sName]: !prev[sName] }));
+  const otrosServiciosAgents = filteredPadron
+    .filter(p => (p.Servicio?.Nombre || "").trim().toLowerCase() !== miServicioNombre.trim().toLowerCase())
+    .sort((a, b) => a.NombreCompleto.localeCompare(b.NombreCompleto));
+
+  const toggleGroup = (group: "mi_servicio" | "otros") => {
+    setOpenGroup(prev => prev === group ? (group === "mi_servicio" ? "otros" : "mi_servicio") : group);
   };
 
   const addAgent = (p: any, horario: string) => {
@@ -835,50 +840,20 @@ function JefePanel({
   };
 
   const handleGuardarPlantel = async () => {
-    // Convertir el Horario de la BD al formato del Draft para comparar
-    const getDraftHorario = (dbHorario: string) => getRacionLabel(dbHorario);
-
-    const agentsToAdd = plantelDraft.filter(p => !staff.some(s => s.DNI === p.DNI && getDraftHorario(s.Horario) === p.Horario));
-    const agentsToRemove = staff.filter(s => !plantelDraft.some(p => p.DNI === s.DNI && p.Horario === getDraftHorario(s.Horario)));
-
-    if (agentsToAdd.length === 0 && agentsToRemove.length === 0) {
-      Swal.fire({ title: "Sin cambios", text: "No hay modificaciones en el plantel", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-      return;
-    }
-
     try {
-      // 1. Process Removals / Updates (Bajas)
-      for (const s of agentsToRemove) {
-        const bajaRes = await fetch(`${API_URL}/api/staff/${s.Id}/baja`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ tipo: "DEFINITIVA", motivo: "Reconfiguración de Plantel" })
-        });
-        if (!bajaRes.ok) {
-           const data = await bajaRes.json().catch(()=>({}));
-           console.error("Error en baja:", data);
-           Swal.fire({ title: "Error removiendo", text: data.error || "No se pudo remover al agente", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-           fetchStaff();
-           return;
-        }
+      const res = await fetch(`${API_URL}/api/staff/plantel`, {
+         method: "POST",
+         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+         body: JSON.stringify({ plantel: plantelDraft })
+      });
+      if (!res.ok) {
+         const data = await res.json();
+         Swal.fire({ title: "Error", text: data.error || "No se pudo guardar el plantel", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+         fetchStaff();
+         return;
       }
 
-      // 2. Process Additions
-      if (agentsToAdd.length > 0) {
-        const res = await fetch(`${API_URL}/api/staff/plantel`, {
-           method: "POST",
-           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-           body: JSON.stringify({ plantel: agentsToAdd })
-        });
-        if (!res.ok) {
-           const data = await res.json();
-           Swal.fire({ title: "Error agregando", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-           fetchStaff();
-           return;
-        }
-      }
-
-      Swal.fire({ title: "Éxito", text: "Plantel actualizado correctamente", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      Swal.fire({ title: "Éxito", text: "Plantel guardado correctamente", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       fetchStaff();
     } catch (e) {
       Swal.fire({ title: "Error", text: "Error de conexión al actualizar", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
@@ -1893,93 +1868,145 @@ function JefePanel({
                     placeholder="Buscar por DNI o Apellido..."
                     value={padronSearchTerm}
                     onChange={e => setPadronSearchTerm(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-gray-100 placeholder-gray-400"
+                    className="w-full pl-9 pr-8 py-2 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-lg text-sm focus:ring-blue-500 focus:border-blue-500 text-gray-900 dark:text-gray-100 placeholder-gray-400"
                   />
+                  {padronSearchTerm && (
+                    <button
+                      type="button"
+                      onClick={() => setPadronSearchTerm("")}
+                      className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors p-0.5 rounded-full"
+                      title="Limpiar búsqueda"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="p-4 overflow-y-auto max-h-[500px] space-y-3">
-                {Object.keys(padronByService).sort((a, b) => a.localeCompare(b)).map(sName => {
-                  const isExpanded = padronSearchTerm.trim() !== "" || expandedServices[sName];
-                  return (
-                  <div key={sName} className="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden">
-                    <button 
-                      onClick={() => toggleService(sName)}
-                      className="w-full flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
-                      <span className="font-bold text-sm text-gray-800 dark:text-gray-200">{sName}</span>
-                      <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                    </button>
-                    {isExpanded && (
-                      <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                        {padronByService[sName].sort((a: any, b: any) => a.NombreCompleto.localeCompare(b.NombreCompleto)).map((p: any) => {
-                          const draftEntry = plantelDraft.find(draft => draft.DNI === p.DNI);
-                          const isSelected = !!draftEntry;
-                          const dbAssigned = staff.find(s => s.DNI === p.DNI);
-                          
-                          const getRacionesCount = (h: string) => (h && (h.toLowerCase().includes("24") || h.toLowerCase().includes("y cena"))) ? 2 : 1;
+                {(() => {
+                  const renderAgentRow = (p: any) => {
+                    const draftEntry = plantelDraft.find(draft => draft.DNI === p.DNI);
+                    const isSelected = !!draftEntry;
+                    const dbAssigned = staff.find(s => s.DNI === p.DNI);
+                    
+                    const getRacionesCount = (h: string) => (h && (h.toLowerCase().includes("24") || h.toLowerCase().includes("y cena"))) ? 2 : 1;
 
-                          const dbAssignedRaciones = dbAssigned ? getRacionesCount(dbAssigned.Horario) : 0;
-                          const totalExternalRaciones = (p.has24h ? 2 : (p.count12h || 0)) - dbAssignedRaciones;
+                    const dbAssignedRaciones = dbAssigned ? getRacionesCount(dbAssigned.Horario) : 0;
+                    const totalExternalRaciones = (p.has24h ? 2 : (p.count12h || 0)) - dbAssignedRaciones;
 
-                          const isAssignedElsewhere = !isSelected && totalExternalRaciones > 0;
-                          const isGuardia24h = Boolean(p.EsGuardia24h);
-                          const maxAllowedRaciones = isGuardia24h ? 2 : 1;
+                    const isAssignedElsewhere = !isSelected && totalExternalRaciones > 0;
+                    const isGuardia24h = Boolean(p.EsGuardia24h);
+                    const maxAllowedRaciones = isGuardia24h ? 2 : 1;
 
-                          const disable12h = totalExternalRaciones >= maxAllowedRaciones;
-                          const disable24h = !isGuardia24h || totalExternalRaciones >= 1;
+                    const disable12h = totalExternalRaciones >= maxAllowedRaciones;
+                    const disable24h = !isGuardia24h || totalExternalRaciones >= 1;
 
-                          // For selected agents, disable the button of their CURRENT draft shift
-                          const isDraft12h = draftEntry?.Horario === "Almuerzo o Cena";
-                          const isDraft24h = draftEntry?.Horario === "Almuerzo y Cena";
+                    const isDraft12h = draftEntry?.Horario === "Almuerzo o Cena";
+                    const isDraft24h = draftEntry?.Horario === "Almuerzo y Cena";
 
-                          // Color classes
-                          let containerClass = "p-3 text-sm flex justify-between items-center transition-colors group ";
-                          if (isSelected) {
-                            containerClass += "bg-gray-50/80 dark:bg-gray-800/80"; // Removed grayscale so buttons retain color
-                          } else if (isAssignedElsewhere) {
-                            containerClass += "bg-blue-50/50 dark:bg-blue-900/10 border-l-2 border-blue-300 dark:border-blue-700";
-                          } else {
-                            containerClass += "hover:bg-blue-50 dark:hover:bg-blue-900/20";
-                          }
+                    let containerClass = "p-3 text-sm flex justify-between items-center transition-colors group ";
+                    if (isSelected) {
+                      containerClass += "bg-gray-50/80 dark:bg-gray-800/80";
+                    } else if (isAssignedElsewhere) {
+                      containerClass += "bg-blue-50/50 dark:bg-blue-900/10 border-l-2 border-blue-300 dark:border-blue-700";
+                    } else {
+                      containerClass += "hover:bg-blue-50 dark:hover:bg-blue-900/20";
+                    }
 
-                          let textClass = "font-semibold ";
-                          if (isSelected) textClass += "text-gray-500 opacity-60";
-                          else if (isAssignedElsewhere) textClass += "text-blue-700 dark:text-blue-300";
-                          else textClass += "text-gray-900 dark:text-gray-100";
+                    let textClass = "font-semibold ";
+                    if (isSelected) textClass += "text-gray-500 opacity-60";
+                    else if (isAssignedElsewhere) textClass += "text-blue-700 dark:text-blue-300";
+                    else textClass += "text-gray-900 dark:text-gray-100";
 
-                          return (
-                          <div key={p.DNI} className={containerClass}>
-                            <div>
-                              <p className={textClass}>{p.NombreCompleto}</p>
-                              <p className={`text-xs ${isSelected ? 'text-gray-400 opacity-60' : 'text-gray-500 dark:text-gray-400'}`}>
-                                DNI: {p.DNI}
-                                {isAssignedElsewhere && <span className="ml-2 text-blue-500 text-[10px] uppercase font-bold tracking-wider">Otro Servicio ({totalExternalRaciones} {totalExternalRaciones === 1 ? 'Ración' : 'Raciones'})</span>}
-                              </p>
-                            </div>
-                            <div className="flex space-x-2">
-                              <button
-                                onClick={() => addAgent(p, "Almuerzo o Cena")}
-                                disabled={disable12h || isDraft12h}
-                                className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable12h || isDraft12h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300'}`}
-                                title="Asignar Almuerzo o Cena (1 ración)"
-                              >
-                                {isDraft12h ? '✓ Alm. o Cena' : 'Alm. o Cena'}
-                              </button>
-                              <button
-                                onClick={() => addAgent(p, "Almuerzo y Cena")}
-                                disabled={disable24h || isDraft24h}
-                                className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable24h || isDraft24h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300'}`}
-                                title="Asignar Almuerzo y Cena (2 raciones)"
-                              >
-                                {isDraft24h ? '✓ Alm. y Cena' : 'Alm. y Cena'}
-                              </button>
-                            </div>
-                          </div>
-                        )})}
+                    return (
+                      <div key={p.DNI} className={containerClass}>
+                        <div>
+                          <p className={textClass}>{p.NombreCompleto}</p>
+                          <p className={`text-xs ${isSelected ? 'text-gray-400 opacity-60' : 'text-gray-500 dark:text-gray-400'}`}>
+                            DNI: {p.DNI}
+                            {isAssignedElsewhere && <span className="ml-2 text-blue-500 text-[10px] uppercase font-bold tracking-wider">Otro Servicio ({totalExternalRaciones} {totalExternalRaciones === 1 ? 'Ración' : 'Raciones'})</span>}
+                          </p>
+                        </div>
+                        <div className="flex space-x-2">
+                          <button
+                            onClick={() => addAgent(p, "Almuerzo o Cena")}
+                            disabled={disable12h || isDraft12h}
+                            className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable12h || isDraft12h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300'}`}
+                            title="Asignar Almuerzo o Cena (1 ración)"
+                          >
+                            {isDraft12h ? '✓ Alm. o Cena' : 'Alm. o Cena'}
+                          </button>
+                          <button
+                            onClick={() => addAgent(p, "Almuerzo y Cena")}
+                            disabled={disable24h || isDraft24h}
+                            className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable24h || isDraft24h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300'}`}
+                            title="Asignar Almuerzo y Cena (2 raciones)"
+                          >
+                            {isDraft24h ? '✓ Alm. y Cena' : 'Alm. y Cena'}
+                          </button>
+                        </div>
                       </div>
-                    )}
-                  </div>
-                )})}
+                    );
+                  };
+
+                  const isSearching = padronSearchTerm.trim() !== "";
+                  const showMiServicio = isSearching || openGroup === "mi_servicio";
+                  const showOtros = isSearching || openGroup === "otros";
+
+                  return (
+                    <>
+                      {/* GRUPO 1: Servicio Actual */}
+                      <div className="border border-blue-200 dark:border-blue-800/60 rounded-lg bg-white dark:bg-gray-800 overflow-hidden shadow-sm">
+                        <button 
+                          onClick={() => toggleGroup("mi_servicio")}
+                          className="w-full flex justify-between items-center p-3 bg-blue-50/80 dark:bg-blue-900/30 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <span className="font-bold text-sm text-blue-900 dark:text-blue-200">{miServicioNombre}</span>
+                            <span className="bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 text-xs font-extrabold px-2.5 py-0.5 rounded-full">
+                              {miServicioAgents.length}
+                            </span>
+                          </div>
+                          <ChevronDown className={`w-4 h-4 text-blue-600 dark:text-blue-400 transition-transform ${showMiServicio ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showMiServicio && (
+                          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                            {miServicioAgents.length === 0 ? (
+                              <p className="p-4 text-xs text-gray-500 dark:text-gray-400 italic text-center">No hay agentes en este servicio</p>
+                            ) : (
+                              miServicioAgents.map(p => renderAgentRow(p))
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* GRUPO 2: Personal de otros servicios */}
+                      <div className="border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden">
+                        <button 
+                          onClick={() => toggleGroup("otros")}
+                          className="w-full flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <span className="font-bold text-sm text-gray-800 dark:text-gray-200">Personal de otros servicios</span>
+                            <span className="bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs font-extrabold px-2.5 py-0.5 rounded-full">
+                              {otrosServiciosAgents.length}
+                            </span>
+                          </div>
+                          <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showOtros ? 'rotate-180' : ''}`} />
+                        </button>
+                        {showOtros && (
+                          <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                            {otrosServiciosAgents.length === 0 ? (
+                              <p className="p-4 text-xs text-gray-500 dark:text-gray-400 italic text-center">No hay agentes de otros servicios</p>
+                            ) : (
+                              otrosServiciosAgents.map(p => renderAgentRow(p))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  );
+                })()}
               </div>
             </div>
 
