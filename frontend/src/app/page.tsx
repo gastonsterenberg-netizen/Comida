@@ -2290,7 +2290,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
       title: `Asignar Jefe a ${servicioNombre}`,
       html:
         '<p style="font-size:13px; color:#6b7280; margin-bottom:12px;">Se creará la cuenta con la contraseña por defecto <strong>123456</strong>. El usuario deberá cambiarla obligatoriamente en su primer ingreso.</p>' +
-        '<input id="swal-input-nombre" class="swal2-input" placeholder="Nombre Completo (Ej. Juan Méndez)">' +
+        '<input id="swal-input-nombre" class="swal2-input" placeholder="Apellido/s, Nombres (Ej. Méndez, Juan)">' +
         '<input id="swal-input-user" class="swal2-input" placeholder="Nombre de usuario (Ej. jmendez)">',
       focusConfirm: false,
       showCancelButton: true,
@@ -2302,7 +2302,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
         const nombreCompleto = (document.getElementById('swal-input-nombre') as HTMLInputElement).value;
         const username = (document.getElementById('swal-input-user') as HTMLInputElement).value;
         if (!nombreCompleto || !username) {
-          Swal.showValidationMessage('El Nombre Completo y el Nombre de Usuario son obligatorios');
+          Swal.showValidationMessage('El Apellido/s, Nombres y el Nombre de Usuario son obligatorios');
           return false;
         }
         return { nombreCompleto, username };
@@ -3998,7 +3998,7 @@ function RRHHPanel({ token }: { token: string }) {
       title: `Asignar Gerente a ${hospitalNombre}`,
       html:
         '<p style="font-size:13px; color:#6b7280; margin-bottom:12px;">Se creará la cuenta con la contraseña por defecto <strong>123456</strong>. El usuario deberá cambiarla obligatoriamente en su primer ingreso.</p>' +
-        '<input id="swal-input-nombre" class="swal2-input" placeholder="Nombre Completo (Ej. Dra. Ana Gómez)">' +
+        '<input id="swal-input-nombre" class="swal2-input" placeholder="Apellido/s, Nombres (Ej. Gómez, Ana)">' +
         '<input id="swal-input-user" class="swal2-input" placeholder="Nombre de usuario (Ej. agomez)">',
       focusConfirm: false,
       showCancelButton: true,
@@ -4010,7 +4010,7 @@ function RRHHPanel({ token }: { token: string }) {
         const nombreCompleto = (document.getElementById('swal-input-nombre') as HTMLInputElement).value;
         const username = (document.getElementById('swal-input-user') as HTMLInputElement).value;
         if (!nombreCompleto || !username) {
-          Swal.showValidationMessage('El Nombre Completo y el Nombre de Usuario son obligatorios');
+          Swal.showValidationMessage('El Apellido/s, Nombres y el Nombre de Usuario son obligatorios');
           return false;
         }
         return { nombreCompleto, username };
