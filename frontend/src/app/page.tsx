@@ -7,7 +7,7 @@ import { useTheme } from "next-themes";
 import Swal from 'sweetalert2';
 import { 
   LogOut, Sun, Moon, AlertTriangle, FileText, Settings, 
-  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, ChevronUp, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2, Shield, RefreshCw
+  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, ChevronUp, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2, Shield, RefreshCw, RotateCcw
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -1884,7 +1884,7 @@ function JefePanel({
               </div>
               <div className="p-4 overflow-y-auto max-h-[500px] space-y-3">
                 {(() => {
-                  const renderAgentRow = (p: any) => {
+                  const renderAgentRow = (p: any, showServicioBadge = false) => {
                     const draftEntry = plantelDraft.find(draft => draft.DNI === p.DNI);
                     const isSelected = !!draftEntry;
                     const dbAssigned = staff.find(s => s.DNI === p.DNI);
@@ -1922,10 +1922,21 @@ function JefePanel({
                       <div key={p.DNI} className={containerClass}>
                         <div>
                           <p className={textClass}>{p.NombreCompleto}</p>
-                          <p className={`text-xs ${isSelected ? 'text-gray-400 opacity-60' : 'text-gray-500 dark:text-gray-400'}`}>
-                            DNI: {p.DNI}
-                            {isAssignedElsewhere && <span className="ml-2 text-blue-500 text-[10px] uppercase font-bold tracking-wider">Otro Servicio ({totalExternalRaciones} {totalExternalRaciones === 1 ? 'Ración' : 'Raciones'})</span>}
-                          </p>
+                          <div className="flex items-center flex-wrap gap-1.5 text-xs mt-0.5">
+                            <span className={isSelected ? 'text-gray-400 opacity-60' : 'text-gray-500 dark:text-gray-400'}>
+                              DNI: {p.DNI}
+                            </span>
+                            {showServicioBadge && p.Servicio?.Nombre && (
+                              <span className="inline-flex items-center text-[9px] font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50/70 dark:bg-indigo-950/40 px-1.5 py-0 rounded border border-indigo-100 dark:border-indigo-900/50 uppercase tracking-tight">
+                                {p.Servicio.Nombre}
+                              </span>
+                            )}
+                            {isAssignedElsewhere && (
+                              <span className="text-blue-600 dark:text-blue-400 text-[10px] uppercase font-bold tracking-wider">
+                                ({totalExternalRaciones} {totalExternalRaciones === 1 ? 'Ración' : 'Raciones'})
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="flex space-x-2">
                           <button
@@ -1974,7 +1985,7 @@ function JefePanel({
                             {miServicioAgents.length === 0 ? (
                               <p className="p-4 text-xs text-gray-500 dark:text-gray-400 italic text-center">No hay agentes en este servicio</p>
                             ) : (
-                              miServicioAgents.map(p => renderAgentRow(p))
+                              miServicioAgents.map(p => renderAgentRow(p, false))
                             )}
                           </div>
                         )}
@@ -1999,7 +2010,7 @@ function JefePanel({
                             {otrosServiciosAgents.length === 0 ? (
                               <p className="p-4 text-xs text-gray-500 dark:text-gray-400 italic text-center">No hay agentes de otros servicios</p>
                             ) : (
-                              otrosServiciosAgents.map(p => renderAgentRow(p))
+                              otrosServiciosAgents.map(p => renderAgentRow(p, true))
                             )}
                           </div>
                         )}
@@ -2147,11 +2158,31 @@ function JefePanel({
 
 function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, onConfigUpdated }: { token: string, hospitalName?: string | null, username?: string | null, dietasHabilitadasProp?: string[], onConfigUpdated?: (almuerzo: string, cena: string, dietas?: string[]) => void }) {
   const [emergencias, setEmergencias] = useState<any[]>([]);
+  const [emergenciasRechazadas, setEmergenciasRechazadas] = useState<any[]>([]);
+  const [verRechazadas, setVerRechazadas] = useState(false);
   const [resolucionTxt, setResolucionTxt] = useState<{ [id: number]: string }>({});
   const [activeTab, setActiveTab] = useState("Bandeja");
+
+  const fetchEmergenciasRechazadas = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/emergencies/rejected`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEmergenciasRechazadas(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
   
   // ABM Servicios
   const [servicios, setServicios] = useState<any[]>([]);
+  const [openAgentesServicios, setOpenAgentesServicios] = useState<{ [servicioId: number]: boolean }>({});
+  const toggleAgentesServicio = (servicioId: number) => {
+    setOpenAgentesServicios(prev => ({ ...prev, [servicioId]: !prev[servicioId] }));
+  };
   const [serviciosPage, setServiciosPage] = useState(1);
   const [buscarServicio, setBuscarServicio] = useState("");
   const serviciosFiltrados = servicios.filter(s => s.Nombre.toLowerCase().includes(buscarServicio.toLowerCase()));
@@ -2207,6 +2238,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
 
   useEffect(() => {
     fetchEmergencias();
+    fetchEmergenciasRechazadas();
     fetchServicios();
     fetch(`${API_URL}/api/hospital/config`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
@@ -2225,8 +2257,8 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
 
   const resolveEmergency = async (id: number, estado: string) => {
     const justificacion = resolucionTxt[id];
-    if (!justificacion) {
-      Swal.fire({ title: "Atención", text: "La justificación es obligatoria", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    if (estado === 'Rechazado' && (!justificacion || justificacion.trim() === '')) {
+      Swal.fire({ title: "Atención", text: "Debes ingresar el motivo de rechazo", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
 
@@ -2239,6 +2271,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
       if (res.ok) {
         Swal.fire({ title: "Éxito", text: `Emergencia ${estado}`, icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         fetchEmergencias();
+        fetchEmergenciasRechazadas();
       } else {
         const data = await res.json();
         Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
@@ -2246,6 +2279,39 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     } catch (e) {
       Swal.fire({ title: "Error", text: "Error al resolver emergencia", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
     }
+  };
+
+  const revertirRechazo = async (id: number, nombreAgente: string) => {
+    Swal.fire({
+      title: '¿Volver atrás rechazo?',
+      text: `¿Deseas reactivar la solicitud de emergencia de "${nombreAgente}" para que vuelva a figurar como pendiente de revisión del día?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, volver a pendiente',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`${API_URL}/api/emergencies/${id}/resolve`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ estado: "Pendiente" })
+          });
+          if (res.ok) {
+            Swal.fire({ title: "Éxito", text: "Solicitud reactivada. Ahora figura en Pendientes del día.", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+            fetchEmergencias();
+            fetchEmergenciasRechazadas();
+          } else {
+            const data = await res.json();
+            Swal.fire({ title: "Error", text: data.error || "No se pudo reactivar la solicitud", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          }
+        } catch (e) {
+          Swal.fire({ title: "Error", text: "Error de red", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      }
+    });
   };
 
   const crearServicio = async () => {
@@ -2549,6 +2615,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     }
 
     const filtered = reportes.filter(r => {
+      if (r.Estado !== 'Aprobado') return false;
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
       const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
@@ -2684,6 +2751,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     }
 
     const filtered = reportes.filter(r => {
+      if (r.Estado !== 'Aprobado') return false;
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
       const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
@@ -2705,100 +2773,159 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     const fHastaStr = repHasta.split('-').reverse().join('/');
 
 
-    const individuales = filtered.filter(r => esServicioIndividual(r));
-    const consolidados = filtered.filter(r => !esServicioIndividual(r));
-
     interface FilaEntrega {
       fechaOriginal: string;
       fechaOrder: string;
       servicioName: string;
       agenteDetalle: string;
+      tipoComida: string;
+      tipoDieta: string;
       comidaDietaDetalle: string;
       cantidadRaciones: number;
     }
 
-    const filasParaImprimir: FilaEntrega[] = [];
+    const construirFilas = (listaReportes: any[]): FilaEntrega[] => {
+      const individuales = listaReportes.filter(r => esServicioIndividual(r));
+      const consolidados = listaReportes.filter(r => !esServicioIndividual(r));
 
-    // Agregar las individuales
-    individuales.forEach(p => {
-      const fechaOrder = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      const nombreAgente = p.Personal ? `${p.Personal.NombreCompleto}` : `${p.EmergenciaNombreCompleto}`;
-      const dniAgente = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
+      const filas: FilaEntrega[] = [];
 
-      filasParaImprimir.push({
-        fechaOriginal: p.FechaPedido,
-        fechaOrder: fechaOrder,
-        servicioName: getServicioNombre(p),
-        agenteDetalle: `<strong>${nombreAgente}</strong><br/><span style="color: #555; font-size: 10px;">DNI: ${dniAgente}</span>`,
-        comidaDietaDetalle: `<strong>${p.TipoComida}</strong> (${p.TipoDieta})`,
-        cantidadRaciones: 1
+      individuales.forEach(p => {
+        const fechaOrder = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
+        const nombreAgente = p.Personal ? `${p.Personal.NombreCompleto}` : `${p.EmergenciaNombreCompleto}`;
+        const dniAgente = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
+
+        filas.push({
+          fechaOriginal: p.FechaPedido,
+          fechaOrder: fechaOrder,
+          servicioName: getServicioNombre(p),
+          agenteDetalle: `<strong>${nombreAgente}</strong><br/><span style="color: #555; font-size: 10px;">DNI: ${dniAgente}</span>`,
+          tipoComida: p.TipoComida || 'Almuerzo',
+          tipoDieta: p.TipoDieta || 'Normal',
+          comidaDietaDetalle: `<strong>${p.TipoComida}</strong> (${p.TipoDieta})`,
+          cantidadRaciones: 1
+        });
       });
-    });
 
-    // Agrupar y agregar las consolidadas
-    const gruposConsolidados: Record<string, {
-      FechaPedido: string;
-      ServicioNombre: string;
-      TipoComida: string;
-      TipoDieta: string;
-      Cantidad: number;
-    }> = {};
+      const gruposConsolidados: Record<string, {
+        FechaPedido: string;
+        ServicioNombre: string;
+        TipoComida: string;
+        TipoDieta: string;
+        Cantidad: number;
+      }> = {};
 
-    consolidados.forEach(r => {
-      const fecha = r.FechaPedido.split('T')[0];
-      const servicioName = getServicioNombre(r);
-      const key = `${fecha}_${servicioName}_${r.TipoComida}_${r.TipoDieta}`;
-      if (!gruposConsolidados[key]) {
-        gruposConsolidados[key] = {
-          FechaPedido: r.FechaPedido,
-          ServicioNombre: servicioName,
-          TipoComida: r.TipoComida,
-          TipoDieta: r.TipoDieta,
-          Cantidad: 0
-        };
-      }
-      gruposConsolidados[key].Cantidad += 1;
-    });
-
-    Object.values(gruposConsolidados).forEach(g => {
-      const fechaOrder = g.FechaPedido.split('T')[0].split('-').reverse().join('/');
-      filasParaImprimir.push({
-        fechaOriginal: g.FechaPedido,
-        fechaOrder: fechaOrder,
-        servicioName: g.ServicioNombre,
-        agenteDetalle: `<strong>CONSOLIDADO</strong><br/><span style="color: #2563eb; font-size: 10px; font-weight: bold;">CANTIDAD: ${g.Cantidad} RACION(ES)</span>`,
-        comidaDietaDetalle: `<strong>${g.TipoComida}</strong> (${g.TipoDieta})`,
-        cantidadRaciones: g.Cantidad
+      consolidados.forEach(r => {
+        const fecha = r.FechaPedido.split('T')[0];
+        const servicioName = getServicioNombre(r);
+        const key = `${fecha}_${servicioName}_${r.TipoComida}_${r.TipoDieta}`;
+        if (!gruposConsolidados[key]) {
+          gruposConsolidados[key] = {
+            FechaPedido: r.FechaPedido,
+            ServicioNombre: servicioName,
+            TipoComida: r.TipoComida || 'Almuerzo',
+            TipoDieta: r.TipoDieta || 'Normal',
+            Cantidad: 0
+          };
+        }
+        gruposConsolidados[key].Cantidad += 1;
       });
-    });
 
-    // Ordenar por fecha y luego por nombre del servicio
-    filasParaImprimir.sort((a, b) => {
-      const cmpFecha = a.fechaOriginal.localeCompare(b.fechaOriginal);
-      if (cmpFecha !== 0) return cmpFecha;
-      return a.servicioName.localeCompare(b.servicioName);
-    });
+      Object.values(gruposConsolidados).forEach(g => {
+        const fechaOrder = g.FechaPedido.split('T')[0].split('-').reverse().join('/');
+        filas.push({
+          fechaOriginal: g.FechaPedido,
+          fechaOrder: fechaOrder,
+          servicioName: g.ServicioNombre,
+          agenteDetalle: `<strong>CONSOLIDADO</strong><br/><span style="color: #2563eb; font-size: 10px; font-weight: bold;">CANTIDAD: ${g.Cantidad} RACION(ES)</span>`,
+          tipoComida: g.TipoComida,
+          tipoDieta: g.TipoDieta,
+          comidaDietaDetalle: `<strong>${g.TipoComida}</strong> (${g.TipoDieta})`,
+          cantidadRaciones: g.Cantidad
+        });
+      });
 
-    let rowsHTML = '';
-    filasParaImprimir.forEach((f, idx) => {
-      rowsHTML += `
-        <tr>
-          <td style="padding: 8px 6px; border: 1px solid #999; text-align: center; font-size: 11px;">${idx + 1}</td>
-          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px; white-space: nowrap;">${f.fechaOrder}</td>
-          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">${f.servicioName}</td>
-          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
-            ${f.agenteDetalle}
-          </td>
-          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
-            ${f.comidaDietaDetalle}
-          </td>
-          <td style="padding: 8px 6px; border: 1px solid #999; width: 190px; text-align: center; vertical-align: bottom;">
-            <div style="border-bottom: 1px solid #444; height: 35px; width: 90%; margin: 0 auto 3px auto;"></div>
-            <span style="font-size: 8px; color: #666; text-transform: uppercase; font-weight: bold;">Firma / Conformidad</span>
-          </td>
-        </tr>
+      filas.sort((a, b) => {
+        const cmpFecha = a.fechaOriginal.localeCompare(b.fechaOriginal);
+        if (cmpFecha !== 0) return cmpFecha;
+        return a.servicioName.localeCompare(b.servicioName);
+      });
+
+      return filas;
+    };
+
+    const todasFilas = construirFilas(filtered);
+    const filasAlmuerzo = todasFilas.filter(f => f.tipoComida.toLowerCase() !== 'cena');
+    const filasCena = todasFilas.filter(f => f.tipoComida.toLowerCase() === 'cena');
+
+    const renderTablaTurno = (filas: FilaEntrega[], tituloTurno: string, icono: string) => {
+      let rowsHTML = '';
+      let totalRacionesTurno = 0;
+
+      filas.forEach((f, idx) => {
+        totalRacionesTurno += f.cantidadRaciones;
+        rowsHTML += `
+          <tr>
+            <td style="padding: 8px 6px; border: 1px solid #999; text-align: center; font-size: 11px;">${idx + 1}</td>
+            <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px; white-space: nowrap;">${f.fechaOrder}</td>
+            <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">${f.servicioName}</td>
+            <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
+              ${f.agenteDetalle}
+            </td>
+            <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
+              ${f.comidaDietaDetalle}
+            </td>
+            <td style="padding: 8px 6px; border: 1px solid #999; width: 190px; text-align: center; vertical-align: bottom;">
+              <div style="border-bottom: 1px solid #444; height: 35px; width: 90%; margin: 0 auto 3px auto;"></div>
+              <span style="font-size: 8px; color: #666; text-transform: uppercase; font-weight: bold;">Firma / Conformidad</span>
+            </td>
+          </tr>
+        `;
+      });
+
+      return `
+        <div class="page-container">
+          <div class="header">
+            <div>
+              <div class="title">${icono} PLANILLA DE ENTREGA Y CONFORMIDAD - ${tituloTurno}</div>
+              <div class="subtitle">Efector: <strong>${efNombre}</strong></div>
+            </div>
+            <div class="meta">
+              <div>Período: <strong>${fDesdeStr} ${fDesdeStr !== fHastaStr ? 'al ' + fHastaStr : ''}</strong></div>
+              <div>Fecha de Emisión: ${fechaImpresion}</div>
+            </div>
+          </div>
+
+          ${filas.length > 0 ? `
+            <table>
+              <thead>
+                <tr>
+                  <th style="text-align: center; width: 30px;">#</th>
+                  <th style="width: 80px;">Fecha</th>
+                  <th>Servicio / Destino</th>
+                  <th>Agente / Paciente</th>
+                  <th style="width: 140px;">Comida / Dieta</th>
+                  <th style="text-align: center; width: 190px;">Firma de Conformidad</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rowsHTML}
+              </tbody>
+            </table>
+
+            <div class="summary">
+              TOTAL RACIONES A ENTREGAR (${tituloTurno}): ${totalRacionesTurno}
+            </div>
+          ` : `
+            <p style="padding: 20px; text-align: center; color: #666; font-style: italic; border: 1px dashed #ccc; margin-top: 15px;">No hay raciones solicitadas para el turno de ${tituloTurno}.</p>
+          `}
+
+          <div class="footer">
+            Impreso el ${fechaImpresion} a las ${horaImpresion} | Usuario: ${usuarioImpresion}
+          </div>
+        </div>
       `;
-    });
+    };
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -2812,56 +2939,29 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
         <head>
           <title>Planilla de Entrega y Conformidad</title>
           <style>
-            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; color: #111; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; color: #111; }
             .header { border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-end; }
-            .title { font-size: 20px; font-weight: bold; color: #111; }
+            .title { font-size: 18px; font-weight: bold; color: #111; }
             .subtitle { font-size: 13px; color: #374151; margin-top: 4px; }
             .meta { text-align: right; font-size: 11px; color: #4b5563; }
             table { width: 100%; border-collapse: collapse; margin-top: 10px; }
             th { background-color: #f3f4f6; padding: 8px 6px; border: 1px solid #666; font-size: 11px; text-align: left; text-transform: uppercase; color: #374151; }
             .summary { margin-top: 18px; font-size: 13px; font-weight: bold; text-align: right; border-top: 2px solid #111; padding-top: 8px; }
             .footer { margin-top: 25px; border-top: 1px dashed #aaa; padding-top: 6px; font-size: 9px; color: #6b7280; text-align: right; }
+            .page-break { page-break-after: always; break-after: page; }
             @media print {
               @page { size: A4 portrait; margin: 1cm; }
-              body { margin: 0; }
+              body { padding: 0; }
+              .page-break { page-break-after: always; break-after: page; }
             }
           </style>
         </head>
         <body onload="setTimeout(() => { window.print(); window.close(); }, 600)">
-          <div class="header">
-            <div>
-              <div class="title">PLANILLA DE ENTREGA Y CONFORMIDAD DE RACIONES</div>
-              <div class="subtitle">Efector: <strong>${efNombre}</strong></div>
-            </div>
-            <div class="meta">
-              <div>Período: <strong>${fDesdeStr} ${fDesdeStr !== fHastaStr ? 'al ' + fHastaStr : ''}</strong></div>
-              <div>Fecha de Emisión: ${fechaImpresion}</div>
-            </div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th style="text-align: center; width: 30px;">#</th>
-                <th style="width: 80px;">Fecha</th>
-                <th>Servicio / Destino</th>
-                <th>Agente / Paciente</th>
-                <th style="width: 140px;">Comida / Dieta</th>
-                <th style="text-align: center; width: 190px;">Firma de Conformidad</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHTML}
-            </tbody>
-          </table>
-
-          <div class="summary">
-            TOTAL RACIONES A ENTREGAR: ${filtered.length}
-          </div>
-
-          <div class="footer">
-            Impreso el ${fechaImpresion} a las ${horaImpresion} | Usuario: ${usuarioImpresion}
-          </div>
+          ${renderTablaTurno(filasAlmuerzo, 'ALMUERZO', '☀️')}
+          ${filasCena.length > 0 ? `
+            <div class="page-break"></div>
+            ${renderTablaTurno(filasCena, 'CENA', '🌙')}
+          ` : ''}
         </body>
       </html>
     `;
@@ -3184,70 +3284,158 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
       {/* BANDEJA CONTENT */}
       {activeTab === "Bandeja" && (
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gray-50/50 dark:bg-gray-800/30 gap-4">
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                <AlertTriangle className="w-5 h-5 mr-2 text-orange-500" /> Solicitudes Pendientes
+                <AlertTriangle className="w-5 h-5 mr-2 text-orange-500" /> 
+                {verRechazadas ? 'Solicitudes Rechazadas' : 'Solicitudes Pendientes del Día'}
               </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {verRechazadas ? 'Historial de emergencias rechazadas (puedes volver atrás cualquier solicitud).' : 'Emergencias ingresadas para el día de hoy pendientes de autorización.'}
+              </p>
+            </div>
+            
+            <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl gap-1">
+              <button
+                onClick={() => setVerRechazadas(false)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center ${
+                  !verRechazadas 
+                    ? 'bg-white dark:bg-gray-900 text-indigo-700 dark:text-indigo-300 shadow-sm' 
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                }`}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 mr-1 text-orange-500" />
+                Pendientes hoy ({emergencias.length})
+              </button>
+              <button
+                onClick={() => setVerRechazadas(true)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center ${
+                  verRechazadas 
+                    ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow-sm' 
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                }`}
+              >
+                <X className="w-3.5 h-3.5 mr-1 text-red-500" />
+                Rechazadas ({emergenciasRechazadas.length})
+              </button>
             </div>
           </div>
           
-          {emergencias.length === 0 ? (
-            <div className="p-12 text-center flex flex-col items-center">
-              <CheckCircle className="w-16 h-16 text-green-400 dark:text-green-500/50 mb-4" />
-              <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Todo al día</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">No hay solicitudes de emergencia pendientes de revisión.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-200 dark:divide-gray-800">
-              {emergencias.map(e => {
-                const nombreAgente = e.EmergenciaNombreCompleto || `${e.EmergenciaNombre || ''} ${e.EmergenciaApellido || ''}`.trim() || 'Agente';
-                return (
-                  <div key={e.Id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                    <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-3 mb-2">
-                          <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-md">
-                            URGENTE
-                          </span>
-                          <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</h3>
-                        </div>
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                          <span className="font-semibold text-gray-900 dark:text-gray-200">Agente:</span> <span className="font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">DNI:</span> {e.EmergenciaDNI} • <span className="font-semibold text-gray-900 dark:text-gray-200">Solicita:</span> {e.TipoComida} ({e.TipoDieta})
-                        </p>
-                        {e.PersonalReemplazado && (
-                          <p className="text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">
-                            Reemplaza a: {e.PersonalReemplazado.NombreCompleto} (DNI: {e.PersonalReemplazado.DNI})
+          {!verRechazadas ? (
+            emergencias.length === 0 ? (
+              <div className="p-12 text-center flex flex-col items-center">
+                <CheckCircle className="w-16 h-16 text-green-400 dark:text-green-500/50 mb-4" />
+                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Todo al día hoy</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">No hay solicitudes de emergencia pendientes para el día de hoy.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-200 dark:divide-gray-800">
+                {emergencias.map(e => {
+                  const nombreAgente = e.EmergenciaNombreCompleto || `${e.EmergenciaNombre || ''} ${e.EmergenciaApellido || ''}`.trim() || 'Agente';
+                  return (
+                    <div key={e.Id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                      <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2 flex-wrap gap-y-1">
+                            <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-md">
+                              URGENTE HASTA HOY
+                            </span>
+                            <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 text-xs font-extrabold px-2.5 py-1 rounded-md flex items-center">
+                              <Utensils className="w-3.5 h-3.5 mr-1 text-blue-600 dark:text-blue-400" />
+                              {getServicioNombre(e)}
+                            </span>
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</h3>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                            <span className="font-semibold text-gray-900 dark:text-gray-200">Servicio:</span> <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{getServicioNombre(e)}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">Agente:</span> <span className="font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">DNI:</span> {e.EmergenciaDNI} • <span className="font-semibold text-gray-900 dark:text-gray-200">Solicita:</span> {e.TipoComida} ({e.TipoDieta})
                           </p>
-                        )}
-                        <div className="mt-3 bg-gray-50 dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm italic text-gray-700 dark:text-gray-300 relative">
-                          <div className="absolute top-0 left-0 w-1 h-full bg-orange-400 rounded-l-xl"></div>
-                          "{e.JustificacionSolicitud}"
+                          {e.PersonalReemplazado && (
+                            <p className="text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">
+                              Reemplaza a: {e.PersonalReemplazado.NombreCompleto} (DNI: {e.PersonalReemplazado.DNI})
+                            </p>
+                          )}
+                          <div className="mt-3 bg-gray-50 dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm italic text-gray-700 dark:text-gray-300 relative">
+                            <div className="absolute top-0 left-0 w-1 h-full bg-orange-400 rounded-l-xl"></div>
+                            "{e.JustificacionSolicitud}"
+                          </div>
                         </div>
-                      </div>
-                    
-                    <div className="flex flex-col space-y-3 w-full md:w-80">
-                      <textarea 
-                        className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-4 py-3 border transition-shadow" 
-                        placeholder="Motivo de la resolución (Obligatorio)..." 
-                        rows={2}
-                        value={resolucionTxt[e.Id] || ""}
-                        onChange={(evt) => setResolucionTxt({...resolucionTxt, [e.Id]: evt.target.value})}
-                      ></textarea>
-                      <div className="flex space-x-3">
-                        <button onClick={() => resolveEmergency(e.Id, "Rechazado")} className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-sm">
-                          <X className="w-4 h-4 mr-1.5" /> Rechazar
-                        </button>
-                        <button onClick={() => resolveEmergency(e.Id, "Aprobado")} className="flex-1 flex items-center justify-center bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white border border-transparent py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-md">
-                          <Check className="w-4 h-4 mr-1.5" /> Aprobar
-                        </button>
+                      
+                      <div className="flex flex-col space-y-3 w-full md:w-80">
+                        <textarea 
+                          className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-4 py-3 border transition-shadow" 
+                          placeholder="Motivo de rechazo (opcional al aprobar)..." 
+                          rows={2}
+                          value={resolucionTxt[e.Id] || ""}
+                          onChange={(evt) => setResolucionTxt({...resolucionTxt, [e.Id]: evt.target.value})}
+                        ></textarea>
+                        <div className="flex space-x-3">
+                          <button onClick={() => resolveEmergency(e.Id, "Rechazado")} className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-sm">
+                            <X className="w-4 h-4 mr-1.5" /> Rechazar
+                          </button>
+                          <button onClick={() => resolveEmergency(e.Id, "Aprobado")} className="flex-1 flex items-center justify-center bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white border border-transparent py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-md">
+                            <Check className="w-4 h-4 mr-1.5" /> Aprobar
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-            </div>
+                );
+              })}
+              </div>
+            )
+          ) : (
+            emergenciasRechazadas.length === 0 ? (
+              <div className="p-12 text-center flex flex-col items-center">
+                <CheckCircle className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Sin rechazos</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">No hay solicitudes rechazadas en el historial.</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-200 dark:divide-gray-800">
+                {emergenciasRechazadas.map(e => {
+                  const nombreAgente = e.EmergenciaNombreCompleto || `${e.EmergenciaNombre || ''} ${e.EmergenciaApellido || ''}`.trim() || 'Agente';
+                  const fechaPedidoStr = e.FechaPedido ? e.FechaPedido.split('T')[0].split('-').reverse().join('/') : '-';
+                  return (
+                    <div key={e.Id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                      <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-3 mb-2 flex-wrap gap-y-1">
+                            <span className="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 text-xs font-bold px-2.5 py-1 rounded-md">
+                              RECHAZADO
+                            </span>
+                            <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 text-xs font-extrabold px-2.5 py-1 rounded-md flex items-center">
+                              <Utensils className="w-3.5 h-3.5 mr-1 text-blue-600 dark:text-blue-400" />
+                              {getServicioNombre(e)}
+                            </span>
+                            <span className="text-xs text-gray-500 font-semibold">
+                              Fecha del pedido: {fechaPedidoStr}
+                            </span>
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</h3>
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
+                            <span className="font-semibold text-gray-900 dark:text-gray-200">Servicio:</span> <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{getServicioNombre(e)}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">Agente:</span> <span className="font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">DNI:</span> {e.EmergenciaDNI} • <span className="font-semibold text-gray-900 dark:text-gray-200">Solicitó:</span> {e.TipoComida} ({e.TipoDieta})
+                          </p>
+                          {e.JustificacionResolucion && (
+                            <div className="mt-2 text-xs bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 p-2.5 rounded-lg border border-red-100 dark:border-red-900/30">
+                              <strong>Motivo del rechazo:</strong> "{e.JustificacionResolucion}"
+                            </div>
+                          )}
+                        </div>
+                      
+                        <div className="flex items-center justify-end w-full md:w-auto">
+                          <button 
+                            onClick={() => revertirRechazo(e.Id, nombreAgente)} 
+                            className="w-full md:w-auto flex items-center justify-center bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/60 border border-amber-200 dark:border-amber-700/50 py-2.5 px-4 rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer"
+                          >
+                            <RotateCcw className="w-4 h-4 mr-2" /> Volver Atrás (Reactivar)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )
           )}
         </div>
       )}
@@ -3294,13 +3482,57 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
                         <div className="flex-1">
                           <div className="flex items-center flex-wrap gap-2 mb-2">
                             <span className="font-extrabold text-gray-900 dark:text-gray-100 text-base">{s.Nombre}</span>
-                            <span className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-300 text-xs px-2.5 py-0.5 rounded-full font-semibold">
-                              {s._count?.Personal || 0} Agentes
-                            </span>
+                            <button
+                              type="button"
+                              onClick={() => toggleAgentesServicio(s.Id)}
+                              className={`text-[11px] px-2.5 py-0.5 rounded-full font-extrabold flex items-center transition-all shadow-sm cursor-pointer ${
+                                openAgentesServicios[s.Id]
+                                  ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                  : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-800/60'
+                              }`}
+                              title="Clic para desplegar u ocultar agentes del servicio"
+                            >
+                              <Users className="w-3 h-3 mr-1" />
+                              {(s.Personal?.length || s._count?.Personal || 0)} {(s.Personal?.length === 1 || s._count?.Personal === 1) ? 'Agente' : 'Agentes'}
+                              {(s.Personal?.length > 0 || (s._count?.Personal && s._count.Personal > 0)) && (
+                                openAgentesServicios[s.Id] ? (
+                                  <ChevronUp className="w-3 h-3 ml-1" />
+                                ) : (
+                                  <ChevronDown className="w-3 h-3 ml-1" />
+                                )
+                              )}
+                            </button>
                             <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${s.VoucherIndividual ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-300' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300'}`}>
                               Voucher {s.VoucherIndividual ? 'Individual' : 'Consolidado'}
                             </span>
                           </div>
+
+                          {/* SECCION EXPANSIBLE DE AGENTES AL HACER CLIC EN LA PILDORA */}
+                          {openAgentesServicios[s.Id] && (
+                            <div className="mt-2.5 mb-3 p-3 bg-gray-50 dark:bg-gray-900/80 rounded-xl border border-gray-200 dark:border-gray-700 animate-in fade-in slide-in-from-top-1 duration-200">
+                              <h5 className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center">
+                                <Users className="w-3.5 h-3.5 mr-1.5 text-indigo-500" />
+                                Agentes del servicio {s.Nombre} ({(s.Personal?.length || 0)}):
+                              </h5>
+                              {s.Personal && s.Personal.length > 0 ? (
+                                <div className="divide-y divide-gray-200/60 dark:divide-gray-800 max-h-48 overflow-y-auto pr-1">
+                                  {s.Personal.map((p: any) => (
+                                    <div key={p.Id} className="py-1.5 flex justify-between items-center text-xs">
+                                      <span className="font-semibold text-gray-800 dark:text-gray-200 flex items-center">
+                                        <User className="w-3 h-3 mr-1.5 text-gray-400" />
+                                        {p.NombreCompleto}
+                                      </span>
+                                      <span className="text-[11px] text-gray-500 dark:text-gray-400 font-mono">
+                                        DNI: {p.DNI}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-xs text-gray-400 dark:text-gray-500 italic">No hay agentes asignados en este servicio.</p>
+                              )}
+                            </div>
+                          )}
 
                           <div className="mt-2 space-y-1.5">
                             <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider flex items-center mb-1">
@@ -3621,6 +3853,11 @@ function RRHHPanel({ token }: { token: string }) {
   const [openServicios, setOpenServicios] = useState<{ [hospitalId: number]: boolean }>({});
   const toggleServicios = (id: number) => {
     setOpenServicios(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const [openAgentesServicios, setOpenAgentesServicios] = useState<{ [servicioId: number]: boolean }>({});
+  const toggleAgentesServicio = (id: number) => {
+    setOpenAgentesServicios(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
   const [gerentes, setGerentes] = useState<any[]>([]);
@@ -4392,13 +4629,66 @@ function RRHHPanel({ token }: { token: string }) {
                         </button>
 
                         {openServicios[h.Id] && (
-                          <div className="p-3 bg-gray-50/50 dark:bg-gray-800/30 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-wrap gap-2 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
+                          <div className="p-3 bg-gray-50/50 dark:bg-gray-800/30 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col gap-2.5 max-h-56 overflow-y-auto animate-in fade-in slide-in-from-top-1 duration-200">
                             {h.Servicios && h.Servicios.length > 0 ? (
-                              h.Servicios.map((s: any) => (
-                                <span key={s.Id} className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800">
-                                  {s.Nombre}
-                                </span>
-                              ))
+                              h.Servicios.map((s: any) => {
+                                const cantAgentes = s.Personal?.length || 0;
+                                return (
+                                  <div key={s.Id} className="bg-white dark:bg-gray-800 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 flex flex-col gap-1.5 shadow-sm">
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-bold text-xs text-indigo-700 dark:text-indigo-300 flex items-center">
+                                        <Utensils className="w-3 h-3 mr-1 text-indigo-500" />
+                                        {s.Nombre}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleAgentesServicio(s.Id)}
+                                        className={`text-[10px] px-2 py-0.5 rounded-full font-extrabold flex items-center transition-all cursor-pointer ${
+                                          openAgentesServicios[s.Id]
+                                            ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                            : 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-800 dark:text-indigo-200 hover:bg-indigo-200 dark:hover:bg-indigo-800/60'
+                                        }`}
+                                        title="Clic para desplegar u ocultar agentes"
+                                      >
+                                        <Users className="w-3 h-3 mr-1" />
+                                        {cantAgentes} {cantAgentes === 1 ? 'agente' : 'agentes'}
+                                        {cantAgentes > 0 && (
+                                          openAgentesServicios[s.Id] ? (
+                                            <ChevronUp className="w-3 h-3 ml-1" />
+                                          ) : (
+                                            <ChevronDown className="w-3 h-3 ml-1" />
+                                          )
+                                        )}
+                                      </button>
+                                    </div>
+                                    {openAgentesServicios[s.Id] && (
+                                      <div className="mt-1 p-2 bg-gray-50 dark:bg-gray-900/80 rounded-lg border border-gray-200 dark:border-gray-700 animate-in fade-in slide-in-from-top-1 duration-200">
+                                        <h5 className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 flex items-center">
+                                          <Users className="w-3 h-3 mr-1 text-indigo-500" />
+                                          Integrantes ({cantAgentes}):
+                                        </h5>
+                                        {cantAgentes > 0 ? (
+                                          <div className="divide-y divide-gray-200/60 dark:divide-gray-800 max-h-40 overflow-y-auto pr-1">
+                                            {s.Personal.map((p: any) => (
+                                              <div key={p.Id} className="py-1 flex justify-between items-center text-[11px]">
+                                                <span className="font-semibold text-gray-800 dark:text-gray-200 flex items-center truncate">
+                                                  <User className="w-2.5 h-2.5 mr-1 text-gray-400 flex-shrink-0" />
+                                                  {p.NombreCompleto}
+                                                </span>
+                                                <span className="text-[10px] text-gray-500 dark:text-gray-400 font-mono ml-2">
+                                                  DNI: {p.DNI}
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <p className="text-[10px] text-gray-400 dark:text-gray-500 italic">Sin agentes en este servicio</p>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })
                             ) : (
                               <p className="text-sm text-gray-500 dark:text-gray-500 italic p-1">Sin servicios creados</p>
                             )}

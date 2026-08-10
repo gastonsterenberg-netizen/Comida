@@ -242,6 +242,10 @@ app.get('/api/services', authenticateToken, isGerente, async (req: Request, res:
         _count: {
           select: { Personal: true }
         },
+        Personal: {
+          select: { Id: true, DNI: true, NombreCompleto: true, Horario: true, Activo: true },
+          orderBy: { NombreCompleto: 'asc' }
+        },
         Usuarios: {
           where: { RolId: 3 },
           select: { Id: true, NombreUsuario: true, NombreCompleto: true, Activo: true }
@@ -1393,12 +1397,20 @@ app.get('/api/emergencies/pending', authenticateToken, async (req: Request, res:
   }
 
   try {
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+
     const pending = await prisma.pedidosComida.findMany({
       where: { 
         Estado: 'Pendiente',
+        FechaPedido: today,
         SolicitadoPor: { HospitalId: hospitalId }
       },
-      include: { SolicitadoPor: true, PersonalReemplazado: true }
+      include: { 
+        SolicitadoPor: { include: { Servicio: true, Hospital: true } }, 
+        PersonalReemplazado: { include: { Servicio: true, Hospital: true } },
+        Personal: { include: { Servicio: true, Hospital: true } }
+      }
     });
 
     const dnis = pending
@@ -1430,6 +1442,36 @@ app.get('/api/emergencies/pending', authenticateToken, async (req: Request, res:
     res.json(pending);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener solicitudes' });
+  }
+});
+
+// 5.3.4 Obtener solicitudes de emergencia rechazadas para el Gerente
+app.get('/api/emergencies/rejected', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  if (!hospitalId) {
+    res.status(403).json({ error: 'El usuario no tiene hospital asignado' });
+    return;
+  }
+
+  try {
+    const rejected = await prisma.pedidosComida.findMany({
+      where: { 
+        Estado: 'Rechazado',
+        SolicitadoPor: { HospitalId: hospitalId }
+      },
+      orderBy: { Id: 'desc' },
+      take: 50,
+      include: { 
+        SolicitadoPor: { include: { Servicio: true, Hospital: true } }, 
+        PersonalReemplazado: { include: { Servicio: true, Hospital: true } },
+        Personal: { include: { Servicio: true, Hospital: true } },
+        EvaluadoPor: true 
+      }
+    });
+
+    res.json(rejected);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener emergencias rechazadas' });
   }
 });
 
@@ -1470,8 +1512,8 @@ app.post('/api/emergencies/:id/resolve', authenticateToken, async (req: Request,
   const { id } = req.params;
   const { estado, justificacionResolucion, evaluadoPorUsuarioId } = req.body; // estado: 'Aprobado' o 'Rechazado'
 
-  if (!justificacionResolucion || justificacionResolucion.trim() === '') {
-    res.status(400).json({ error: 'La justificación es obligatoria.' });
+  if (estado === 'Rechazado' && (!justificacionResolucion || justificacionResolucion.trim() === '')) {
+    res.status(400).json({ error: 'La justificación es obligatoria al rechazar una solicitud.' });
     return;
   }
 
@@ -1510,16 +1552,17 @@ app.post('/api/emergencies/:id/resolve', authenticateToken, async (req: Request,
       }
     }
 
+    const isPending = estado === 'Pendiente';
     await prisma.pedidosComida.update({
       where: { Id: Number(id) },
       data: {
         Estado: estado,
-        JustificacionResolucion: justificacionResolucion,
-        EvaluadoPorUsuarioId: evaluadoPorUsuarioId || req.user?.userId
+        JustificacionResolucion: isPending ? null : (justificacionResolucion || (estado === 'Aprobado' ? 'Aprobado sin observaciones' : null)),
+        EvaluadoPorUsuarioId: isPending ? null : (evaluadoPorUsuarioId || req.user?.userId)
       }
     });
-    await logAudit(req, 'AUTORIZACION_EMERGENCIA', `Solicitud de emergencia ID ${id} - ${estado}`);
-    res.json({ message: `Solicitud ${estado.toLowerCase()} exitosamente.` });
+    await logAudit(req, isPending ? 'REVERTIR_RECHAZO_EMERGENCIA' : 'AUTORIZACION_EMERGENCIA', `Solicitud de emergencia ID ${id} - ${estado}`);
+    res.json({ message: isPending ? 'Solicitud devuelta a estado pendiente exitosamente.' : `Solicitud ${estado.toLowerCase()} exitosamente.` });
   } catch (error) {
     res.status(500).json({ error: 'Error al resolver la solicitud' });
   }
@@ -1563,15 +1606,12 @@ app.get('/api/reports', authenticateToken, async (req: Request, res: Response): 
   try {
     let whereClause: any = {};
     if (fechaInicio && fechaFin) {
-      const start = new Date(fechaInicio as string);
-      const end = new Date(fechaFin as string);
-      whereClause.OR = [
-        { FechaPedido: { gte: start, lte: end } },
-        { 
-          EmergenciaPeriodoInicio: { lte: end },
-          EmergenciaPeriodoFin: { gte: start }
-        }
-      ];
+      const startStr = fechaInicio as string;
+      const endStr = fechaFin as string;
+      const start = new Date(`${startStr}T00:00:00.000Z`);
+      const end = new Date(`${endStr}T23:59:59.999Z`);
+
+      whereClause.FechaPedido = { gte: start, lte: end };
     }
 
     // Role-based filtering
@@ -1680,7 +1720,14 @@ app.get('/api/hospitals', authenticateToken, async (req: Request, res: Response)
   try {
     const hospitales = await prisma.hospitales.findMany({
       include: {
-        Servicios: true,
+        Servicios: {
+          include: {
+            Personal: {
+              select: { Id: true, DNI: true, NombreCompleto: true, Horario: true, Activo: true },
+              orderBy: { NombreCompleto: 'asc' }
+            }
+          }
+        },
         Usuarios: {
           where: { RolId: 2 }, // Gerentes
           select: { Id: true, NombreUsuario: true, NombreCompleto: true, Activo: true }
