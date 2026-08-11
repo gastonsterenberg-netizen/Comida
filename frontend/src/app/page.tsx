@@ -865,13 +865,21 @@ function JefePanel({
   const [selections, setSelections] = useState<{ [id: number]: { almuerzo: string | null, cena: string | null } }>({});
   const [savedSelections, setSavedSelections] = useState<{ [id: number]: { almuerzo: string | null, cena: string | null } }>({});
 
-  useEffect(() => {
-    const today = new Date().toISOString().split('T')[0];
+  const loadTodayOrders = () => {
+    const today = getTodayStr();
     fetch(`${API_URL}/api/reports?fechaInicio=${today}&fechaFin=${today}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
-    .then(r => r.json())
+    .then(r => {
+      if (r.status === 401) {
+        localStorage.clear();
+        window.location.reload();
+        return [];
+      }
+      return r.json();
+    })
     .then(data => {
+      if (!Array.isArray(data)) return;
       const newSelections: { [id: number]: { almuerzo: string | null, cena: string | null } } = {};
       data.forEach((r: any) => {
         if (r.PersonalId) {
@@ -886,10 +894,25 @@ function JefePanel({
         }
       });
       setSelections(newSelections);
-      // Hacemos una copia profunda (deep copy) para que no compartan referencia
       setSavedSelections(JSON.parse(JSON.stringify(newSelections)));
     })
     .catch(console.error);
+  };
+
+  useEffect(() => {
+    loadTodayOrders();
+
+    const handleFocus = () => {
+      loadTodayOrders();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleFocus);
+    };
   }, [token]);
 
   const toggleSelection = (personalId: number, tipoComida: "almuerzo" | "cena", tipoDieta: string) => {

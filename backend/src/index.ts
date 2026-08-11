@@ -1057,11 +1057,16 @@ app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void
         TipoComida: tipoComida,
         FechaPedido: today,
         PersonalId: { not: personalId }
+      },
+      include: {
+        SolicitadoPor: { include: { Servicio: true } },
+        Personal: { include: { Servicio: true } }
       }
     });
 
     if (crossCheck) {
-      res.status(403).json({ error: `El agente con DNI ${personal.DNI} ya tiene este pedido (${tipoComida}) asignado en otro servicio.` });
+      const sNombre = crossCheck.SolicitadoPor?.Servicio?.Nombre || crossCheck.Personal?.Servicio?.Nombre || 'otro servicio';
+      res.status(403).json({ error: `El agente con DNI ${personal.DNI} ya tiene este pedido (${tipoComida}) asignado en el servicio "${sNombre}".` });
       return;
     }
 
@@ -1145,7 +1150,6 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
       where: {
         FechaPedido: today,
         PersonalId: { in: personalIds },
-        SolicitadoPorUsuarioId: solicitadoPorUsuarioId,
         ...(tipoComida ? { TipoComida: tipoComida } : {})
       }
     });
@@ -1168,18 +1172,22 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
         }
         if (isAlmuerzo && o.almuerzoDieta) {
           const cenaExistente = await prisma.pedidosComida.findFirst({
-            where: { FechaPedido: today, TipoComida: 'Cena', Personal: { DNI: personal.DNI } }
+            where: { FechaPedido: today, TipoComida: 'Cena', Personal: { DNI: personal.DNI } },
+            include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
           });
           if (cenaExistente) {
-            throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrada una Cena para el día de hoy.`);
+            const sNombre = cenaExistente.SolicitadoPor?.Servicio?.Nombre || cenaExistente.Personal?.Servicio?.Nombre || 'otro servicio';
+            throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrada una Cena para el día de hoy en el servicio "${sNombre}".`);
           }
         }
         if (isCena && o.cenaDieta) {
           const almuerzoExistente = await prisma.pedidosComida.findFirst({
-            where: { FechaPedido: today, TipoComida: 'Almuerzo', Personal: { DNI: personal.DNI } }
+            where: { FechaPedido: today, TipoComida: 'Almuerzo', Personal: { DNI: personal.DNI } },
+            include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
           });
           if (almuerzoExistente) {
-            throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrado un Almuerzo para el día de hoy.`);
+            const sNombre = almuerzoExistente.SolicitadoPor?.Servicio?.Nombre || almuerzoExistente.Personal?.Servicio?.Nombre || 'otro servicio';
+            throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrado un Almuerzo para el día de hoy en el servicio "${sNombre}".`);
           }
         }
       }
@@ -1190,10 +1198,12 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
             FechaPedido: today,
             TipoComida: 'Almuerzo',
             Personal: { DNI: personal.DNI }
-          }
+          },
+          include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
         });
         if (almuerzoExistente) {
-          throw new Error(`El agente ${personal.NombreCompleto} ya tiene un Almuerzo solicitado en otro servicio.`);
+          const sNombre = almuerzoExistente.SolicitadoPor?.Servicio?.Nombre || almuerzoExistente.Personal?.Servicio?.Nombre || 'otro servicio';
+          throw new Error(`El agente ${personal.NombreCompleto} ya tiene un Almuerzo solicitado en el servicio "${sNombre}".`);
         }
         
         newOrders.push({
@@ -1211,10 +1221,12 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
             FechaPedido: today,
             TipoComida: 'Cena',
             Personal: { DNI: personal.DNI }
-          }
+          },
+          include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
         });
         if (cenaExistente) {
-          throw new Error(`El agente ${personal.NombreCompleto} ya tiene una Cena solicitada en otro servicio.`);
+          const sNombre = cenaExistente.SolicitadoPor?.Servicio?.Nombre || cenaExistente.Personal?.Servicio?.Nombre || 'otro servicio';
+          throw new Error(`El agente ${personal.NombreCompleto} ya tiene una Cena solicitada en el servicio "${sNombre}".`);
         }
 
         newOrders.push({
@@ -1616,8 +1628,15 @@ app.get('/api/reports', authenticateToken, async (req: Request, res: Response): 
 
     // Role-based filtering
     if (user?.roleId === 3) {
-      // JEFE_SERVICIO: solo ver su servicio
-      whereClause.SolicitadoPorUsuarioId = user.userId;
+      // JEFE_SERVICIO: ver todos los pedidos pertenecientes a su servicio
+      if (user.servicioId) {
+        whereClause.OR = [
+          { SolicitadoPor: { ServicioId: user.servicioId } },
+          { Personal: { ServicioId: user.servicioId } }
+        ];
+      } else {
+        whereClause.SolicitadoPorUsuarioId = user.userId;
+      }
     } else if (user?.roleId === 2) {
       // GERENTE: solo ver su hospital
       whereClause.SolicitadoPor = {

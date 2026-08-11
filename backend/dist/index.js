@@ -975,6 +975,7 @@ app.post('/api/staff/:id/revertir-baja', auth_1.authenticateToken, (req, res) =>
 }));
 // 4.3 Registrar o eliminar pedido de comida (y 4.4 validación de 10AM)
 app.post('/api/orders/toggle', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a, _b, _c, _d;
     const { personalId, tipoComida, tipoDieta, solicitadoPorUsuarioId } = req.body;
     const errorMsg = yield checkDeadlines(solicitadoPorUsuarioId, tipoComida);
     if (errorMsg) {
@@ -1000,10 +1001,15 @@ app.post('/api/orders/toggle', (req, res) => __awaiter(void 0, void 0, void 0, f
                 TipoComida: tipoComida,
                 FechaPedido: today,
                 PersonalId: { not: personalId }
+            },
+            include: {
+                SolicitadoPor: { include: { Servicio: true } },
+                Personal: { include: { Servicio: true } }
             }
         });
         if (crossCheck) {
-            res.status(403).json({ error: `El agente con DNI ${personal.DNI} ya tiene este pedido (${tipoComida}) asignado en otro servicio.` });
+            const sNombre = ((_b = (_a = crossCheck.SolicitadoPor) === null || _a === void 0 ? void 0 : _a.Servicio) === null || _b === void 0 ? void 0 : _b.Nombre) || ((_d = (_c = crossCheck.Personal) === null || _c === void 0 ? void 0 : _c.Servicio) === null || _d === void 0 ? void 0 : _d.Nombre) || 'otro servicio';
+            res.status(403).json({ error: `El agente con DNI ${personal.DNI} ya tiene este pedido (${tipoComida}) asignado en el servicio "${sNombre}".` });
             return;
         }
         const existingOrder = yield prisma.pedidosComida.findFirst({
@@ -1059,7 +1065,7 @@ app.post('/api/orders/toggle', (req, res) => __awaiter(void 0, void 0, void 0, f
 }));
 // 4.3.b Guardar multiples pedidos
 app.post('/api/orders/bulk', auth_1.authenticateToken, (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _a;
+    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r, _s;
     const { orders, tipoComida } = req.body;
     const solicitadoPorUsuarioId = (_a = req.user) === null || _a === void 0 ? void 0 : _a.userId;
     if (!solicitadoPorUsuarioId) {
@@ -1079,7 +1085,7 @@ app.post('/api/orders/bulk', auth_1.authenticateToken, (req, res) => __awaiter(v
         // Borramos los pedidos de hoy para el personal especificado y tipoComida (si aplica)
         const personalIds = orders.map((o) => o.personalId);
         yield prisma.pedidosComida.deleteMany({
-            where: Object.assign({ FechaPedido: today, PersonalId: { in: personalIds }, SolicitadoPorUsuarioId: solicitadoPorUsuarioId }, (tipoComida ? { TipoComida: tipoComida } : {}))
+            where: Object.assign({ FechaPedido: today, PersonalId: { in: personalIds } }, (tipoComida ? { TipoComida: tipoComida } : {}))
         });
         // Creamos los nuevos pedidos
         const newOrders = [];
@@ -1098,18 +1104,22 @@ app.post('/api/orders/bulk', auth_1.authenticateToken, (req, res) => __awaiter(v
                 }
                 if (isAlmuerzo && o.almuerzoDieta) {
                     const cenaExistente = yield prisma.pedidosComida.findFirst({
-                        where: { FechaPedido: today, TipoComida: 'Cena', Personal: { DNI: personal.DNI } }
+                        where: { FechaPedido: today, TipoComida: 'Cena', Personal: { DNI: personal.DNI } },
+                        include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
                     });
                     if (cenaExistente) {
-                        throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrada una Cena para el día de hoy.`);
+                        const sNombre = ((_c = (_b = cenaExistente.SolicitadoPor) === null || _b === void 0 ? void 0 : _b.Servicio) === null || _c === void 0 ? void 0 : _c.Nombre) || ((_e = (_d = cenaExistente.Personal) === null || _d === void 0 ? void 0 : _d.Servicio) === null || _e === void 0 ? void 0 : _e.Nombre) || 'otro servicio';
+                        throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrada una Cena para el día de hoy en el servicio "${sNombre}".`);
                     }
                 }
                 if (isCena && o.cenaDieta) {
                     const almuerzoExistente = yield prisma.pedidosComida.findFirst({
-                        where: { FechaPedido: today, TipoComida: 'Almuerzo', Personal: { DNI: personal.DNI } }
+                        where: { FechaPedido: today, TipoComida: 'Almuerzo', Personal: { DNI: personal.DNI } },
+                        include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
                     });
                     if (almuerzoExistente) {
-                        throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrado un Almuerzo para el día de hoy.`);
+                        const sNombre = ((_g = (_f = almuerzoExistente.SolicitadoPor) === null || _f === void 0 ? void 0 : _f.Servicio) === null || _g === void 0 ? void 0 : _g.Nombre) || ((_j = (_h = almuerzoExistente.Personal) === null || _h === void 0 ? void 0 : _h.Servicio) === null || _j === void 0 ? void 0 : _j.Nombre) || 'otro servicio';
+                        throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrado un Almuerzo para el día de hoy en el servicio "${sNombre}".`);
                     }
                 }
             }
@@ -1119,10 +1129,12 @@ app.post('/api/orders/bulk', auth_1.authenticateToken, (req, res) => __awaiter(v
                         FechaPedido: today,
                         TipoComida: 'Almuerzo',
                         Personal: { DNI: personal.DNI }
-                    }
+                    },
+                    include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
                 });
                 if (almuerzoExistente) {
-                    throw new Error(`El agente ${personal.NombreCompleto} ya tiene un Almuerzo solicitado en otro servicio.`);
+                    const sNombre = ((_l = (_k = almuerzoExistente.SolicitadoPor) === null || _k === void 0 ? void 0 : _k.Servicio) === null || _l === void 0 ? void 0 : _l.Nombre) || ((_o = (_m = almuerzoExistente.Personal) === null || _m === void 0 ? void 0 : _m.Servicio) === null || _o === void 0 ? void 0 : _o.Nombre) || 'otro servicio';
+                    throw new Error(`El agente ${personal.NombreCompleto} ya tiene un Almuerzo solicitado en el servicio "${sNombre}".`);
                 }
                 newOrders.push({
                     FechaPedido: today,
@@ -1139,10 +1151,12 @@ app.post('/api/orders/bulk', auth_1.authenticateToken, (req, res) => __awaiter(v
                         FechaPedido: today,
                         TipoComida: 'Cena',
                         Personal: { DNI: personal.DNI }
-                    }
+                    },
+                    include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
                 });
                 if (cenaExistente) {
-                    throw new Error(`El agente ${personal.NombreCompleto} ya tiene una Cena solicitada en otro servicio.`);
+                    const sNombre = ((_q = (_p = cenaExistente.SolicitadoPor) === null || _p === void 0 ? void 0 : _p.Servicio) === null || _q === void 0 ? void 0 : _q.Nombre) || ((_s = (_r = cenaExistente.Personal) === null || _r === void 0 ? void 0 : _r.Servicio) === null || _s === void 0 ? void 0 : _s.Nombre) || 'otro servicio';
+                    throw new Error(`El agente ${personal.NombreCompleto} ya tiene una Cena solicitada en el servicio "${sNombre}".`);
                 }
                 newOrders.push({
                     FechaPedido: today,
@@ -1508,8 +1522,16 @@ app.get('/api/reports', auth_1.authenticateToken, (req, res) => __awaiter(void 0
         }
         // Role-based filtering
         if ((user === null || user === void 0 ? void 0 : user.roleId) === 3) {
-            // JEFE_SERVICIO: solo ver su servicio
-            whereClause.SolicitadoPorUsuarioId = user.userId;
+            // JEFE_SERVICIO: ver todos los pedidos pertenecientes a su servicio
+            if (user.servicioId) {
+                whereClause.OR = [
+                    { SolicitadoPor: { ServicioId: user.servicioId } },
+                    { Personal: { ServicioId: user.servicioId } }
+                ];
+            }
+            else {
+                whereClause.SolicitadoPorUsuarioId = user.userId;
+            }
         }
         else if ((user === null || user === void 0 ? void 0 : user.roleId) === 2) {
             // GERENTE: solo ver su hospital
