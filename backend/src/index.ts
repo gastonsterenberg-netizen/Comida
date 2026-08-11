@@ -1271,16 +1271,10 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
   }
 
   try {
-    const pInicio = periodoInicio ? new Date(periodoInicio) : new Date();
-    const pFin = periodoFin ? new Date(periodoFin) : new Date();
-    
-    const start = new Date(Date.UTC(pInicio.getFullYear(), pInicio.getMonth(), pInicio.getDate()));
-    const end = new Date(Date.UTC(pFin.getFullYear(), pFin.getMonth(), pFin.getDate()));
-    
-    if (end < start) {
-      res.status(400).json({ error: 'La fecha de fin no puede ser menor a la fecha de inicio.' });
-      return;
-    }
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    const start = today;
+    const end = today;
 
     // Si es reemplazo excepcional con titular, obtener la comida/dieta del titular asignado si no se especificaron
     let finalTipoDieta = tipoDieta || 'Normal';
@@ -1457,7 +1451,40 @@ app.get('/api/emergencies/pending', authenticateToken, async (req: Request, res:
   }
 });
 
-// 5.3.4 Obtener solicitudes de emergencia rechazadas para el Gerente
+// 5.3.4 Obtener solicitudes de emergencia aprobadas del día para el Gerente
+app.get('/api/emergencies/approved', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  if (!hospitalId) {
+    res.status(403).json({ error: 'El usuario no tiene hospital asignado' });
+    return;
+  }
+
+  try {
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+
+    const approved = await prisma.pedidosComida.findMany({
+      where: { 
+        Estado: 'Aprobado',
+        FechaPedido: today,
+        SolicitadoPor: { HospitalId: hospitalId }
+      },
+      orderBy: { Id: 'desc' },
+      include: { 
+        SolicitadoPor: { include: { Servicio: true, Hospital: true } }, 
+        PersonalReemplazado: { include: { Servicio: true, Hospital: true } },
+        Personal: { include: { Servicio: true, Hospital: true } },
+        EvaluadoPor: true 
+      }
+    });
+
+    res.json(approved);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener emergencias aprobadas' });
+  }
+});
+
+// 5.3.5 Obtener solicitudes de emergencia rechazadas del día para el Gerente
 app.get('/api/emergencies/rejected', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
   if (!hospitalId) {
@@ -1466,13 +1493,16 @@ app.get('/api/emergencies/rejected', authenticateToken, async (req: Request, res
   }
 
   try {
+    const now = new Date();
+    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+
     const rejected = await prisma.pedidosComida.findMany({
       where: { 
         Estado: 'Rechazado',
+        FechaPedido: today,
         SolicitadoPor: { HospitalId: hospitalId }
       },
       orderBy: { Id: 'desc' },
-      take: 50,
       include: { 
         SolicitadoPor: { include: { Servicio: true, Hospital: true } }, 
         PersonalReemplazado: { include: { Servicio: true, Hospital: true } },
@@ -1487,7 +1517,7 @@ app.get('/api/emergencies/rejected', authenticateToken, async (req: Request, res
   }
 });
 
-// 5.3.5 Historial de emergencias
+// 5.3.6 Historial de emergencias
 app.get('/api/emergencies/history', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId || Number(req.query.userId);
   if (!userId) {
@@ -1519,10 +1549,10 @@ app.get('/api/emergencies/history', authenticateToken, async (req: Request, res:
   }
 });
 
-// 5.4 Aprobar o Rechazar emergencia
+// 5.4 Aprobar, Rechazar o Revertir emergencia
 app.post('/api/emergencies/:id/resolve', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const { id } = req.params;
-  const { estado, justificacionResolucion, evaluadoPorUsuarioId } = req.body; // estado: 'Aprobado' o 'Rechazado'
+  const { estado, justificacionResolucion, evaluadoPorUsuarioId } = req.body; // estado: 'Aprobado', 'Rechazado' o 'Pendiente'
 
   if (estado === 'Rechazado' && (!justificacionResolucion || justificacionResolucion.trim() === '')) {
     res.status(400).json({ error: 'La justificación es obligatoria al rechazar una solicitud.' });
@@ -1541,7 +1571,7 @@ app.post('/api/emergencies/:id/resolve', authenticateToken, async (req: Request,
     }
 
     const hospital = pedido.SolicitadoPor?.Hospital;
-    if (hospital && estado === 'Aprobado') {
+    if (hospital) {
       const now = new Date();
       const currentTotalMins = now.getHours() * 60 + now.getMinutes();
 
@@ -1549,7 +1579,7 @@ app.post('/api/emergencies/:id/resolve', authenticateToken, async (req: Request,
         const limitAuthAlm = hospital.LimiteAutorizacionAlmuerzo || '11:00';
         const [h, m] = limitAuthAlm.split(':').map(Number);
         if (currentTotalMins >= h * 60 + m) {
-          res.status(400).json({ error: `La hora límite para autorizar emergencias de Almuerzo (${limitAuthAlm}) ha expirado.` });
+          res.status(400).json({ error: `La hora límite para autorizar o modificar emergencias de Almuerzo (${limitAuthAlm}) ha expirado.` });
           return;
         }
       }
@@ -1558,7 +1588,7 @@ app.post('/api/emergencies/:id/resolve', authenticateToken, async (req: Request,
         const limitAuthCen = hospital.LimiteAutorizacionCena || '18:00';
         const [h, m] = limitAuthCen.split(':').map(Number);
         if (currentTotalMins >= h * 60 + m) {
-          res.status(400).json({ error: `La hora límite para autorizar emergencias de Cena (${limitAuthCen}) ha expirado.` });
+          res.status(400).json({ error: `La hora límite para autorizar o modificar emergencias de Cena (${limitAuthCen}) ha expirado.` });
           return;
         }
       }
@@ -1573,7 +1603,7 @@ app.post('/api/emergencies/:id/resolve', authenticateToken, async (req: Request,
         EvaluadoPorUsuarioId: isPending ? null : (evaluadoPorUsuarioId || req.user?.userId)
       }
     });
-    await logAudit(req, isPending ? 'REVERTIR_RECHAZO_EMERGENCIA' : 'AUTORIZACION_EMERGENCIA', `Solicitud de emergencia ID ${id} - ${estado}`);
+    await logAudit(req, isPending ? 'REVERTIR_EMERGENCIA' : 'AUTORIZACION_EMERGENCIA', `Solicitud de emergencia ID ${id} - ${estado}`);
     res.json({ message: isPending ? 'Solicitud devuelta a estado pendiente exitosamente.' : `Solicitud ${estado.toLowerCase()} exitosamente.` });
   } catch (error) {
     res.status(500).json({ error: 'Error al resolver la solicitud' });
@@ -1796,20 +1826,44 @@ app.post('/api/users/gerente', authenticateToken, async (req: Request, res: Resp
 });
 
 app.get('/api/admin/auditoria', authenticateToken, async (req: Request, res: Response): Promise<void> => {
-  if (req.user?.roleId !== 1) { // 1 = RRHH Global (Admin)
-    res.status(403).json({ error: 'Solo el administrador puede ver los registros de auditoría.' });
+  const roleId = req.user?.roleId;
+  if (roleId !== 1 && roleId !== 2) { // 1 = Admin, 2 = Gerente
+    res.status(403).json({ error: 'No autorizado para ver registros de auditoría.' });
     return;
   }
+
   try {
+    let whereClause: any = {};
+    if (roleId === 2) {
+      // Gerente: solo acciones de Jefes de Servicio (roleId 3) de su propio efector
+      const hospitalId = req.user?.hospitalId;
+      if (!hospitalId) {
+        res.status(403).json({ error: 'El usuario no tiene hospital asignado.' });
+        return;
+      }
+      whereClause = {
+        Usuario: {
+          RolId: 3, // Jefe de Servicio
+          HospitalId: hospitalId
+        }
+      };
+    }
+
     // @ts-ignore
     const logs = await prisma.auditoria.findMany({
+      where: whereClause,
       orderBy: { Fecha: 'desc' },
       include: {
         Usuario: {
-          select: { NombreUsuario: true, Rol: { select: { Nombre: true } } }
+          select: { 
+            NombreUsuario: true, 
+            NombreCompleto: true,
+            Rol: { select: { Nombre: true } },
+            Servicio: { select: { Nombre: true } }
+          }
         }
       },
-      take: 200 // Limitar últimos 200 para rendimiento
+      take: 300
     });
     res.json(logs);
   } catch (error) {

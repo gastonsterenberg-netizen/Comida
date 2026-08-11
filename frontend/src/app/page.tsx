@@ -32,6 +32,12 @@ const getTodayStr = () => {
   return today.toISOString().split('T')[0];
 };
 
+const formatIp = (ip?: string | null) => {
+  if (!ip) return '-';
+  if (ip === '::1' || ip === '127.0.0.1' || ip.includes('::ffff:127.0.0.1')) return 'Localhost';
+  return ip.replace(/^::ffff:/, '');
+};
+
 export default function Home() {
   const [role, setRole] = useState<Role | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -203,6 +209,8 @@ export default function Home() {
             token={token} 
             hospitalName={hospitalName}
             username={username}
+            isPastAuthAlmuerzo={isPastAuthAlmuerzo}
+            isPastAuthCena={isPastAuthCena}
             dietasHabilitadasProp={dietasHabilitadas}
             onConfigUpdated={(alm, cen, dietasArr) => {
               setLimiteAlmuerzo(alm);
@@ -381,7 +389,7 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
             <button 
               type="submit" 
               disabled={isLoading}
-              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-95"
+              className="w-full flex justify-center py-3 px-4 border border-transparent rounded-lg shadow-md text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 transition-all transform hover:scale-[1.02] active:scale-95 cursor-pointer"
             >
               {isLoading ? 'Autenticando...' : 'Iniciar Sesión'}
             </button>
@@ -659,9 +667,6 @@ function JefePanel({
     }
   }, [dietasProp]);
 
-  const [emgDuracion, setEmgDuracion] = useState("hoy");
-  const [emgPeriodoInicio, setEmgPeriodoInicio] = useState("");
-  const [emgPeriodoFin, setEmgPeriodoFin] = useState("");
   const [emgTipo, setEmgTipo] = useState((isPastAuthAlmuerzo && isPastAuthCena) ? "reemplazo_excepcional" : "reemplazo");
 
   useEffect(() => {
@@ -791,12 +796,9 @@ function JefePanel({
     fetchHistorialEmergencias();
     fetchPadron();
     
-    // Set initial dates here to avoid hydration mismatches
     const today = getTodayStr();
     setRepDesde(today);
     setRepHasta(today);
-    setEmgPeriodoInicio(today);
-    setEmgPeriodoFin(today);
   }, []);
 
   const [openGroup, setOpenGroup] = useState<"mi_servicio" | "otros">("mi_servicio");
@@ -1097,9 +1099,7 @@ function JefePanel({
       return;
     }
     try {
-      const isHoy = emgTipo === "reemplazo_excepcional" || emgDuracion === "hoy";
-      const start = isHoy ? new Date().toISOString() : emgPeriodoInicio;
-      const end = isHoy ? new Date().toISOString() : emgPeriodoFin;
+      const todayStr = getTodayStr();
 
       const res = await fetch(`${API_URL}/api/emergencies`, {
         method: "POST",
@@ -1112,8 +1112,8 @@ function JefePanel({
           nombre: emgNombre,
           apellido: "", 
           dni: emgDni,
-          periodoInicio: start,
-          periodoFin: end,
+          periodoInicio: todayStr,
+          periodoFin: todayStr,
           tipoComida: emgComida,
           tipoDieta: emgDieta,
           tipoDietaCena: emgComida === 'Ambos' ? emgDietaCena : undefined,
@@ -1407,7 +1407,7 @@ function JefePanel({
               <button 
                 onClick={handleGuardarPedidos} 
                 disabled={(planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena) || !hasUnsavedChanges} 
-                className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-95 flex items-center"
+                className="bg-blue-600 hover:bg-blue-700 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-95 flex items-center cursor-pointer"
               >
                 <Save className="w-4 h-4 mr-2" /> Guardar {planillaTab === 'almuerzo' ? 'Almuerzo' : 'Cena'}
               </button>
@@ -1675,9 +1675,9 @@ function JefePanel({
               </div>
             </div>
 
-            {/* ROW 3: Comida, Dieta, Duracion (Oculto en reemplazo_excepcional) */}
+            {/* ROW 3: Comida y Dieta (Las emergencias corresponden al día de hoy) */}
             {emgTipo !== 'reemplazo_excepcional' && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-5 bg-gray-50 dark:bg-gray-800/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-gray-50 dark:bg-gray-800/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Comida</label>
                   <div className="flex gap-4">
@@ -1715,26 +1715,6 @@ function JefePanel({
                       </select>
                     </div>
                   )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Duración</label>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="emgDuracion" value="hoy" checked={emgDuracion === 'hoy'} onChange={() => setEmgDuracion('hoy')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Solo por hoy</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input type="radio" name="emgDuracion" value="rango" checked={emgDuracion === 'rango'} onChange={() => setEmgDuracion('rango')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Rango de fechas</span>
-                      </label>
-                    </div>
-                    {emgDuracion === 'rango' && (
-                      <div className="flex gap-2 mt-1">
-                        <input type="date" value={emgPeriodoInicio} onChange={e => setEmgPeriodoInicio(e.target.value)} className="w-full rounded border-gray-300 dark:border-gray-700 sm:text-xs px-2 py-1 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
-                        <input type="date" value={emgPeriodoFin} onChange={e => setEmgPeriodoFin(e.target.value)} className="w-full rounded border-gray-300 dark:border-gray-700 sm:text-xs px-2 py-1 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" />
-                      </div>
-                    )}
-                  </div>
                 </div>
               </div>
             )}
@@ -1872,7 +1852,7 @@ function JefePanel({
             </h2>
             <button 
               onClick={handleGuardarPlantel}
-              className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:from-blue-700 hover:to-indigo-700 transition-all transform hover:scale-[1.02] active:scale-95 flex items-center"
+              className="bg-blue-600 hover:bg-blue-700 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all transform hover:scale-[1.02] active:scale-95 flex items-center cursor-pointer"
             >
               <Save className="w-4 h-4 mr-2" /> Guardar Plantel
             </button>
@@ -2179,12 +2159,27 @@ function JefePanel({
   );
 }
 
-function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, onConfigUpdated }: { token: string, hospitalName?: string | null, username?: string | null, dietasHabilitadasProp?: string[], onConfigUpdated?: (almuerzo: string, cena: string, dietas?: string[]) => void }) {
+function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = false, isPastAuthCena = false, dietasHabilitadasProp, onConfigUpdated }: { token: string, hospitalName?: string | null, username?: string | null, isPastAuthAlmuerzo?: boolean, isPastAuthCena?: boolean, dietasHabilitadasProp?: string[], onConfigUpdated?: (almuerzo: string, cena: string, dietas?: string[]) => void }) {
   const [emergencias, setEmergencias] = useState<any[]>([]);
+  const [emergenciasAprobadas, setEmergenciasAprobadas] = useState<any[]>([]);
   const [emergenciasRechazadas, setEmergenciasRechazadas] = useState<any[]>([]);
-  const [verRechazadas, setVerRechazadas] = useState(false);
+  const [emgSubTab, setEmgSubTab] = useState<"pendientes" | "aprobadas" | "rechazadas">("pendientes");
   const [resolucionTxt, setResolucionTxt] = useState<{ [id: number]: string }>({});
   const [activeTab, setActiveTab] = useState("Bandeja");
+
+  const fetchEmergenciasAprobadas = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/emergencies/approved`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setEmergenciasAprobadas(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchEmergenciasRechazadas = async () => {
     try {
@@ -2259,10 +2254,84 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     }
   };
 
+  // Auditoría para Gerente
+  const [auditoriaLogs, setAuditoriaLogs] = useState<any[]>([]);
+  const [filtroAuditoria, setFiltroAuditoria] = useState("");
+  const [cargandoAuditoria, setCargandoAuditoria] = useState(false);
+
+  const fetchAuditoria = async () => {
+    setCargandoAuditoria(true);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/auditoria`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setAuditoriaLogs(await res.json());
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setCargandoAuditoria(false);
+    }
+  };
+
+  const filteredAuditoria = auditoriaLogs.filter(log => {
+    const query = filtroAuditoria.toLowerCase();
+    const accion = (log.Accion || "").toLowerCase();
+    const detalles = (log.Detalles || "").toLowerCase();
+    const usuario = (log.Usuario?.NombreUsuario || "").toLowerCase();
+    const servicio = (log.Usuario?.Servicio?.Nombre || "").toLowerCase();
+    return accion.includes(query) || detalles.includes(query) || usuario.includes(query) || servicio.includes(query);
+  });
+
+  const exportAuditoriaExcel = () => {
+    const data = filteredAuditoria.map(a => ({
+      Fecha: new Date(a.Fecha).toLocaleString('es-AR'),
+      Accion: a.Accion,
+      Usuario: a.Usuario ? a.Usuario.NombreUsuario : 'Sistema',
+      Servicio: a.Usuario?.Servicio?.Nombre || '-',
+      Detalles: a.Detalles || '',
+      IP: formatIp(a.IpAddress)
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Auditoria");
+    XLSX.writeFile(wb, `Auditoria_Jefes_Servicio_${getTodayStr()}.xlsx`);
+  };
+
+  const exportAuditoriaPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(`Registros de Auditoría - Jefes de Servicio (${hospitalName || 'Efector'})`, 14, 15);
+    doc.setFontSize(9);
+    doc.text(`Generado el: ${new Date().toLocaleString('es-AR')}`, 14, 20);
+
+    const tableData = filteredAuditoria.map(a => [
+      new Date(a.Fecha).toLocaleString('es-AR'),
+      a.Accion,
+      a.Usuario ? a.Usuario.NombreUsuario : 'Sistema',
+      a.Usuario?.Servicio?.Nombre || '-',
+      a.Detalles || '-',
+      formatIp(a.IpAddress)
+    ]);
+
+    autoTable(doc, {
+      head: [['Fecha', 'Acción', 'Usuario', 'Servicio', 'Detalles', 'IP']],
+      body: tableData,
+      startY: 25,
+      styles: { fontSize: 7 },
+      headStyles: { fillColor: [79, 70, 229] }
+    });
+
+    doc.save(`Auditoria_Jefes_Servicio_${getTodayStr()}.pdf`);
+  };
+
   useEffect(() => {
     fetchEmergencias();
+    fetchEmergenciasAprobadas();
     fetchEmergenciasRechazadas();
     fetchServicios();
+    fetchAuditoria();
     fetch(`${API_URL}/api/hospital/config`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => {
@@ -2278,6 +2347,12 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
       .catch(console.error);
   }, [token]);
 
+  const refreshAllEmergencies = () => {
+    fetchEmergencias();
+    fetchEmergenciasAprobadas();
+    fetchEmergenciasRechazadas();
+  };
+
   const resolveEmergency = async (id: number, estado: string) => {
     const justificacion = resolucionTxt[id];
     if (estado === 'Rechazado' && (!justificacion || justificacion.trim() === '')) {
@@ -2292,9 +2367,9 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
         body: JSON.stringify({ estado, justificacionResolucion: justificacion })
       });
       if (res.ok) {
-        Swal.fire({ title: "Éxito", text: `Emergencia ${estado}`, icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-        fetchEmergencias();
-        fetchEmergenciasRechazadas();
+        const msg = estado === 'Pendiente' ? 'Solicitud devuelta a pendiente' : `Emergencia ${estado}`;
+        Swal.fire({ title: "Éxito", text: msg, icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        refreshAllEmergencies();
       } else {
         const data = await res.json();
         Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
@@ -2631,7 +2706,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     }
   };
 
-  const handleImprimirCocina = () => {
+  const handleImprimirCocina = (turno: 'Almuerzo' | 'Cena') => {
     if (reportes.length === 0) {
       Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
@@ -2639,6 +2714,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
 
     const filtered = reportes.filter(r => {
       if (r.Estado !== 'Aprobado') return false;
+      if (r.TipoComida?.toLowerCase() !== turno.toLowerCase()) return false;
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
       const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
@@ -2647,28 +2723,17 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     });
 
     if (filtered.length === 0) {
-      Swal.fire({ title: "Aviso", text: "No hay datos para imprimir según el filtro actual.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      Swal.fire({ title: "Aviso", text: `No hay datos de ${turno} para imprimir según el filtro actual.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
 
-    const resAlmuerzo: Record<string, number> = {};
-    const resCena: Record<string, number> = {};
-    let totalAlmuerzo = 0;
-    let totalCena = 0;
+    const resComida: Record<string, number> = {};
+    let totalComida = 0;
 
     filtered.forEach(r => {
-      const comida = (r.TipoComida || '').toLowerCase();
       const dieta = r.TipoDieta || 'Normal';
-      if (comida === 'almuerzo') {
-        resAlmuerzo[dieta] = (resAlmuerzo[dieta] || 0) + 1;
-        totalAlmuerzo++;
-      } else if (comida === 'cena') {
-        resCena[dieta] = (resCena[dieta] || 0) + 1;
-        totalCena++;
-      } else {
-        resAlmuerzo[dieta] = (resAlmuerzo[dieta] || 0) + 1;
-        totalAlmuerzo++;
-      }
+      resComida[dieta] = (resComida[dieta] || 0) + 1;
+      totalComida++;
     });
 
     const now = new Date();
@@ -2701,7 +2766,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
           <tbody>
             ${rows}
             <tr style="background-color: #e5e7eb; font-weight: bold;">
-              <td style="padding: 8px 12px; border: 1px solid #ccc; text-align: right; font-size: 14px;">SUBTOTAL RACIONES:</td>
+              <td style="padding: 8px 12px; border: 1px solid #ccc; text-align: right; font-size: 14px;">TOTAL RACIONES (${turno.toUpperCase()}):</td>
               <td style="padding: 8px 12px; border: 1px solid #ccc; text-align: center; font-size: 16px; color: #000;">${total}</td>
             </tr>
           </tbody>
@@ -2715,11 +2780,13 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
       return;
     }
 
+    const iconoTurno = turno === 'Almuerzo' ? '☀️' : '🌙';
+
     const html = `
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Reporte de Producción - Cocina</title>
+          <title>Reporte de Producción - Cocina (${turno})</title>
           <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 25px; color: #111; }
             .header { border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
@@ -2737,7 +2804,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
         <body onload="setTimeout(() => { window.print(); window.close(); }, 600)">
           <div class="header">
             <div>
-              <div class="title">REPORTE DE PRODUCCIÓN - COCINA</div>
+              <div class="title">REPORTE DE PRODUCCIÓN - COCINA (${turno.toUpperCase()})</div>
               <div class="subtitle">Efector: <strong>${efNombre}</strong></div>
             </div>
             <div class="meta">
@@ -2746,14 +2813,11 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
             </div>
           </div>
 
-          <div class="section-title">☀️ ALMUERZO</div>
-          ${renderTablaDietas(resAlmuerzo, totalAlmuerzo)}
-
-          <div class="section-title">🌙 CENA</div>
-          ${renderTablaDietas(resCena, totalCena)}
+          <div class="section-title">${iconoTurno} ${turno.toUpperCase()}</div>
+          ${renderTablaDietas(resComida, totalComida)}
 
           <div style="margin-top: 25px; padding: 14px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px; font-size: 16px; font-weight: bold; text-align: right; color: #1e3a8a;">
-            GRAN TOTAL RACIONES A COCINAR: <span style="color: #1d4ed8; font-size: 20px; margin-left: 8px;">${totalAlmuerzo + totalCena}</span>
+            TOTAL RACIONES ${turno.toUpperCase()} A COCINAR: <span style="color: #1d4ed8; font-size: 20px; margin-left: 8px;">${totalComida}</span>
           </div>
 
           <div class="footer">
@@ -2767,7 +2831,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     printWindow.document.close();
   };
 
-  const handleImprimirEntrega = () => {
+  const handleImprimirEntrega = (turno: 'Almuerzo' | 'Cena') => {
     if (reportes.length === 0) {
       Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
@@ -2775,6 +2839,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
 
     const filtered = reportes.filter(r => {
       if (r.Estado !== 'Aprobado') return false;
+      if (r.TipoComida?.toLowerCase() !== turno.toLowerCase()) return false;
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
       const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
@@ -2783,7 +2848,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     });
 
     if (filtered.length === 0) {
-      Swal.fire({ title: "Aviso", text: "No hay datos para imprimir según el filtro actual.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      Swal.fire({ title: "Aviso", text: `No hay datos de ${turno} para imprimir según el filtro actual.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
 
@@ -2794,7 +2859,6 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     const efNombre = hospitalName || 'Efector';
     const fDesdeStr = repDesde.split('-').reverse().join('/');
     const fHastaStr = repHasta.split('-').reverse().join('/');
-
 
     interface FilaEntrega {
       fechaOriginal: string;
@@ -2823,7 +2887,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
           fechaOrder: fechaOrder,
           servicioName: getServicioNombre(p),
           agenteDetalle: `<strong>${nombreAgente}</strong><br/><span style="color: #555; font-size: 10px;">DNI: ${dniAgente}</span>`,
-          tipoComida: p.TipoComida || 'Almuerzo',
+          tipoComida: p.TipoComida || turno,
           tipoDieta: p.TipoDieta || 'Normal',
           comidaDietaDetalle: `<strong>${p.TipoComida}</strong> (${p.TipoDieta})`,
           cantidadRaciones: 1
@@ -2846,7 +2910,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
           gruposConsolidados[key] = {
             FechaPedido: r.FechaPedido,
             ServicioNombre: servicioName,
-            TipoComida: r.TipoComida || 'Almuerzo',
+            TipoComida: r.TipoComida || turno,
             TipoDieta: r.TipoDieta || 'Normal',
             Cantidad: 0
           };
@@ -2877,78 +2941,32 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
       return filas;
     };
 
-    const todasFilas = construirFilas(filtered);
-    const filasAlmuerzo = todasFilas.filter(f => f.tipoComida.toLowerCase() !== 'cena');
-    const filasCena = todasFilas.filter(f => f.tipoComida.toLowerCase() === 'cena');
+    const filas = construirFilas(filtered);
+    const iconoTurno = turno === 'Almuerzo' ? '☀️' : '🌙';
 
-    const renderTablaTurno = (filas: FilaEntrega[], tituloTurno: string, icono: string) => {
-      let rowsHTML = '';
-      let totalRacionesTurno = 0;
+    let rowsHTML = '';
+    let totalRacionesTurno = 0;
 
-      filas.forEach((f, idx) => {
-        totalRacionesTurno += f.cantidadRaciones;
-        rowsHTML += `
-          <tr>
-            <td style="padding: 8px 6px; border: 1px solid #999; text-align: center; font-size: 11px;">${idx + 1}</td>
-            <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px; white-space: nowrap;">${f.fechaOrder}</td>
-            <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">${f.servicioName}</td>
-            <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
-              ${f.agenteDetalle}
-            </td>
-            <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
-              ${f.comidaDietaDetalle}
-            </td>
-            <td style="padding: 8px 6px; border: 1px solid #999; width: 190px; text-align: center; vertical-align: bottom;">
-              <div style="border-bottom: 1px solid #444; height: 35px; width: 90%; margin: 0 auto 3px auto;"></div>
-              <span style="font-size: 8px; color: #666; text-transform: uppercase; font-weight: bold;">Firma / Conformidad</span>
-            </td>
-          </tr>
-        `;
-      });
-
-      return `
-        <div class="page-container">
-          <div class="header">
-            <div>
-              <div class="title">${icono} PLANILLA DE ENTREGA Y CONFORMIDAD - ${tituloTurno}</div>
-              <div class="subtitle">Efector: <strong>${efNombre}</strong></div>
-            </div>
-            <div class="meta">
-              <div>Período: <strong>${fDesdeStr} ${fDesdeStr !== fHastaStr ? 'al ' + fHastaStr : ''}</strong></div>
-              <div>Fecha de Emisión: ${fechaImpresion}</div>
-            </div>
-          </div>
-
-          ${filas.length > 0 ? `
-            <table>
-              <thead>
-                <tr>
-                  <th style="text-align: center; width: 30px;">#</th>
-                  <th style="width: 80px;">Fecha</th>
-                  <th>Servicio / Destino</th>
-                  <th>Agente / Paciente</th>
-                  <th style="width: 140px;">Comida / Dieta</th>
-                  <th style="text-align: center; width: 190px;">Firma de Conformidad</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${rowsHTML}
-              </tbody>
-            </table>
-
-            <div class="summary">
-              TOTAL RACIONES A ENTREGAR (${tituloTurno}): ${totalRacionesTurno}
-            </div>
-          ` : `
-            <p style="padding: 20px; text-align: center; color: #666; font-style: italic; border: 1px dashed #ccc; margin-top: 15px;">No hay raciones solicitadas para el turno de ${tituloTurno}.</p>
-          `}
-
-          <div class="footer">
-            Impreso el ${fechaImpresion} a las ${horaImpresion} | Usuario: ${usuarioImpresion}
-          </div>
-        </div>
+    filas.forEach((f, idx) => {
+      totalRacionesTurno += f.cantidadRaciones;
+      rowsHTML += `
+        <tr>
+          <td style="padding: 8px 6px; border: 1px solid #999; text-align: center; font-size: 11px;">${idx + 1}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px; white-space: nowrap;">${f.fechaOrder}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">${f.servicioName}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
+            ${f.agenteDetalle}
+          </td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
+            ${f.comidaDietaDetalle}
+          </td>
+          <td style="padding: 8px 6px; border: 1px solid #999; width: 190px; text-align: center; vertical-align: bottom;">
+            <div style="border-bottom: 1px solid #444; height: 35px; width: 90%; margin: 0 auto 3px auto;"></div>
+            <span style="font-size: 8px; color: #666; text-transform: uppercase; font-weight: bold;">Firma / Conformidad</span>
+          </td>
+        </tr>
       `;
-    };
+    });
 
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
@@ -2960,7 +2978,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Planilla de Entrega y Conformidad</title>
+          <title>Planilla de Entrega y Conformidad - ${turno}</title>
           <style>
             body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; color: #111; }
             .header { border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-end; }
@@ -2971,20 +2989,47 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
             th { background-color: #f3f4f6; padding: 8px 6px; border: 1px solid #666; font-size: 11px; text-align: left; text-transform: uppercase; color: #374151; }
             .summary { margin-top: 18px; font-size: 13px; font-weight: bold; text-align: right; border-top: 2px solid #111; padding-top: 8px; }
             .footer { margin-top: 25px; border-top: 1px dashed #aaa; padding-top: 6px; font-size: 9px; color: #6b7280; text-align: right; }
-            .page-break { page-break-after: always; break-after: page; }
             @media print {
               @page { size: A4 portrait; margin: 1cm; }
               body { padding: 0; }
-              .page-break { page-break-after: always; break-after: page; }
             }
           </style>
         </head>
         <body onload="setTimeout(() => { window.print(); window.close(); }, 600)">
-          ${renderTablaTurno(filasAlmuerzo, 'ALMUERZO', '☀️')}
-          ${filasCena.length > 0 ? `
-            <div class="page-break"></div>
-            ${renderTablaTurno(filasCena, 'CENA', '🌙')}
-          ` : ''}
+          <div class="header">
+            <div>
+              <div class="title">${iconoTurno} PLANILLA DE ENTREGA Y CONFORMIDAD - ${turno.toUpperCase()}</div>
+              <div class="subtitle">Efector: <strong>${efNombre}</strong></div>
+            </div>
+            <div class="meta">
+              <div>Período: <strong>${fDesdeStr} ${fDesdeStr !== fHastaStr ? 'al ' + fHastaStr : ''}</strong></div>
+              <div>Fecha de Emisión: ${fechaImpresion}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: center; width: 30px;">#</th>
+                <th style="width: 80px;">Fecha</th>
+                <th>Servicio / Destino</th>
+                <th>Agente / Paciente</th>
+                <th style="width: 140px;">Comida / Dieta</th>
+                <th style="text-align: center; width: 190px;">Firma de Conformidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHTML}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            TOTAL RACIONES A ENTREGAR (${turno.toUpperCase()}): ${totalRacionesTurno}
+          </div>
+
+          <div class="footer">
+            Impreso el ${fechaImpresion} a las ${horaImpresion} | Usuario: ${usuarioImpresion}
+          </div>
         </body>
       </html>
     `;
@@ -3277,6 +3322,7 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
     { id: "Bandeja", label: "Emergencias", icon: <AlertTriangle className="w-4 h-4 mr-2" /> },
     { id: "Hospital", label: "Efectores", icon: <Building className="w-4 h-4 mr-2" /> },
     { id: "Reportes", label: "Reportes", icon: <FileText className="w-4 h-4 mr-2" /> },
+    { id: "Auditoria", label: "Auditoría", icon: <Shield className="w-4 h-4 mr-2" /> },
     { id: "Configuracion", label: "Configuración", icon: <Settings className="w-4 h-4 mr-2" /> }
   ];
 
@@ -3305,67 +3351,114 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
       </div>
 
       {/* BANDEJA CONTENT */}
-      {activeTab === "Bandeja" && (
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gray-50/50 dark:bg-gray-800/30 gap-4">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                <AlertTriangle className="w-5 h-5 mr-2 text-orange-500" /> 
-                {verRechazadas ? 'Solicitudes Rechazadas' : 'Solicitudes Pendientes del Día'}
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {verRechazadas ? 'Historial de emergencias rechazadas (puedes volver atrás cualquier solicitud).' : 'Emergencias ingresadas para el día de hoy pendientes de autorización.'}
-              </p>
+      {activeTab === "Bandeja" && (() => {
+        const isAuthExpired = (e: any) => {
+          const comida = (e.TipoComida || '').toLowerCase();
+          if (comida === 'almuerzo') return isPastAuthAlmuerzo;
+          if (comida === 'cena') return isPastAuthCena;
+          return isPastAuthAlmuerzo || isPastAuthCena;
+        };
+
+        const getLimitHora = (e: any) => {
+          const comida = (e.TipoComida || '').toLowerCase();
+          if (comida === 'cena') return configAuthCena;
+          return configAuthAlmuerzo;
+        };
+
+        const listToDisplay = 
+          emgSubTab === "pendientes" ? emergencias :
+          emgSubTab === "aprobadas" ? emergenciasAprobadas : emergenciasRechazadas;
+
+        return (
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+            <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-gray-50/50 dark:bg-gray-800/30 gap-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                  <AlertTriangle className="w-5 h-5 mr-2 text-orange-500" /> 
+                  {emgSubTab === 'pendientes' ? 'Solicitudes Pendientes del Día' : emgSubTab === 'aprobadas' ? 'Solicitudes Aprobadas Hoy' : 'Solicitudes Rechazadas Hoy'}
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {emgSubTab === 'pendientes' ? 'Emergencias ingresadas para el día de hoy pendientes de autorización.' : 
+                   emgSubTab === 'aprobadas' ? 'Emergencias autorizadas para hoy (puedes revertir la decisión antes del límite horario).' : 
+                   'Emergencias rechazadas hoy (puedes revertir la decisión antes del límite horario).'}
+                </p>
+              </div>
+              
+              <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl gap-1">
+                <button
+                  onClick={() => setEmgSubTab("pendientes")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center cursor-pointer ${
+                    emgSubTab === "pendientes" 
+                      ? 'bg-white dark:bg-gray-900 text-indigo-700 dark:text-indigo-300 shadow-sm' 
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                  }`}
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 mr-1 text-orange-500" />
+                  Pendientes ({emergencias.length})
+                </button>
+
+                <button
+                  onClick={() => setEmgSubTab("aprobadas")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center cursor-pointer ${
+                    emgSubTab === "aprobadas" 
+                      ? 'bg-white dark:bg-gray-900 text-green-700 dark:text-green-300 shadow-sm' 
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                  }`}
+                >
+                  <CheckCircle className="w-3.5 h-3.5 mr-1 text-green-500" />
+                  Aprobadas ({emergenciasAprobadas.length})
+                </button>
+
+                <button
+                  onClick={() => setEmgSubTab("rechazadas")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center cursor-pointer ${
+                    emgSubTab === "rechazadas" 
+                      ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow-sm' 
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                  }`}
+                >
+                  <X className="w-3.5 h-3.5 mr-1 text-red-500" />
+                  Rechazadas ({emergenciasRechazadas.length})
+                </button>
+              </div>
             </div>
             
-            <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl gap-1">
-              <button
-                onClick={() => setVerRechazadas(false)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center ${
-                  !verRechazadas 
-                    ? 'bg-white dark:bg-gray-900 text-indigo-700 dark:text-indigo-300 shadow-sm' 
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
-                }`}
-              >
-                <AlertTriangle className="w-3.5 h-3.5 mr-1 text-orange-500" />
-                Pendientes hoy ({emergencias.length})
-              </button>
-              <button
-                onClick={() => setVerRechazadas(true)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center ${
-                  verRechazadas 
-                    ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow-sm' 
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
-                }`}
-              >
-                <X className="w-3.5 h-3.5 mr-1 text-red-500" />
-                Rechazadas ({emergenciasRechazadas.length})
-              </button>
-            </div>
-          </div>
-          
-          {!verRechazadas ? (
-            emergencias.length === 0 ? (
+            {listToDisplay.length === 0 ? (
               <div className="p-12 text-center flex flex-col items-center">
-                <CheckCircle className="w-16 h-16 text-green-400 dark:text-green-500/50 mb-4" />
-                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Todo al día hoy</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">No hay solicitudes de emergencia pendientes para el día de hoy.</p>
+                <CheckCircle className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Sin solicitudes</h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                  {emgSubTab === "pendientes" ? "No hay emergencias pendientes para el día de hoy." :
+                   emgSubTab === "aprobadas" ? "No hay emergencias aprobadas para el día de hoy." :
+                   "No hay emergencias rechazadas para el día de hoy."}
+                </p>
               </div>
             ) : (
               <div className="divide-y divide-gray-200 dark:divide-gray-800">
-                {emergencias.map(e => {
+                {listToDisplay.map(e => {
                   const nombreAgente = e.EmergenciaNombreCompleto || `${e.EmergenciaNombre || ''} ${e.EmergenciaApellido || ''}`.trim() || 'Agente';
+                  const fechaPedidoStr = e.FechaPedido ? e.FechaPedido.split('T')[0].split('-').reverse().join('/') : '-';
+                  const expired = isAuthExpired(e);
+                  const limitHora = getLimitHora(e);
+
                   return (
                     <div key={e.Id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                       <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
                         <div className="flex-1">
                           <div className="flex items-center space-x-3 mb-2 flex-wrap gap-y-1">
-                            <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400 text-xs font-bold px-2.5 py-1 rounded-md">
-                              URGENTE HASTA HOY
+                            <span className={`text-xs font-bold px-2.5 py-1 rounded-md ${
+                              e.Estado === 'Aprobado' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-400' :
+                              e.Estado === 'Rechazado' ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400' :
+                              'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-400'
+                            }`}>
+                              {e.Estado.toUpperCase()}
                             </span>
                             <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 text-xs font-extrabold px-2.5 py-1 rounded-md flex items-center">
                               <Utensils className="w-3.5 h-3.5 mr-1 text-blue-600 dark:text-blue-400" />
                               {getServicioNombre(e)}
+                            </span>
+                            <span className="text-xs text-gray-500 font-semibold">
+                              Fecha: {fechaPedidoStr}
                             </span>
                             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</h3>
                           </div>
@@ -3377,91 +3470,79 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
                               Reemplaza a: {e.PersonalReemplazado.NombreCompleto} (DNI: {e.PersonalReemplazado.DNI})
                             </p>
                           )}
-                          <div className="mt-3 bg-gray-50 dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm italic text-gray-700 dark:text-gray-300 relative">
-                            <div className="absolute top-0 left-0 w-1 h-full bg-orange-400 rounded-l-xl"></div>
-                            "{e.JustificacionSolicitud}"
-                          </div>
-                        </div>
-                      
-                      <div className="flex flex-col space-y-3 w-full md:w-80">
-                        <textarea 
-                          className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-4 py-3 border transition-shadow" 
-                          placeholder="Motivo de rechazo (opcional al aprobar)..." 
-                          rows={2}
-                          value={resolucionTxt[e.Id] || ""}
-                          onChange={(evt) => setResolucionTxt({...resolucionTxt, [e.Id]: evt.target.value})}
-                        ></textarea>
-                        <div className="flex space-x-3">
-                          <button onClick={() => resolveEmergency(e.Id, "Rechazado")} className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-sm">
-                            <X className="w-4 h-4 mr-1.5" /> Rechazar
-                          </button>
-                          <button onClick={() => resolveEmergency(e.Id, "Aprobado")} className="flex-1 flex items-center justify-center bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white border border-transparent py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-md">
-                            <Check className="w-4 h-4 mr-1.5" /> Aprobar
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              </div>
-            )
-          ) : (
-            emergenciasRechazadas.length === 0 ? (
-              <div className="p-12 text-center flex flex-col items-center">
-                <CheckCircle className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
-                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Sin rechazos</h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">No hay solicitudes rechazadas en el historial.</p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-200 dark:divide-gray-800">
-                {emergenciasRechazadas.map(e => {
-                  const nombreAgente = e.EmergenciaNombreCompleto || `${e.EmergenciaNombre || ''} ${e.EmergenciaApellido || ''}`.trim() || 'Agente';
-                  const fechaPedidoStr = e.FechaPedido ? e.FechaPedido.split('T')[0].split('-').reverse().join('/') : '-';
-                  return (
-                    <div key={e.Id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                      <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2 flex-wrap gap-y-1">
-                            <span className="bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 text-xs font-bold px-2.5 py-1 rounded-md">
-                              RECHAZADO
-                            </span>
-                            <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 text-xs font-extrabold px-2.5 py-1 rounded-md flex items-center">
-                              <Utensils className="w-3.5 h-3.5 mr-1 text-blue-600 dark:text-blue-400" />
-                              {getServicioNombre(e)}
-                            </span>
-                            <span className="text-xs text-gray-500 font-semibold">
-                              Fecha del pedido: {fechaPedidoStr}
-                            </span>
-                            <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</h3>
-                          </div>
-                          <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                            <span className="font-semibold text-gray-900 dark:text-gray-200">Servicio:</span> <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{getServicioNombre(e)}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">Agente:</span> <span className="font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">DNI:</span> {e.EmergenciaDNI} • <span className="font-semibold text-gray-900 dark:text-gray-200">Solicitó:</span> {e.TipoComida} ({e.TipoDieta})
-                          </p>
+                          {e.JustificacionSolicitud && (
+                            <div className="mt-3 bg-gray-50 dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 text-sm italic text-gray-700 dark:text-gray-300 relative">
+                              <div className="absolute top-0 left-0 w-1 h-full bg-orange-400 rounded-l-xl"></div>
+                              "{e.JustificacionSolicitud}"
+                            </div>
+                          )}
                           {e.JustificacionResolucion && (
-                            <div className="mt-2 text-xs bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300 p-2.5 rounded-lg border border-red-100 dark:border-red-900/30">
-                              <strong>Motivo del rechazo:</strong> "{e.JustificacionResolucion}"
+                            <div className="mt-2 text-xs bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700">
+                              <strong>Observación / Motivo:</strong> "{e.JustificacionResolucion}"
+                            </div>
+                          )}
+                          {expired && (
+                            <div className="mt-2.5 inline-flex items-center text-xs font-bold text-red-600 bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800">
+                              <Lock className="w-3.5 h-3.5 mr-1.5" /> Horario límite de autorización expirado ({limitHora} hs). No se pueden realizar cambios.
                             </div>
                           )}
                         </div>
                       
-                        <div className="flex items-center justify-end w-full md:w-auto">
-                          <button 
-                            onClick={() => revertirRechazo(e.Id, nombreAgente)} 
-                            className="w-full md:w-auto flex items-center justify-center bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/60 border border-amber-200 dark:border-amber-700/50 py-2.5 px-4 rounded-xl text-sm font-bold transition-all shadow-sm cursor-pointer"
-                          >
-                            <RotateCcw className="w-4 h-4 mr-2" /> Volver Atrás (Reactivar)
-                          </button>
+                        <div className="flex flex-col space-y-3 w-full md:w-80">
+                          {emgSubTab === "pendientes" && (
+                            <>
+                              <textarea 
+                                disabled={expired}
+                                className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-4 py-3 border transition-shadow disabled:opacity-50" 
+                                placeholder="Motivo de rechazo (opcional al aprobar)..." 
+                                rows={2}
+                                value={resolucionTxt[e.Id] || ""}
+                                onChange={(evt) => setResolucionTxt({...resolucionTxt, [e.Id]: evt.target.value})}
+                              ></textarea>
+                              <div className="flex space-x-3">
+                                <button disabled={expired} onClick={() => resolveEmergency(e.Id, "Rechazado")} className="flex-1 flex items-center justify-center bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700/50 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
+                                  <X className="w-4 h-4 mr-1.5" /> Rechazar
+                                </button>
+                                <button disabled={expired} onClick={() => resolveEmergency(e.Id, "Aprobado")} className="flex-1 flex items-center justify-center bg-green-600 hover:bg-green-700 text-white py-2.5 px-4 rounded-xl text-sm font-bold transition-all transform hover:scale-[1.02] active:scale-95 shadow-md disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer">
+                                  <Check className="w-4 h-4 mr-1.5" /> Aprobar
+                                </button>
+                              </div>
+                            </>
+                          )}
+
+                          {emgSubTab === "aprobadas" && (
+                            <div className="flex flex-col space-y-2">
+                              <button 
+                                disabled={expired}
+                                onClick={() => resolveEmergency(e.Id, "Pendiente")} 
+                                className="w-full flex items-center justify-center bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/60 border border-amber-200 dark:border-amber-700/50 py-2.5 px-4 rounded-xl text-sm font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                              >
+                                <RotateCcw className="w-4 h-4 mr-2" /> Revertir Aprobación
+                              </button>
+                            </div>
+                          )}
+
+                          {emgSubTab === "rechazadas" && (
+                            <div className="flex flex-col space-y-2">
+                              <button 
+                                disabled={expired}
+                                onClick={() => resolveEmergency(e.Id, "Pendiente")} 
+                                className="w-full flex items-center justify-center bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 hover:bg-amber-200 dark:hover:bg-amber-800/60 border border-amber-200 dark:border-amber-700/50 py-2.5 px-4 rounded-xl text-sm font-bold transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                              >
+                                <RotateCcw className="w-4 h-4 mr-2" /> Revertir Rechazo
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
                   );
                 })}
               </div>
-            )
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        );
+      })()}
 
       {/* HOSPITAL CONTENT */}
       {activeTab === "Hospital" && (
@@ -3699,11 +3780,17 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
               <button onClick={generarReporte} className="flex-1 sm:flex-none flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-lg shadow-sm font-bold transition-colors">
                 <Search className="w-4 h-4 mr-2" /> Buscar
               </button>
-              <button onClick={handleImprimirCocina} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700 text-white'}`} title="Imprimir reporte de producción para Cocina (totales por dieta)">
-                <Printer className="w-4 h-4 mr-1.5" /> Cocina
+              <button onClick={() => handleImprimirCocina('Almuerzo')} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-3.5 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700 text-white'}`} title="Imprimir reporte de producción para Cocina (Almuerzo)">
+                <Printer className="w-4 h-4 mr-1.5" /> Cocina Alm.
               </button>
-              <button onClick={handleImprimirEntrega} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`} title="Imprimir planilla de Entrega con espacio para firmas">
-                <Printer className="w-4 h-4 mr-1.5" /> Entrega
+              <button onClick={() => handleImprimirCocina('Cena')} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-3.5 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-amber-700 hover:bg-amber-800 text-white'}`} title="Imprimir reporte de producción para Cocina (Cena)">
+                <Printer className="w-4 h-4 mr-1.5" /> Cocina Cena
+              </button>
+              <button onClick={() => handleImprimirEntrega('Almuerzo')} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-3.5 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white'}`} title="Imprimir planilla de Entrega para Almuerzo">
+                <Printer className="w-4 h-4 mr-1.5" /> Entrega Alm.
+              </button>
+              <button onClick={() => handleImprimirEntrega('Cena')} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-3.5 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`} title="Imprimir planilla de Entrega para Cena">
+                <Printer className="w-4 h-4 mr-1.5" /> Entrega Cena
               </button>
               <button onClick={exportExcel} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white'}`} title="Exportar a Excel (CSV)">
                 EXCEL
@@ -3851,6 +3938,128 @@ function GerentePanel({ token, hospitalName, username, dietasHabilitadasProp, on
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AUDITORIA CONTENT */}
+      {activeTab === "Auditoria" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+          <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gray-50/50 dark:bg-gray-800/30">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                <Shield className="w-5 h-5 mr-2 text-indigo-500" /> Auditoría de Jefes de Servicio
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Historial de acciones registradas por los encargados del efector ({hospitalName || 'Efector'})</p>
+            </div>
+            
+            <div className="flex flex-wrap gap-2 items-center">
+              <div className="relative w-full sm:w-64">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-4 w-4 text-gray-400" />
+                </div>
+                <input 
+                  type="text" 
+                  value={filtroAuditoria} 
+                  onChange={e => setFiltroAuditoria(e.target.value)} 
+                  placeholder="Buscar acción, usuario, servicio..." 
+                  className="block w-full pl-9 pr-3 py-2 text-sm border-gray-300 dark:border-gray-700 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
+                />
+              </div>
+
+              <button 
+                onClick={fetchAuditoria} 
+                className="p-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl text-gray-700 dark:text-gray-300 font-bold transition-colors cursor-pointer"
+                title="Actualizar auditoría"
+              >
+                <RefreshCw className={`w-4 h-4 ${cargandoAuditoria ? 'animate-spin' : ''}`} />
+              </button>
+
+              <button 
+                onClick={exportAuditoriaExcel} 
+                disabled={filteredAuditoria.length === 0} 
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
+                  filteredAuditoria.length === 0 
+                    ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' 
+                    : 'bg-green-600 hover:bg-green-700 text-white cursor-pointer'
+                }`}
+              >
+                EXCEL
+              </button>
+
+              <button 
+                onClick={exportAuditoriaPDF} 
+                disabled={filteredAuditoria.length === 0} 
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-colors ${
+                  filteredAuditoria.length === 0 
+                    ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' 
+                    : 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'
+                }`}
+              >
+                PDF
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            {cargandoAuditoria ? (
+              <div className="p-12 text-center text-gray-500 dark:text-gray-400">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-indigo-500" />
+                <p>Cargando registros de auditoría...</p>
+              </div>
+            ) : filteredAuditoria.length === 0 ? (
+              <div className="p-12 text-center text-gray-500 dark:text-gray-400">
+                <Shield className="w-10 h-10 mx-auto mb-2 text-gray-300 dark:text-gray-600" />
+                <p className="font-bold">No se encontraron registros de auditoría para Jefes de Servicio.</p>
+              </div>
+            ) : (
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800/50 text-xs text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider">
+                  <tr>
+                    <th className="px-6 py-3.5 text-left">Fecha y Hora</th>
+                    <th className="px-6 py-3.5 text-left">Acción</th>
+                    <th className="px-6 py-3.5 text-left">Jefe de Servicio</th>
+                    <th className="px-6 py-3.5 text-left">Servicio</th>
+                    <th className="px-6 py-3.5 text-left">Detalles</th>
+                    <th className="px-6 py-3.5 text-left">IP</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-sm">
+                  {filteredAuditoria.map((log: any) => (
+                    <tr key={log.Id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/40 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-300 font-medium">
+                        {new Date(log.Fecha).toLocaleString('es-AR')}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
+                          log.Accion.includes('LOGIN') ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
+                          log.Accion.includes('BAJA') || log.Accion.includes('FALLIDO') ? 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300' :
+                          log.Accion.includes('ACTUALIZACION') || log.Accion.includes('REVERTIR') ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300' :
+                          'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300'
+                        }`}>
+                          {log.Accion}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap font-bold text-gray-900 dark:text-gray-100">
+                        {log.Usuario ? `${log.Usuario.NombreUsuario}` : 'Sistema'}
+                        {log.Usuario?.NombreCompleto && (
+                          <span className="text-xs font-normal text-gray-500 ml-1">({log.Usuario.NombreCompleto})</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-gray-700 dark:text-gray-300 font-bold">
+                        {log.Usuario?.Servicio?.Nombre || '-'}
+                      </td>
+                      <td className="px-6 py-4 text-gray-700 dark:text-gray-300 max-w-md truncate" title={log.Detalles || ''}>
+                        {log.Detalles || '-'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap font-mono text-xs text-gray-500 dark:text-gray-400">
+                        {formatIp(log.IpAddress)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}
