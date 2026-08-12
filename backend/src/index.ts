@@ -1394,6 +1394,54 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
   }
 });
 
+async function enrichEmergencyList(list: any[]) {
+  const dnisToSearch = list
+    .filter(p => (!p.EmergenciaNombreCompleto || p.EmergenciaNombreCompleto.trim() === '') && p.EmergenciaDNI)
+    .map(p => p.EmergenciaDNI as string);
+
+  const padronMap = new Map<string, string>();
+  const personalMap = new Map<string, string>();
+
+  if (dnisToSearch.length > 0) {
+    const padronList = await prisma.padronHabilitados.findMany({
+      where: { DNI: { in: dnisToSearch } }
+    });
+    padronList.forEach(p => padronMap.set(p.DNI, p.NombreCompleto));
+
+    const personalList = await prisma.personal.findMany({
+      where: { DNI: { in: dnisToSearch } }
+    });
+    personalList.forEach(p => personalMap.set(p.DNI, p.NombreCompleto));
+  }
+
+  return list.map(p => {
+    let name = p.EmergenciaNombreCompleto;
+    if ((!name || name.trim() === '') && p.Personal?.NombreCompleto) {
+      name = p.Personal.NombreCompleto;
+    }
+    if ((!name || name.trim() === '') && p.EmergenciaDNI) {
+      name = padronMap.get(p.EmergenciaDNI) || personalMap.get(p.EmergenciaDNI) || '';
+    }
+    if ((!name || name.trim() === '') && p.PersonalReemplazado?.NombreCompleto) {
+      name = p.PersonalReemplazado.NombreCompleto;
+    }
+
+    let dni = p.EmergenciaDNI;
+    if ((!dni || dni.trim() === '') && p.Personal?.DNI) {
+      dni = p.Personal.DNI;
+    }
+    if ((!dni || dni.trim() === '') && p.PersonalReemplazado?.DNI) {
+      dni = p.PersonalReemplazado.DNI;
+    }
+
+    return { 
+      ...p, 
+      EmergenciaNombreCompleto: name || p.EmergenciaNombreCompleto,
+      EmergenciaDNI: dni || p.EmergenciaDNI
+    };
+  });
+}
+
 // 5.3 Obtener solicitudes de emergencia pendientes para el Gerente
 app.get('/api/emergencies/pending', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
@@ -1419,33 +1467,8 @@ app.get('/api/emergencies/pending', authenticateToken, async (req: Request, res:
       }
     });
 
-    const dnis = pending
-      .filter(p => (!p.EmergenciaNombreCompleto || p.EmergenciaNombreCompleto.trim() === '') && p.EmergenciaDNI)
-      .map(p => p.EmergenciaDNI as string);
-
-    if (dnis.length > 0) {
-      const padronList = await prisma.padronHabilitados.findMany({
-        where: { DNI: { in: dnis } }
-      });
-      const padronMap = new Map(padronList.map(p => [p.DNI, p.NombreCompleto]));
-
-      const personalList = await prisma.personal.findMany({
-        where: { DNI: { in: dnis } }
-      });
-      const personalMap = new Map(personalList.map(p => [p.DNI, p.NombreCompleto]));
-
-      const enrichedPending = pending.map(p => {
-        if ((!p.EmergenciaNombreCompleto || p.EmergenciaNombreCompleto.trim() === '') && p.EmergenciaDNI) {
-          const foundName = padronMap.get(p.EmergenciaDNI) || personalMap.get(p.EmergenciaDNI) || '';
-          return { ...p, EmergenciaNombreCompleto: foundName };
-        }
-        return p;
-      });
-      res.json(enrichedPending);
-      return;
-    }
-
-    res.json(pending);
+    const enriched = await enrichEmergencyList(pending);
+    res.json(enriched);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener solicitudes' });
   }
@@ -1478,7 +1501,8 @@ app.get('/api/emergencies/approved', authenticateToken, async (req: Request, res
       }
     });
 
-    res.json(approved);
+    const enriched = await enrichEmergencyList(approved);
+    res.json(enriched);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener emergencias aprobadas' });
   }
@@ -1511,7 +1535,8 @@ app.get('/api/emergencies/rejected', authenticateToken, async (req: Request, res
       }
     });
 
-    res.json(rejected);
+    const enriched = await enrichEmergencyList(rejected);
+    res.json(enriched);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener emergencias rechazadas' });
   }
@@ -1540,10 +1565,11 @@ app.get('/api/emergencies/history', authenticateToken, async (req: Request, res:
         FechaPedido: { gte: fiveDaysAgoUTC }
       },
       orderBy: { Id: 'desc' },
-      include: { PersonalReemplazado: true, EvaluadoPor: true }
+      include: { PersonalReemplazado: true, Personal: true, EvaluadoPor: true }
     });
-    
-    res.json(history);
+
+    const enriched = await enrichEmergencyList(history);
+    res.json(enriched);
   } catch (error) {
     res.status(500).json({ error: 'Error al obtener historial' });
   }

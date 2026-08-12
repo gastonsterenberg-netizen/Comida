@@ -1350,6 +1350,238 @@ function JefePanel({
     doc.save(`Reporte_SisAR_${repDesde}_al_${repHasta}.pdf`);
   };
 
+  const getServicioNombre = (r: any) => {
+    if (r.Servicio?.Nombre) return r.Servicio.Nombre;
+    if (r.Personal?.Servicio?.Nombre) return r.Personal.Servicio.Nombre;
+    if (r.PersonalReemplazado?.Servicio?.Nombre) return r.PersonalReemplazado.Servicio.Nombre;
+    if (r.SolicitadoPor?.Servicio?.Nombre) return r.SolicitadoPor.Servicio.Nombre;
+    return servicioName || "Servicio";
+  };
+
+  const esServicioIndividual = (r: any) => {
+    if (r.Servicio && typeof r.Servicio.VoucherIndividual === 'boolean') return r.Servicio.VoucherIndividual;
+    if (r.Personal?.Servicio && typeof r.Personal.Servicio.VoucherIndividual === 'boolean') return r.Personal.Servicio.VoucherIndividual;
+    if (r.PersonalReemplazado?.Servicio && typeof r.PersonalReemplazado.Servicio.VoucherIndividual === 'boolean') return r.PersonalReemplazado.Servicio.VoucherIndividual;
+    if (r.SolicitadoPor?.Servicio && typeof r.SolicitadoPor.Servicio.VoucherIndividual === 'boolean') return r.SolicitadoPor.Servicio.VoucherIndividual;
+    return false;
+  };
+
+  const handleImprimirVouchers = (tipo: 'Almuerzo' | 'Cena') => {
+    const isPastAuth = tipo === 'Almuerzo' ? isPastAuthAlmuerzo : isPastAuthCena;
+    if (!isPastAuth) {
+      Swal.fire({
+        title: "Horario de Autorización Pendiente",
+        text: `Los Vouchers de ${tipo} solo pueden ser impresos por el Jefe de Servicio una vez finalizado el horario límite de autorización (${tipo === 'Almuerzo' ? (limiteAuthAlmuerzo || '11:00') : (limiteAuthCena || '18:00')} hs).`,
+        icon: "warning",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+      return;
+    }
+
+    if (reportes.length === 0) {
+      Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+    
+    const filtered = reportes.filter(r => {
+      if (r.Estado !== "Aprobado") return false;
+      if (r.TipoComida !== tipo) return false;
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+
+    if (filtered.length === 0) {
+      Swal.fire({ title: "Aviso", text: `No hay reportes aprobados de ${tipo} que coincidan con el filtro.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const porServicio: Record<string, any[]> = {};
+    filtered.forEach(r => {
+      const sName = getServicioNombre(r);
+      if (!porServicio[sName]) porServicio[sName] = [];
+      porServicio[sName].push(r);
+    });
+
+    const serviciosKeys = Object.keys(porServicio).sort((a, b) => a.localeCompare(b));
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Permita las ventanas emergentes para imprimir.");
+      return;
+    }
+
+    const now = new Date();
+    const fechaImpresion = now.toLocaleDateString('es-AR');
+    const horaImpresion = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const usuarioImpresion = servicioName || 'Jefe de Servicio';
+
+    let vouchersHTML = '';
+
+    serviciosKeys.forEach((servicio, sIdx) => {
+      const reportesServicio = porServicio[servicio];
+      const esUltimoServicio = sIdx === serviciosKeys.length - 1;
+
+      const individuales = reportesServicio.filter(r => esServicioIndividual(r));
+      const consolidados = reportesServicio.filter(r => !esServicioIndividual(r));
+
+      vouchersHTML += `<div class="servicio-group ${esUltimoServicio ? '' : 'page-break'}">`;
+
+      if (consolidados.length > 0) {
+        const date = consolidados[0].FechaPedido.split('T')[0].split('-').reverse().join('/');
+        const totalPlatos = consolidados.length;
+        const counts: Record<string, number> = {};
+        consolidados.forEach(p => { counts[p.TipoDieta] = (counts[p.TipoDieta] || 0) + 1; });
+        const dietasText = Object.entries(counts).map(([dieta, cant]) => `${dieta} (${cant})`).join(' | ');
+        const qrData = encodeURIComponent(`${servicio}-${tipo}-${date}-Total:${totalPlatos}`);
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
+
+        vouchersHTML += `
+          <div class="voucher">
+            <div class="watermark">SisAR ORIGINAL - SisAR ORIGINAL</div>
+            <div class="v-header">
+               <div class="v-logo">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+                    <defs>
+                      <linearGradient id="bg-${sIdx}" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#3b82f6" />
+                        <stop offset="100%" stop-color="#4f46e5" />
+                      </linearGradient>
+                    </defs>
+                    <rect width="64" height="64" rx="16" fill="url(#bg-${sIdx})" />
+                    <g transform="translate(14, 14) scale(1.5)">
+                      <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M7 2v20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </g>
+                  </svg>
+               </div>
+               <div class="v-title">
+                  <div class="v-title-main">SisAR - VOUCHER DE COMIDA</div>
+                  <div class="v-title-sub">Sistema de Administracion de Raciones</div>
+               </div>
+            </div>
+            <div class="v-body">
+               <div class="v-info">
+                  <div class="v-row space-between">
+                     <div>TIPO: <strong>${tipo.toUpperCase()}</strong></div>
+                     <div>Servicio: ${servicio}</div>
+                     <div>Fecha: ${date}</div>
+                  </div>
+                  <div class="v-total">TOTAL PLATOS: ${totalPlatos}</div>
+                  <div class="v-diets">Dietas: ${dietasText}</div>
+               </div>
+               <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
+            </div>
+            <div class="v-footer">
+               Impreso el ${fechaImpresion} a las ${horaImpresion} hs | Servicio: ${usuarioImpresion}
+            </div>
+          </div>
+          <div class="cut-line"></div>
+        `;
+      }
+
+      individuales.forEach((p, idx) => {
+        const date = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
+        const nombreAgente = p.Personal ? `${p.Personal.NombreCompleto}` : `${p.EmergenciaNombreCompleto}`;
+        const dniAgente = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
+        const qrData = encodeURIComponent(`${nombreAgente}-${dniAgente}-${servicio}-${tipo}-${p.TipoDieta}-${date}`);
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
+
+        vouchersHTML += `
+          <div class="voucher">
+            <div class="watermark">SisAR ORIGINAL - SisAR ORIGINAL</div>
+            <div class="v-header">
+               <div class="v-logo">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+                    <defs>
+                      <linearGradient id="bg-ind-${sIdx}-${idx}" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#3b82f6" />
+                        <stop offset="100%" stop-color="#4f46e5" />
+                      </linearGradient>
+                    </defs>
+                    <rect width="64" height="64" rx="16" fill="url(#bg-ind-${sIdx}-${idx})" />
+                    <g transform="translate(14, 14) scale(1.5)">
+                      <path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M7 2v20" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                      <path d="M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7" fill="none" stroke="#ffffff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                    </g>
+                  </svg>
+               </div>
+               <div class="v-title">
+                  <div class="v-title-main">SisAR - VOUCHER DE COMIDA</div>
+                  <div class="v-title-sub">Sistema de Administracion de Raciones</div>
+               </div>
+            </div>
+            <div class="v-body">
+               <div class="v-info">
+                  <div class="v-row space-between">
+                     <div>TIPO: <strong>${tipo.toUpperCase()}</strong></div>
+                     <div>Servicio: ${servicio}</div>
+                     <div>Fecha: ${date}</div>
+                  </div>
+                  <div class="v-row" style="margin-top: 6px; font-size: 14px;">
+                     AGENTE: <strong>${nombreAgente}</strong> (DNI: ${dniAgente})
+                  </div>
+                  <div class="v-row" style="margin-top: 4px; font-size: 13px; color: #4f46e5;">
+                     DIETA: <strong>${p.TipoDieta}</strong>
+                  </div>
+               </div>
+               <div class="v-qr"><img src="${qrUrl}" alt="QR Code" /></div>
+            </div>
+            <div class="v-footer">
+               Impreso el ${fechaImpresion} a las ${horaImpresion} hs | Servicio: ${usuarioImpresion}
+            </div>
+          </div>
+          <div class="cut-line"></div>
+        `;
+      });
+
+      vouchersHTML += `</div>`;
+    });
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Vouchers de Comida - ${tipo}</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #fff; color: #000; }
+            .voucher { border: 2px stroke #000; border-style: dashed; padding: 15px; margin-bottom: 20px; border-radius: 8px; position: relative; background: #fff; overflow: hidden; page-break-inside: avoid; }
+            .watermark { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 26px; font-weight: 900; color: rgba(0, 0, 0, 0.04); white-space: nowrap; pointer-events: none; text-transform: uppercase; letter-spacing: 2px; }
+            .v-header { display: flex; align-items: center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 12px; }
+            .v-logo { margin-right: 12px; }
+            .v-title-main { font-size: 18px; font-weight: 800; letter-spacing: 0.5px; }
+            .v-title-sub { font-size: 11px; color: #444; }
+            .v-body { display: flex; justify-content: space-between; align-items: center; }
+            .v-info { flex: 1; font-size: 12px; line-height: 1.5; }
+            .v-row { margin-bottom: 4px; }
+            .space-between { display: flex; justify-content: space-between; padding-right: 15px; }
+            .v-total { font-size: 16px; font-weight: bold; margin-top: 6px; color: #1e40af; }
+            .v-diets { font-size: 11px; color: #333; margin-top: 4px; }
+            .v-qr img { width: 90px; height: 90px; border: 1px solid #ccc; padding: 3px; background: #fff; }
+            .v-footer { margin-top: 10px; border-top: 1px solid #ddd; padding-top: 4px; font-size: 9px; color: #666; text-align: right; }
+            .cut-line { border-bottom: 1px dashed #999; margin: 15px 0 25px 0; relative; }
+            .page-break { page-break-after: always; }
+            @media print {
+              body { padding: 0; }
+              .voucher { border-color: #000; }
+            }
+          </style>
+        </head>
+        <body onload="setTimeout(() => { window.print(); window.close(); }, 600)">
+          ${vouchersHTML}
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
   const tabs = [
     { id: "Planilla", label: "Planilla", icon: <Users className="w-4 h-4 mr-2" /> },
     { id: "Emergencias", label: "Emergencias", icon: <AlertTriangle className="w-4 h-4 mr-2" /> },
@@ -1777,8 +2009,16 @@ function JefePanel({
                       rangoStr = pInicioStr === pFinStr ? pInicioStr : `${pInicioStr} al ${pFinStr}`;
                     }
 
-                    const nombreAgente = h.EmergenciaNombreCompleto || `${h.EmergenciaNombre || ''} ${h.EmergenciaApellido || ''}`.trim() || (h.Personal ? h.Personal.NombreCompleto : 'Agente');
-                    const dniAgente = h.EmergenciaDNI || (h.Personal ? h.Personal.DNI : '-');
+                    const nombreAgente = h.EmergenciaNombreCompleto
+                      || h.Personal?.NombreCompleto
+                      || `${h.EmergenciaNombre || ''} ${h.EmergenciaApellido || ''}`.trim()
+                      || h.PersonalReemplazado?.NombreCompleto
+                      || 'Agente';
+
+                    const dniAgente = h.EmergenciaDNI
+                      || h.Personal?.DNI
+                      || h.PersonalReemplazado?.DNI
+                      || '-';
 
                     const reemplazadoNombre = h.PersonalReemplazado 
                       ? (h.PersonalReemplazado.NombreCompleto || `${h.PersonalReemplazado.Nombre || ''} ${h.PersonalReemplazado.Apellido || ''}`.trim())
@@ -2072,10 +2312,39 @@ function JefePanel({
       {/* SECCION: REPORTES */}
       {activeTab === "Reportes" && (
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
-        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
-          <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-            <Search className="w-5 h-5 mr-2 text-indigo-500" /> Reportes y Consultas
-          </h2>
+        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+              <Search className="w-5 h-5 mr-2 text-indigo-500" /> Reportes y Consultas
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Impresión de vouchers e historial de raciones del servicio.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button 
+              onClick={() => handleImprimirVouchers('Almuerzo')} 
+              disabled={!isPastAuthAlmuerzo || reportes.length === 0}
+              className={`flex items-center px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all cursor-pointer ${
+                !isPastAuthAlmuerzo || reportes.length === 0
+                  ? 'bg-gray-200 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed'
+                  : 'bg-orange-500 hover:bg-orange-600 text-white transform hover:scale-[1.02] active:scale-95'
+              }`}
+              title={!isPastAuthAlmuerzo ? `Disponible una vez vencido el horario tope de autorización (${limiteAuthAlmuerzo || '11:00'} hs)` : 'Imprimir vouchers de Almuerzo'}
+            >
+              <Printer className="w-4 h-4 mr-2" /> Vouchers Alm.
+            </button>
+            <button 
+              onClick={() => handleImprimirVouchers('Cena')} 
+              disabled={!isPastAuthCena || reportes.length === 0}
+              className={`flex items-center px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all cursor-pointer ${
+                !isPastAuthCena || reportes.length === 0
+                  ? 'bg-gray-200 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white transform hover:scale-[1.02] active:scale-95'
+              }`}
+              title={!isPastAuthCena ? `Disponible una vez vencido el horario tope de autorización (${limiteAuthCena || '18:00'} hs)` : 'Imprimir vouchers de Cena'}
+            >
+              <Printer className="w-4 h-4 mr-2" /> Vouchers Cena
+            </button>
+          </div>
         </div>
         <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-wrap gap-4 items-end bg-white dark:bg-gray-900">
           <div className="w-full sm:w-48">
@@ -2209,6 +2478,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
   const [repDesde, setRepDesde] = useState(getTodayStr());
   const [repHasta, setRepHasta] = useState(getTodayStr());
   const [repFiltroEmpleado, setRepFiltroEmpleado] = useState("");
+  const [repFiltroServicio, setRepFiltroServicio] = useState("");
   const [reportes, setReportes] = useState<any[]>([]);
   const [configAlmuerzo, setConfigAlmuerzo] = useState("09:00");
   const [configCena, setConfigCena] = useState("17:00");
@@ -2864,6 +3134,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
       fechaOriginal: string;
       fechaOrder: string;
       servicioName: string;
+      agenteNombreClean: string;
       agenteDetalle: string;
       tipoComida: string;
       tipoDieta: string;
@@ -2872,70 +3143,77 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
     }
 
     const construirFilas = (listaReportes: any[]): FilaEntrega[] => {
-      const individuales = listaReportes.filter(r => esServicioIndividual(r));
-      const consolidados = listaReportes.filter(r => !esServicioIndividual(r));
+      // Agrupar los reportes por Servicio
+      const porServicio: Record<string, any[]> = {};
+      listaReportes.forEach(r => {
+        const sName = getServicioNombre(r);
+        if (!porServicio[sName]) porServicio[sName] = [];
+        porServicio[sName].push(r);
+      });
 
       const filas: FilaEntrega[] = [];
 
-      individuales.forEach(p => {
-        const fechaOrder = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
-        const nombreAgente = p.Personal ? `${p.Personal.NombreCompleto}` : `${p.EmergenciaNombreCompleto}`;
-        const dniAgente = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
+      const serviciosKeys = Object.keys(porServicio).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
 
-        filas.push({
-          fechaOriginal: p.FechaPedido,
-          fechaOrder: fechaOrder,
-          servicioName: getServicioNombre(p),
-          agenteDetalle: `<strong>${nombreAgente}</strong><br/><span style="color: #555; font-size: 10px;">DNI: ${dniAgente}</span>`,
-          tipoComida: p.TipoComida || turno,
-          tipoDieta: p.TipoDieta || 'Normal',
-          comidaDietaDetalle: `<strong>${p.TipoComida}</strong> (${p.TipoDieta})`,
-          cantidadRaciones: 1
-        });
-      });
+      serviciosKeys.forEach(servicio => {
+        const reportesServicio = porServicio[servicio];
 
-      const gruposConsolidados: Record<string, {
-        FechaPedido: string;
-        ServicioNombre: string;
-        TipoComida: string;
-        TipoDieta: string;
-        Cantidad: number;
-      }> = {};
+        const individuales = reportesServicio.filter(r => esServicioIndividual(r));
+        const consolidados = reportesServicio.filter(r => !esServicioIndividual(r));
 
-      consolidados.forEach(r => {
-        const fecha = r.FechaPedido.split('T')[0];
-        const servicioName = getServicioNombre(r);
-        const key = `${fecha}_${servicioName}_${r.TipoComida}_${r.TipoDieta}`;
-        if (!gruposConsolidados[key]) {
-          gruposConsolidados[key] = {
-            FechaPedido: r.FechaPedido,
-            ServicioNombre: servicioName,
-            TipoComida: r.TipoComida || turno,
-            TipoDieta: r.TipoDieta || 'Normal',
-            Cantidad: 0
-          };
+        // 1. Renglón CONSOLIDADO para la planilla de entrega (coincide exactamente con el Voucher Consolidado emitido)
+        if (consolidados.length > 0) {
+          const date = consolidados[0].FechaPedido.split('T')[0].split('-').reverse().join('/');
+          const totalPlatos = consolidados.length;
+          const counts: Record<string, number> = {};
+          consolidados.forEach(p => { counts[p.TipoDieta || 'Normal'] = (counts[p.TipoDieta || 'Normal'] || 0) + 1; });
+          const dietasText = Object.entries(counts).map(([dieta, cant]) => `${dieta} (${cant})`).join(' | ');
+
+          filas.push({
+            fechaOriginal: consolidados[0].FechaPedido,
+            fechaOrder: date,
+            servicioName: servicio,
+            agenteNombreClean: 'CONSOLIDADO',
+            agenteDetalle: `<strong>CONSOLIDADO (${servicio})</strong><br/><span style="color: #2563eb; font-size: 10px; font-weight: bold;">TOTAL: ${totalPlatos} RACION(ES)</span><br/><span style="color: #555; font-size: 9px;">${dietasText}</span>`,
+            tipoComida: consolidados[0].TipoComida || turno,
+            tipoDieta: dietasText,
+            comidaDietaDetalle: `<strong>${consolidados[0].TipoComida || turno}</strong><br/><span style="font-size: 9px;">${dietasText}</span>`,
+            cantidadRaciones: totalPlatos
+          });
         }
-        gruposConsolidados[key].Cantidad += 1;
-      });
 
-      Object.values(gruposConsolidados).forEach(g => {
-        const fechaOrder = g.FechaPedido.split('T')[0].split('-').reverse().join('/');
-        filas.push({
-          fechaOriginal: g.FechaPedido,
-          fechaOrder: fechaOrder,
-          servicioName: g.ServicioNombre,
-          agenteDetalle: `<strong>CONSOLIDADO</strong><br/><span style="color: #2563eb; font-size: 10px; font-weight: bold;">CANTIDAD: ${g.Cantidad} RACION(ES)</span>`,
-          tipoComida: g.TipoComida,
-          tipoDieta: g.TipoDieta,
-          comidaDietaDetalle: `<strong>${g.TipoComida}</strong> (${g.TipoDieta})`,
-          cantidadRaciones: g.Cantidad
+        // 2. Renglones INDIVIDUALES para la planilla de entrega (coinciden exactamente con los Vouchers Individuales emitidos)
+        const filasIndividualesServicio: FilaEntrega[] = [];
+        individuales.forEach(p => {
+          const fechaOrder = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
+          const nombreAgente = p.EmergenciaNombreCompleto
+            || p.Personal?.NombreCompleto
+            || `${p.EmergenciaNombre || ''} ${p.EmergenciaApellido || ''}`.trim()
+            || p.PersonalReemplazado?.NombreCompleto
+            || 'Agente';
+
+          const dniAgente = p.EmergenciaDNI
+            || p.Personal?.DNI
+            || p.PersonalReemplazado?.DNI
+            || '-';
+
+          filasIndividualesServicio.push({
+            fechaOriginal: p.FechaPedido,
+            fechaOrder: fechaOrder,
+            servicioName: servicio,
+            agenteNombreClean: nombreAgente,
+            agenteDetalle: `<strong>${nombreAgente}</strong><br/><span style="color: #555; font-size: 10px;">DNI: ${dniAgente}</span>`,
+            tipoComida: p.TipoComida || turno,
+            tipoDieta: p.TipoDieta || 'Normal',
+            comidaDietaDetalle: `<strong>${p.TipoComida || turno}</strong> (${p.TipoDieta || 'Normal'})`,
+            cantidadRaciones: 1
+          });
         });
-      });
 
-      filas.sort((a, b) => {
-        const cmpFecha = a.fechaOriginal.localeCompare(b.fechaOriginal);
-        if (cmpFecha !== 0) return cmpFecha;
-        return a.servicioName.localeCompare(b.servicioName);
+        // Ordenar alfabéticamente por nombre del agente dentro de este servicio (A-Z)
+        filasIndividualesServicio.sort((a, b) => a.agenteNombreClean.localeCompare(b.agenteNombreClean, 'es', { sensitivity: 'base' }));
+
+        filas.push(...filasIndividualesServicio);
       });
 
       return filas;
@@ -3038,15 +3316,72 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
     printWindow.document.close();
   };
 
-  const handleImprimirVouchers = (tipo: 'Almuerzo' | 'Cena') => {
+  const handleImprimirVouchers = async (tipo: 'Almuerzo' | 'Cena') => {
     if (reportes.length === 0) {
       Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
     
+    // Obtener la lista de servicios con raciones aprobadas para este turno
+    const serviciosDisponiblesSet = new Set<string>();
+    reportes.forEach(r => {
+      if (r.Estado === 'Aprobado' && r.TipoComida === tipo) {
+        serviciosDisponiblesSet.add(getServicioNombre(r));
+      }
+    });
+
+    const serviciosDisponibles = Array.from(serviciosDisponiblesSet).sort((a, b) => a.localeCompare(b));
+
+    if (serviciosDisponibles.length === 0) {
+      Swal.fire({ title: "Aviso", text: `No hay solicitudes aprobadas de ${tipo} para imprimir vouchers.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    let servicioSeleccionado = "TODOS";
+
+    // Si hay servicios disponibles, pedir confirmación/selección al Gerente
+    if (serviciosDisponibles.length > 0) {
+      const optionsHtml = `
+        <option value="TODOS">-- Todos los Servicios (${serviciosDisponibles.length}) --</option>
+        ${serviciosDisponibles.map(s => `<option value="${s}">${s}</option>`).join('')}
+      `;
+
+      const { value: sel } = await Swal.fire({
+        title: `Imprimir Vouchers de ${tipo}`,
+        text: "Selecciona el servicio que deseas imprimir:",
+        html: `
+          <div style="margin-top: 15px; text-align: left;">
+            <label style="display: block; font-size: 12px; font-weight: bold; margin-bottom: 6px; color: ${theme === 'dark' ? '#d1d5db' : '#374151'};">Servicio / Área:</label>
+            <select id="swal-servicio-voucher" class="swal2-input" style="width: 100%; margin: 0; font-size: 14px;">
+              ${optionsHtml}
+            </select>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: "Imprimir Vouchers",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#3b82f6",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000',
+        preConfirm: () => {
+          return (document.getElementById('swal-servicio-voucher') as HTMLSelectElement).value;
+        }
+      });
+
+      if (!sel) return; // Cancelado
+      servicioSeleccionado = sel;
+    }
+
     const filtered = reportes.filter(r => {
       if (r.Estado !== "Aprobado") return false;
       if (r.TipoComida !== tipo) return false;
+
+      // Filtro de Servicio
+      if (servicioSeleccionado && servicioSeleccionado !== "TODOS") {
+        const sName = getServicioNombre(r);
+        if (sName.toLowerCase() !== servicioSeleccionado.toLowerCase()) return false;
+      }
+
       if (!repFiltroEmpleado) return true;
       const term = repFiltroEmpleado.toLowerCase();
       const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
@@ -3055,10 +3390,9 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
     });
 
     if (filtered.length === 0) {
-      Swal.fire({ title: "Aviso", text: `No hay reportes de ${tipo} que coincidan con el filtro.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      Swal.fire({ title: "Aviso", text: `No hay reportes de ${tipo} que coincidan con el servicio seleccionado.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
-
 
     // Agrupar los reportes filtrados por servicio
     const porServicio: Record<string, any[]> = {};
@@ -3436,7 +3770,17 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
             ) : (
               <div className="divide-y divide-gray-200 dark:divide-gray-800">
                 {listToDisplay.map(e => {
-                  const nombreAgente = e.EmergenciaNombreCompleto || `${e.EmergenciaNombre || ''} ${e.EmergenciaApellido || ''}`.trim() || 'Agente';
+                  const nombreAgente = e.EmergenciaNombreCompleto
+                    || e.Personal?.NombreCompleto
+                    || `${e.EmergenciaNombre || ''} ${e.EmergenciaApellido || ''}`.trim()
+                    || e.PersonalReemplazado?.NombreCompleto
+                    || 'Agente';
+
+                  const dniAgente = e.EmergenciaDNI
+                    || e.Personal?.DNI
+                    || e.PersonalReemplazado?.DNI
+                    || '-';
+
                   const fechaPedidoStr = e.FechaPedido ? e.FechaPedido.split('T')[0].split('-').reverse().join('/') : '-';
                   const expired = isAuthExpired(e);
                   const limitHora = getLimitHora(e);
@@ -3463,7 +3807,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                             <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</h3>
                           </div>
                           <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">
-                            <span className="font-semibold text-gray-900 dark:text-gray-200">Servicio:</span> <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{getServicioNombre(e)}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">Agente:</span> <span className="font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">DNI:</span> {e.EmergenciaDNI} • <span className="font-semibold text-gray-900 dark:text-gray-200">Solicita:</span> {e.TipoComida} ({e.TipoDieta})
+                            <span className="font-semibold text-gray-900 dark:text-gray-200">Servicio:</span> <span className="font-extrabold text-indigo-600 dark:text-indigo-400">{getServicioNombre(e)}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">Agente:</span> <span className="font-bold text-gray-900 dark:text-gray-100">{nombreAgente}</span> • <span className="font-semibold text-gray-900 dark:text-gray-200">DNI:</span> {dniAgente} • <span className="font-semibold text-gray-900 dark:text-gray-200">Solicita:</span> {e.TipoComida} ({e.TipoDieta})
                           </p>
                           {e.PersonalReemplazado && (
                             <p className="text-xs text-blue-600 dark:text-blue-400 mb-1 font-medium">
