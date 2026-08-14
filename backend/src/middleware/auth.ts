@@ -56,8 +56,8 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
 };
 
 export const isGerente = (req: Request, res: Response, next: NextFunction): void => {
-  // Assuming roleId 2 is GERENTE
-  if (req.user && req.user.roleId === 2) {
+  // roleId 1: ADMIN/RRHH, roleId 2: GERENTE
+  if (req.user && (req.user.roleId === 2 || req.user.roleId === 1)) {
     next();
   } else {
     res.status(403).json({ error: 'Acceso denegado: Requiere rol de GERENTE' });

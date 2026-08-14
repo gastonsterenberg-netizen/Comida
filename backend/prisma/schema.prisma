@@ -20,6 +20,7 @@ model Hospitales {
   Personal          Personal[]
   Usuarios          Usuarios[]
   Padron            PadronHabilitados[]
+  FechasAnticipadas FechasAnticipadasHabilitadas[]
 }
 
 model Servicios {
@@ -132,4 +133,15 @@ model Auditoria {
   Detalles   String?   @db.NVarChar(1000)
   IpAddress  String?   @db.NVarChar(50)
   Usuario    Usuarios? @relation(fields: [UsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model FechasAnticipadasHabilitadas {
+  Id                  Int        @id @default(autoincrement())
+  HospitalId          Int
+  FechaHabilitada     DateTime   @db.Date
+  Descripcion         String?    @db.NVarChar(100)
+  CreadoPorUsuarioId  Int
+  FechaCreacion       DateTime   @default(now())
+  Activo              Boolean    @default(true)
+  Hospital            Hospitales @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
 }

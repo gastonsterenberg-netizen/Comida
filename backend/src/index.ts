@@ -297,6 +297,133 @@ app.put('/api/services/:id/toggle-voucher', authenticateToken, isGerente, async 
   }
 });
 
+// --- ENDPOINTS DE HABILITACIÓN DE CARGA ANTICIPADA (SÁBADOS, DOMINGOS Y FERIADOS) ---
+
+// Obtener fechas anticipadas habilitadas activas para el hospital del usuario
+app.get('/api/advance-dates', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const hId = req.user?.hospitalId;
+  if (!hId) {
+    res.status(400).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+  const hospitalId = Number(hId);
+
+  try {
+    const dates = await prisma.fechasAnticipadasHabilitadas.findMany({
+      where: { HospitalId: hospitalId, Activo: true },
+      orderBy: { FechaHabilitada: 'asc' }
+    });
+
+    const formatted = dates.map(d => ({
+      ...d,
+      FechaHabilitadaStr: d.FechaHabilitada.toISOString().split('T')[0]
+    }));
+
+    res.json(formatted);
+  } catch (error) {
+    console.error('Error al obtener fechas anticipadas:', error);
+    res.status(500).json({ error: 'Error al obtener fechas anticipadas' });
+  }
+});
+
+// Habilitar nueva fecha anticipada (Gerente o Admin)
+app.post('/api/advance-dates', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hId = req.user?.hospitalId;
+  const { fecha, descripcion } = req.body;
+
+  if (!hId || !fecha || !/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    res.status(400).json({ error: 'Fecha válida (YYYY-MM-DD) requerida y usuario asignado a un hospital' });
+    return;
+  }
+  const hospitalId = Number(hId);
+  const userId = req.user?.userId || (req.user as any)?.id;
+
+  if (!userId) {
+    res.status(400).json({ error: 'Usuario no identificado correctamente' });
+    return;
+  }
+
+  try {
+    const targetDate = new Date(`${fecha}T00:00:00.000Z`);
+
+    // Buscar si ya existe CUALQUIER registro para este hospital y fecha (activo o inactivo)
+    const existente = await prisma.fechasAnticipadasHabilitadas.findFirst({
+      where: { HospitalId: hospitalId, FechaHabilitada: targetDate }
+    });
+
+    if (existente) {
+      if (existente.Activo) {
+        res.status(400).json({ error: `La fecha ${fecha.split('-').reverse().join('/')} ya se encuentra habilitada para carga anticipada.` });
+        return;
+      }
+
+      // Si existia previamente deshabilitada, la reactivamos
+      const updated = await prisma.fechasAnticipadasHabilitadas.update({
+        where: { Id: existente.Id },
+        data: {
+          Activo: true,
+          Descripcion: descripcion || existente.Descripcion || 'Carga anticipada autorizada',
+          CreadoPorUsuarioId: Number(userId)
+        }
+      });
+
+      await logAudit(req, 'HABILITAR_FECHA_ANTICIPADA', `Reactivada carga anticipada para fecha: ${fecha} (${descripcion || ''})`);
+      res.json({ message: 'Fecha anticipada habilitada exitosamente', data: updated });
+      return;
+    }
+
+    const newAdvanceDate = await prisma.fechasAnticipadasHabilitadas.create({
+      data: {
+        HospitalId: hospitalId,
+        FechaHabilitada: targetDate,
+        Descripcion: descripcion || 'Carga anticipada autorizada',
+        CreadoPorUsuarioId: Number(userId),
+        Activo: true
+      }
+    });
+
+    await logAudit(req, 'HABILITAR_FECHA_ANTICIPADA', `Habilitada carga anticipada para fecha: ${fecha} (${descripcion || ''})`);
+    res.json({ message: 'Fecha anticipada habilitada exitosamente', data: newAdvanceDate });
+  } catch (error: any) {
+    console.error('Error al habilitar fecha anticipada:', error);
+    res.status(500).json({ error: 'Error al habilitar fecha anticipada: ' + (error?.message || String(error)) });
+  }
+});
+
+// Deshabilitar una fecha anticipada (Gerente o Admin)
+app.delete('/api/advance-dates/:id', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const id = Number(req.params.id);
+  const hId = req.user?.hospitalId;
+
+  if (!hId) {
+    res.status(400).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+  const hospitalId = Number(hId);
+
+  try {
+    const target = await prisma.fechasAnticipadasHabilitadas.findFirst({
+      where: { Id: id, HospitalId: hospitalId }
+    });
+
+    if (!target) {
+      res.status(404).json({ error: 'Registro de fecha anticipada no encontrado' });
+      return;
+    }
+
+    await prisma.fechasAnticipadasHabilitadas.update({
+      where: { Id: id },
+      data: { Activo: false }
+    });
+
+    await logAudit(req, 'DESHABILITAR_FECHA_ANTICIPADA', `Deshabilitada carga anticipada ID: ${id}`);
+    res.json({ message: 'Fecha anticipada deshabilitada exitosamente' });
+  } catch (error) {
+    console.error('Error al deshabilitar fecha anticipada:', error);
+    res.status(500).json({ error: 'Error al deshabilitar fecha anticipada' });
+  }
+});
+
 // 3.2 Crear usuario Jefe de Servicio
 
 // GERENTES endpoints
@@ -900,7 +1027,11 @@ app.get('/api/staff/active', authenticateToken, async (req: Request, res: Respon
     const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     const todayStr = `${year}-${month}-${day}`;
-    const today = new Date(`${todayStr}T00:00:00.000Z`);
+    
+    // Si envian fecha especifica en query, usarla; sino usar hoy
+    const customFechaStr = req.query.fecha as string;
+    const targetFechaStr = customFechaStr && /^\d{4}-\d{2}-\d{2}$/.test(customFechaStr) ? customFechaStr : todayStr;
+    const targetDate = new Date(`${targetFechaStr}T00:00:00.000Z`);
 
     const staff = await prisma.personal.findMany({
       where: {
@@ -908,30 +1039,33 @@ app.get('/api/staff/active', authenticateToken, async (req: Request, res: Respon
       },
       include: {
         PedidosComida: {
-          where: { FechaPedido: today }
+          where: { FechaPedido: targetDate }
         }
       },
       orderBy: { NombreCompleto: 'asc' }
     });
 
     const verifiedStaff = staff.map(s => {
-      let isBajaHoy = false;
+      let isBajaEnFecha = false;
       if (s.BajaProvisoriaFecha) {
         const d = new Date(s.BajaProvisoriaFecha);
         const desdeStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
         
-        let hastaStr = desdeStr;
+        let hastaStr = "9999-12-31";
         if (s.BajaProvisoriaHasta) {
           const h = new Date(s.BajaProvisoriaHasta);
           hastaStr = `${h.getUTCFullYear()}-${String(h.getUTCMonth() + 1).padStart(2, '0')}-${String(h.getUTCDate()).padStart(2, '0')}`;
         }
-        isBajaHoy = todayStr >= desdeStr && todayStr <= hastaStr;
+        isBajaEnFecha = targetFechaStr >= desdeStr && targetFechaStr <= hastaStr;
       }
+      const esInhabilitado = Boolean(isBajaEnFecha || !s.Activo || s.BajaMotivo || s.BajaProvisoriaFecha);
+
       return { 
         ...s,
-        bajaProvisoriaHoy: Boolean(isBajaHoy || s.BajaProvisoriaFecha),
+        bajaProvisoriaHoy: isBajaEnFecha,
         bajaDefinitivaHoy: !s.Activo,
-        bajaMotivo: s.BajaMotivo || null
+        bajaMotivo: s.BajaMotivo || null,
+        esInhabilitadoParaReemplazo: esInhabilitado
       };
     });
 
@@ -1137,9 +1271,9 @@ app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void
   }
 });
 
-// 4.3.b Guardar multiples pedidos
+// 4.3.b Guardar multiples pedidos (soporta fecha de hoy o fecha futura habilitada)
 app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Response): Promise<void> => {
-  const { orders, tipoComida } = req.body;
+  const { orders, tipoComida, fecha } = req.body;
   const solicitadoPorUsuarioId = req.user?.userId;
 
   if (!solicitadoPorUsuarioId) {
@@ -1147,29 +1281,63 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
     return;
   }
 
-  // Si se especifica tipoComida, validamos solo esa. Si no, validamos todo el pedido (Ambos).
-  const tc = tipoComida || 'Ambos';
-  const errorMsg = await checkDeadlines(solicitadoPorUsuarioId, tc);
-  if (errorMsg) {
-    res.status(400).json({ error: errorMsg });
-    return;
-  }
-  
-  try {
-    const now = new Date();
-    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
 
-    // Borramos los pedidos de hoy para el personal especificado y tipoComida (si aplica)
+  const targetFechaStr = fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? fecha : todayStr;
+  const targetDate = new Date(`${targetFechaStr}T00:00:00.000Z`);
+
+  // Si la fecha solicitada es HOY, se evaluan los limites de horario habituales
+  if (targetFechaStr === todayStr) {
+    const tc = tipoComida || 'Ambos';
+    const errorMsg = await checkDeadlines(solicitadoPorUsuarioId, tc);
+    if (errorMsg) {
+      res.status(400).json({ error: errorMsg });
+      return;
+    }
+  } else if (targetFechaStr > todayStr) {
+    // Si es fecha FUTURA, verificar que este autorizada por Gerencia
+    const user = await prisma.usuarios.findUnique({ where: { Id: solicitadoPorUsuarioId } });
+    if (!user || !user.HospitalId) {
+      res.status(400).json({ error: 'Usuario sin hospital asignado para validacion de fecha anticipada.' });
+      return;
+    }
+
+    const habilitada = await prisma.fechasAnticipadasHabilitadas.findFirst({
+      where: {
+        HospitalId: user.HospitalId,
+        FechaHabilitada: targetDate,
+        Activo: true
+      }
+    });
+
+    if (!habilitada) {
+      res.status(400).json({ error: `La fecha seleccionada (${targetFechaStr.split('-').reverse().join('/')}) no se encuentra habilitada por Gerencia para carga anticipada.` });
+      return;
+    }
+  }
+
+  try {
+    const solicitante = await prisma.usuarios.findUnique({
+      where: { Id: solicitadoPorUsuarioId },
+      include: { Servicio: true }
+    });
+    const solicitanteServicioId = solicitante?.ServicioId;
+
+    // Borramos los pedidos de la fecha objetivo para el personal especificado y tipoComida (si aplica)
     const personalIds = orders.map((o: any) => o.personalId);
     await prisma.pedidosComida.deleteMany({
       where: {
-        FechaPedido: today,
+        FechaPedido: targetDate,
         PersonalId: { in: personalIds },
         ...(tipoComida ? { TipoComida: tipoComida } : {})
       }
     });
 
-    // Creamos los nuevos pedidos
+    // Creamos los nuevos pedidos para targetDate
     const newOrders = [];
     for (const o of orders) {
       const isAlmuerzo = tipoComida ? tipoComida === 'Almuerzo' : true;
@@ -1187,22 +1355,34 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
         }
         if (isAlmuerzo && o.almuerzoDieta) {
           const cenaExistente = await prisma.pedidosComida.findFirst({
-            where: { FechaPedido: today, TipoComida: 'Cena', Personal: { DNI: personal.DNI } },
+            where: { FechaPedido: targetDate, TipoComida: 'Cena', Personal: { DNI: personal.DNI } },
             include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
           });
           if (cenaExistente) {
-            const sNombre = cenaExistente.SolicitadoPor?.Servicio?.Nombre || cenaExistente.Personal?.Servicio?.Nombre || 'otro servicio';
-            throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrada una Cena para el día de hoy en el servicio "${sNombre}".`);
+            const cenaServicioId = cenaExistente.SolicitadoPor?.ServicioId || cenaExistente.Personal?.ServicioId;
+            if (solicitanteServicioId && cenaServicioId === solicitanteServicioId) {
+              // El mismo servicio esta cambiando de Cena a Almuerzo: borramos la Cena anterior
+              await prisma.pedidosComida.delete({ where: { Id: cenaExistente.Id } });
+            } else {
+              const sNombre = cenaExistente.SolicitadoPor?.Servicio?.Nombre || cenaExistente.Personal?.Servicio?.Nombre || 'otro servicio';
+              throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrada una Cena para esa fecha en el servicio "${sNombre}".`);
+            }
           }
         }
         if (isCena && o.cenaDieta) {
           const almuerzoExistente = await prisma.pedidosComida.findFirst({
-            where: { FechaPedido: today, TipoComida: 'Almuerzo', Personal: { DNI: personal.DNI } },
+            where: { FechaPedido: targetDate, TipoComida: 'Almuerzo', Personal: { DNI: personal.DNI } },
             include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
           });
           if (almuerzoExistente) {
-            const sNombre = almuerzoExistente.SolicitadoPor?.Servicio?.Nombre || almuerzoExistente.Personal?.Servicio?.Nombre || 'otro servicio';
-            throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrado un Almuerzo para el día de hoy en el servicio "${sNombre}".`);
+            const almuerzoServicioId = almuerzoExistente.SolicitadoPor?.ServicioId || almuerzoExistente.Personal?.ServicioId;
+            if (solicitanteServicioId && almuerzoServicioId === solicitanteServicioId) {
+              // El mismo servicio esta cambiando de Almuerzo a Cena: borramos el Almuerzo anterior
+              await prisma.pedidosComida.delete({ where: { Id: almuerzoExistente.Id } });
+            } else {
+              const sNombre = almuerzoExistente.SolicitadoPor?.Servicio?.Nombre || almuerzoExistente.Personal?.Servicio?.Nombre || 'otro servicio';
+              throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrado un Almuerzo para esa fecha en el servicio "${sNombre}".`);
+            }
           }
         }
       }
@@ -1210,7 +1390,7 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
       if (isAlmuerzo && o.almuerzoDieta) {
         const almuerzoExistente = await prisma.pedidosComida.findFirst({
           where: {
-            FechaPedido: today,
+            FechaPedido: targetDate,
             TipoComida: 'Almuerzo',
             Personal: { DNI: personal.DNI }
           },
@@ -1222,7 +1402,7 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
         }
         
         newOrders.push({
-          FechaPedido: today,
+          FechaPedido: targetDate,
           TipoComida: 'Almuerzo',
           TipoDieta: o.almuerzoDieta,
           PersonalId: o.personalId,
@@ -1233,7 +1413,7 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
       if (isCena && o.cenaDieta) {
         const cenaExistente = await prisma.pedidosComida.findFirst({
           where: {
-            FechaPedido: today,
+            FechaPedido: targetDate,
             TipoComida: 'Cena',
             Personal: { DNI: personal.DNI }
           },
@@ -1245,7 +1425,7 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
         }
 
         newOrders.push({
-          FechaPedido: today,
+          FechaPedido: targetDate,
           TipoComida: 'Cena',
           TipoDieta: o.cenaDieta,
           PersonalId: o.personalId,
@@ -1266,17 +1446,54 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
   }
 });
 
-// 5.2 Crear solicitud de emergencia
-app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> => {
+// 5.2 Crear solicitud de emergencia (soporta fecha de hoy o fecha futura habilitada)
+app.post('/api/emergencies', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const nombreCompleto = req.body.nombreCompleto || req.body.nombre || (req.body.apellido ? `${req.body.apellido} ${req.body.nombre}` : '');
-  const { dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId, esExcepcional, tipoSolicitud, autoAprobar, esNutricionGerencia } = req.body;
+  const { dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId, esExcepcional, tipoSolicitud, autoAprobar, esNutricionGerencia, fecha } = req.body;
+
+  const effectiveUserId = req.user?.userId || (solicitadoPorUsuarioId ? Number(solicitadoPorUsuarioId) : undefined);
+  if (!effectiveUserId) {
+    res.status(400).json({ error: 'No se pudo identificar el usuario solicitante autenticado.' });
+    return;
+  }
 
   const isAutoAprobado = Boolean(autoAprobar || esNutricionGerencia);
   const isExcepcional = Boolean(esExcepcional || tipoSolicitud === 'reemplazo_excepcional');
 
-  // Validate authorization deadlines solo si NO es auto-aprobado ni reemplazo excepcional
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+
+  const targetFechaStr = fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? fecha : todayStr;
+  const targetDate = new Date(`${targetFechaStr}T00:00:00.000Z`);
+
+  // Si la fecha solicitada es FUTURA, verificar que este autorizada por Gerencia
+  if (targetFechaStr > todayStr) {
+    const user = await prisma.usuarios.findUnique({ where: { Id: effectiveUserId } });
+    if (!user || !user.HospitalId) {
+      res.status(400).json({ error: 'Usuario sin hospital asignado para validacion de fecha anticipada.' });
+      return;
+    }
+
+    const habilitada = await prisma.fechasAnticipadasHabilitadas.findFirst({
+      where: {
+        HospitalId: user.HospitalId,
+        FechaHabilitada: targetDate,
+        Activo: true
+      }
+    });
+
+    if (!habilitada) {
+      res.status(400).json({ error: `La fecha seleccionada (${targetFechaStr.split('-').reverse().join('/')}) no se encuentra habilitada por Gerencia para carga anticipada.` });
+      return;
+    }
+  }
+
+  // Validate authorization deadlines solo si es HOY y NO es auto-aprobado ni reemplazo excepcional
   let comidasToCheck = tipoComida === 'Ambos' ? ['Almuerzo', 'Cena'] : [tipoComida || 'Almuerzo'];
-  if (!isExcepcional && !isAutoAprobado) {
+  if (targetFechaStr === todayStr && !isExcepcional && !isAutoAprobado) {
     for (const tc of comidasToCheck) {
       const errorMsg = await checkAuthDeadlines(solicitadoPorUsuarioId, tc);
       if (errorMsg) {
@@ -1287,15 +1504,27 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
   }
 
   try {
-    const now = new Date();
-    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-    const start = today;
-    const end = today;
+    const start = targetDate;
+    const end = targetDate;
 
-    // Construir justificación con la marca especial si es cargado por Nutrición / Gerencia
+    // Determinar servicio de destino
+    let targetServicioNombre = '';
+    if (req.body.servicioId) {
+      const sObj = await prisma.servicios.findUnique({ where: { Id: Number(req.body.servicioId) } });
+      if (sObj) targetServicioNombre = sObj.Nombre;
+    }
+    if (!targetServicioNombre && reemplazaId) {
+      const pTitular = await prisma.personal.findUnique({ where: { Id: Number(reemplazaId) }, include: { Servicio: true } });
+      if (pTitular?.Servicio?.Nombre) targetServicioNombre = pTitular.Servicio.Nombre;
+    }
+
+    // Construir justificación con la marca especial si es cargado por Nutrición / Gerencia y el tag de servicio
     let finalJustificacion = justificacion || (isExcepcional ? 'Reemplazo excepcional de última hora' : 'Solicitud de emergencia');
     if (isAutoAprobado && !finalJustificacion.includes('[EMERGENCIA NUTRICIÓN / GERENCIA]')) {
       finalJustificacion = `[EMERGENCIA NUTRICIÓN / GERENCIA] ${finalJustificacion}`;
+    }
+    if (targetServicioNombre && !finalJustificacion.includes('[SERVICIO:')) {
+      finalJustificacion = `[SERVICIO:${targetServicioNombre}] ${finalJustificacion}`;
     }
 
     // Si es reemplazo excepcional con titular, obtener la comida/dieta del titular asignado si no se especificaron
@@ -1393,7 +1622,7 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
           FechaPedido: new Date(current),
           TipoComida: tc,
           TipoDieta: tc === 'Cena' && tipoComida === 'Ambos' && tipoDietaCena ? tipoDietaCena : finalTipoDieta,
-          SolicitadoPorUsuarioId: solicitadoPorUsuarioId,
+          SolicitadoPorUsuarioId: Number(effectiveUserId),
           Estado: (isAutoAprobado || isExcepcional) ? 'Aprobado' : 'Pendiente',
           EmergenciaNombreCompleto: nombreCompleto || '',
           EmergenciaDNI: dni || '',
@@ -1457,10 +1686,19 @@ async function enrichEmergencyList(list: any[]) {
       dni = p.PersonalReemplazado.DNI;
     }
 
+    let servicioObj = p.Servicio || p.Personal?.Servicio || p.PersonalReemplazado?.Servicio || p.SolicitadoPor?.Servicio;
+    if (!servicioObj && p.JustificacionSolicitud && p.JustificacionSolicitud.includes('[SERVICIO:')) {
+      const match = p.JustificacionSolicitud.match(/\[SERVICIO:(.*?)\]/);
+      if (match && match[1]) {
+        servicioObj = { Nombre: match[1] };
+      }
+    }
+
     return { 
       ...p, 
       EmergenciaNombreCompleto: name || p.EmergenciaNombreCompleto,
-      EmergenciaDNI: dni || p.EmergenciaDNI
+      EmergenciaDNI: dni || p.EmergenciaDNI,
+      Servicio: servicioObj || p.Servicio
     };
   });
 }

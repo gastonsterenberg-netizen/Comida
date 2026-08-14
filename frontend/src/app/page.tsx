@@ -673,6 +673,7 @@ function JefePanel({
   const dietas = (dietasProp && dietasProp.length > 0) ? dietasProp : DIETAS_DISPONIBLES;
 
   // Emergency form state
+  const [emgFecha, setEmgFecha] = useState<string>(getTodayStr());
   const [emgNombre, setEmgNombre] = useState("");
   const [emgDni, setEmgDni] = useState("");
   const [emgComida, setEmgComida] = useState(isPastAuthAlmuerzo ? "Cena" : "Almuerzo");
@@ -738,9 +739,25 @@ function JefePanel({
 
   // dietas dinámicas utilizadas desde dietasProp / DIETAS_DISPONIBLES
 
-  const fetchStaff = async () => {
+  // Fecha de trabajo seleccionada en Planilla (Hoy o Fechas Anticipadas)
+  const [fechaPlanilla, setFechaPlanilla] = useState<string>(getTodayStr());
+  const [fechasAnticipadasActivas, setFechasAnticipadasActivas] = useState<any[]>([]);
+
+  const fetchAdvanceDates = async () => {
     try {
-      const res = await fetch(`${API_URL}/api/staff/active`, {
+      const res = await fetch(`${API_URL}/api/advance-dates`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) setFechasAnticipadasActivas(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchStaff = async (targetFecha?: string) => {
+    try {
+      const fechaQuery = targetFecha || fechaPlanilla;
+      const res = await fetch(`${API_URL}/api/staff/active?fecha=${fechaQuery}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -811,7 +828,7 @@ function JefePanel({
   };
 
   useEffect(() => {
-    fetchStaff();
+    fetchAdvanceDates();
     fetchHistorialEmergencias();
     fetchPadron();
     
@@ -819,6 +836,10 @@ function JefePanel({
     setRepDesde(today);
     setRepHasta(today);
   }, []);
+
+  useEffect(() => {
+    fetchStaff(fechaPlanilla);
+  }, [fechaPlanilla]);
 
   const [openGroup, setOpenGroup] = useState<"mi_servicio" | "otros">("mi_servicio");
 
@@ -937,7 +958,7 @@ function JefePanel({
   }, [token]);
 
   const toggleSelection = (personalId: number, tipoComida: "almuerzo" | "cena", tipoDieta: string) => {
-    const isDeadline = tipoComida === "almuerzo" ? isPastAlmuerzo : isPastCena;
+    const isDeadline = fechaPlanilla === getTodayStr() ? (tipoComida === "almuerzo" ? isPastAlmuerzo : isPastCena) : false;
     if (isDeadline) return;
 
     const p = staff.find(s => s.Id === personalId);
@@ -949,7 +970,7 @@ function JefePanel({
 
     if (is1Racion && isSelecting) {
       const otherMeal = tipoComida === "almuerzo" ? "cena" : "almuerzo";
-      const otherDeadline = otherMeal === "almuerzo" ? isPastAlmuerzo : isPastCena;
+      const otherDeadline = fechaPlanilla === getTodayStr() ? (otherMeal === "almuerzo" ? isPastAlmuerzo : isPastCena) : false;
       const otherValue = current[otherMeal];
 
       if (otherValue) {
@@ -1078,7 +1099,8 @@ function JefePanel({
         body: JSON.stringify({
           orders: ordersToSave,
           solicitadoPorUsuarioId: userId,
-          tipoComida: planillaTab === "almuerzo" ? "Almuerzo" : "Cena"
+          tipoComida: planillaTab === "almuerzo" ? "Almuerzo" : "Cena",
+          fecha: fechaPlanilla
         })
       });
       if (res.ok) {
@@ -1131,8 +1153,9 @@ function JefePanel({
           nombre: emgNombre,
           apellido: "", 
           dni: emgDni,
-          periodoInicio: todayStr,
-          periodoFin: todayStr,
+          fecha: emgFecha || todayStr,
+          periodoInicio: emgFecha || todayStr,
+          periodoFin: emgFecha || todayStr,
           tipoComida: emgComida,
           tipoDieta: emgDieta,
           tipoDietaCena: emgComida === 'Ambos' ? emgDietaCena : undefined,
@@ -1642,8 +1665,35 @@ function JefePanel({
 
       {/* SECCION: PLANILLA PERSONAL */}
       {activeTab === "Planilla" && (
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden transition-colors animate-in fade-in zoom-in-95 duration-300">
-        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30">
+        <div className={`rounded-2xl shadow-sm border overflow-hidden transition-all animate-in fade-in zoom-in-95 duration-300 p-1 ${
+          fechaPlanilla !== getTodayStr() 
+            ? 'bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-400 dark:border-amber-600 shadow-xl' 
+            : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800'
+        }`}>
+        
+        {/* BANNER DESTACADO PARA FECHA FUTURA / ANTICIPADA */}
+        {fechaPlanilla !== getTodayStr() && (
+          <div className="bg-gradient-to-r from-amber-500 to-orange-600 text-white px-6 py-3.5 rounded-xl shadow-md mb-2 flex items-center justify-between animate-in fade-in duration-200">
+            <div className="flex items-center space-x-3">
+              <div className="p-2 bg-white/20 rounded-lg shrink-0">
+                <Zap className="w-6 h-6 text-yellow-200" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-sm uppercase tracking-wide flex items-center gap-2">
+                  ⚡ MODO CARGA ANTICIPADA HABILITADA POR GERENCIA
+                </h4>
+                <p className="text-xs text-amber-100 mt-0.5">
+                  Estás cargando la planilla para la fecha futura <span className="font-extrabold underline">{fechaPlanilla.split('-').reverse().join('/')}</span> ({fechasAnticipadasActivas.find(f=>f.FechaHabilitadaStr===fechaPlanilla)?.Descripcion || 'Fecha Futura Autorizada'}).
+                </p>
+              </div>
+            </div>
+            <span className="hidden sm:inline-block text-[11px] font-extrabold bg-white/20 px-3 py-1 rounded-full uppercase border border-white/30 shrink-0">
+              Carga Anticipada
+            </span>
+          </div>
+        )}
+
+        <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 rounded-t-xl">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
@@ -1651,13 +1701,31 @@ function JefePanel({
               </h2>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Selecciona la dieta deseada para el personal activo.</p>
             </div>
+            
             <div className="flex flex-wrap items-center gap-3">
+              {/* SELECTOR DE FECHA DE TRABAJO */}
+              <div className="flex items-center space-x-1.5 bg-white dark:bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-300 dark:border-gray-700 shadow-sm">
+                <label className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Fecha:</label>
+                <select
+                  value={fechaPlanilla}
+                  onChange={e => setFechaPlanilla(e.target.value)}
+                  className="text-xs font-bold bg-transparent border-none focus:outline-none text-gray-900 dark:text-gray-100 cursor-pointer"
+                >
+                  <option value={getTodayStr()} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">📍 Hoy ({getTodayStr().split('-').reverse().join('/')})</option>
+                  {fechasAnticipadasActivas.map(f => (
+                    <option key={f.Id} value={f.FechaHabilitadaStr} className="bg-amber-100 dark:bg-amber-900 text-amber-900 dark:text-amber-100 font-bold">
+                      ⚡ {f.Descripcion || 'Carga Anticipada'} ({f.FechaHabilitadaStr.split('-').reverse().join('/')})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-xs font-bold px-3 py-1.5 rounded-full border border-blue-200 dark:border-blue-800">
                 Activos: {staff.length}
               </span>
               <button 
                 onClick={handleGuardarPedidos} 
-                disabled={(planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena) || !hasUnsavedChanges} 
+                disabled={(fechaPlanilla === getTodayStr() && (planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena)) || !hasUnsavedChanges} 
                 className="bg-blue-600 hover:bg-blue-700 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-95 flex items-center cursor-pointer"
               >
                 <Save className="w-4 h-4 mr-2" /> Guardar {planillaTab === 'almuerzo' ? 'Almuerzo' : 'Cena'}
@@ -1665,37 +1733,69 @@ function JefePanel({
             </div>
           </div>
           
-          <div className="flex gap-2">
+          <div className="flex gap-2 mt-2">
             <button
               onClick={() => setPlanillaTab("almuerzo")}
-              className={`flex-1 py-2 text-sm font-bold rounded-t-lg transition-colors ${planillaTab === 'almuerzo' ? 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-t border-l border-r border-gray-200 dark:border-gray-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-b border-transparent'}`}
+              className={`flex-1 py-2.5 text-sm font-extrabold rounded-t-xl transition-all flex items-center justify-center gap-2 ${
+                planillaTab === 'almuerzo' 
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-white shadow-md border-t border-l border-r border-amber-600' 
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+              }`}
             >
-              ALMUERZO {isPastAlmuerzo && <span className="text-red-500 font-normal text-[10px] sm:text-xs ml-1 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded">(Fuera de Hora)</span>}
+              <Sun className={`w-4 h-4 ${planillaTab === 'almuerzo' ? 'text-yellow-200' : 'text-amber-500'}`} />
+              <span>ALMUERZO (☀️ DIURNO)</span>
+              {fechaPlanilla === getTodayStr() && isPastAlmuerzo && (
+                <span className="text-red-100 font-normal text-[10px] sm:text-xs ml-1 bg-red-600/40 px-1.5 py-0.5 rounded">(Fuera de Hora)</span>
+              )}
             </button>
             <button
               onClick={() => setPlanillaTab("cena")}
-              className={`flex-1 py-2 text-sm font-bold rounded-t-lg transition-colors ${planillaTab === 'cena' ? 'bg-white dark:bg-gray-900 text-blue-600 dark:text-blue-400 border-t border-l border-r border-gray-200 dark:border-gray-700' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 border-b border-transparent'}`}
+              className={`flex-1 py-2.5 text-sm font-extrabold rounded-t-xl transition-all flex items-center justify-center gap-2 ${
+                planillaTab === 'cena' 
+                  ? 'bg-gradient-to-r from-indigo-700 to-purple-800 text-white shadow-md border-t border-l border-r border-indigo-700' 
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+              }`}
             >
-              CENA {isPastCena && <span className="text-red-500 font-normal text-[10px] sm:text-xs ml-1 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded">(Fuera de Hora)</span>}
+              <Moon className={`w-4 h-4 ${planillaTab === 'cena' ? 'text-indigo-200' : 'text-indigo-500'}`} />
+              <span>CENA (🌙 NOCTURNO)</span>
+              {fechaPlanilla === getTodayStr() && isPastCena && (
+                <span className="text-red-100 font-normal text-[10px] sm:text-xs ml-1 bg-red-600/40 px-1.5 py-0.5 rounded">(Fuera de Hora)</span>
+              )}
             </button>
           </div>
         </div>
         <div className="overflow-auto max-h-[calc(100vh-280px)] min-h-[320px] border border-gray-200 dark:border-gray-800 rounded-xl relative">
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800 border-collapse">
-            <thead className="bg-gray-50 dark:bg-gray-800 sticky top-0 z-20">
+            <thead className={`sticky top-0 z-20 transition-colors ${
+              planillaTab === 'almuerzo' 
+                ? 'bg-amber-100/90 dark:bg-amber-950/80 text-amber-900 dark:text-amber-200' 
+                : 'bg-indigo-900 dark:bg-indigo-950 text-indigo-100'
+            }`}>
               <tr>
-                <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky top-0 left-0 bg-gray-50 dark:bg-gray-800 z-30 border-b border-r border-gray-200 dark:border-gray-800">Personal</th>
+                <th scope="col" className={`px-6 py-4 text-left text-xs font-bold uppercase tracking-wider sticky top-0 left-0 z-30 border-b border-r ${
+                  planillaTab === 'almuerzo'
+                    ? 'bg-amber-100/90 dark:bg-amber-950/80 border-amber-200 dark:border-amber-800'
+                    : 'bg-indigo-900 dark:bg-indigo-950 border-indigo-800'
+                }`}>Personal</th>
                 {dietas.map(d => (
-                  <th key={d} scope="col" className="px-4 py-4 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky top-0 bg-gray-50 dark:bg-gray-800 z-20 border-b border-gray-200 dark:border-gray-800">{d}</th>
+                  <th key={d} scope="col" className={`px-4 py-4 text-center text-xs font-bold uppercase tracking-wider sticky top-0 z-20 border-b ${
+                    planillaTab === 'almuerzo'
+                      ? 'border-amber-200 dark:border-amber-800'
+                      : 'border-indigo-800'
+                  }`}>{d}</th>
                 ))}
-                <th scope="col" className="px-4 py-4 text-center text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider sticky top-0 right-0 bg-gray-50 dark:bg-gray-800 z-30 border-b border-l border-gray-200 dark:border-gray-800">Estado</th>
+                <th scope="col" className={`px-4 py-4 text-center text-xs font-bold uppercase tracking-wider sticky top-0 right-0 z-30 border-b border-l ${
+                  planillaTab === 'almuerzo'
+                    ? 'bg-amber-100/90 dark:bg-amber-950/80 border-amber-200 dark:border-amber-800'
+                    : 'bg-indigo-900 dark:bg-indigo-950 border-indigo-800'
+                }`}>Estado</th>
               </tr>
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800/50">
               {staff.map((p) => {
                 const pSelections = selections[p.Id] || { almuerzo: null, cena: null };
                 const currentSelection = planillaTab === 'almuerzo' ? pSelections.almuerzo : pSelections.cena;
-                const isDisabled = planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena;
+                const isDisabled = fechaPlanilla === getTodayStr() ? (planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena) : false;
                 return (
                   <tr key={p.Id} id={`fila-agente-${p.Id}`} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors scroll-mt-12">
                     <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white dark:bg-gray-900 z-10 border-r border-gray-100 dark:border-gray-800">
@@ -1787,6 +1887,29 @@ function JefePanel({
 
           <form className="flex flex-col gap-6" onSubmit={submitEmergency}>
             
+            {/* SELECTOR DE FECHA DE EMERGENCIA (HOY O FECHA ANTICIPADA) */}
+            <div className="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                Fecha del Pedido de Emergencia
+              </label>
+              <select
+                value={emgFecha}
+                onChange={e => {
+                  const newFecha = e.target.value;
+                  setEmgFecha(newFecha);
+                  fetchStaff(newFecha);
+                }}
+                className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-orange-500 focus:ring-orange-500/50 px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-bold"
+              >
+                <option value={getTodayStr()}>📍 Hoy ({getTodayStr().split('-').reverse().join('/')})</option>
+                {fechasAnticipadasActivas.map(f => (
+                  <option key={f.Id} value={f.FechaHabilitadaStr}>
+                    ⚡ {f.Descripcion || 'Carga Anticipada'} ({f.FechaHabilitadaStr.split('-').reverse().join('/')})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* ROW 1: Tipo de Solicitud */}
             <div className="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
               <label className="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Tipo de Solicitud</label>
@@ -1841,14 +1964,21 @@ function JefePanel({
 
               {/* Selector "A quién reemplaza" para Reemplazo Normal */}
               {emgTipo === 'reemplazo' && (() => {
+                const targetFecha = emgFecha || getTodayStr();
                 const idsYaReemplazados = new Set(
                   historialEmergencias
-                    .filter(h => h.EmergenciaReemplazaId !== null && h.Estado !== 'Rechazado')
+                    .filter(h => {
+                      if (h.EmergenciaReemplazaId === null || h.Estado === 'Rechazado') return false;
+                      const hFechaStr = h.FechaPedido ? h.FechaPedido.split('T')[0] : '';
+                      if (hFechaStr !== targetFecha) return false;
+                      if (emgComida !== 'Ambos' && h.TipoComida !== 'Ambos' && h.TipoComida !== emgComida) return false;
+                      return true;
+                    })
                     .map(h => h.EmergenciaReemplazaId)
                 );
 
                 const esInhabilitado = (p: any) => Boolean(
-                  p.bajaProvisoriaHoy || p.bajaDefinitivaHoy || p.BajaProvisoriaFecha || p.bajaMotivo || p.BajaMotivo || p.Activo === false
+                  p.bajaProvisoriaHoy || p.bajaDefinitivaHoy || p.esInhabilitadoParaReemplazo || p.BajaProvisoriaFecha || p.BajaMotivo || p.bajaMotivo || p.Activo === false
                 );
 
                 const disponibles = staff.filter(p => esInhabilitado(p) && !idsYaReemplazados.has(p.Id));
@@ -1866,7 +1996,7 @@ function JefePanel({
                     />
                     {disponibles.length === 0 && (
                       <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-semibold">
-                        * No hay agentes inhabilitados ni con licencia pendientes de reemplazo en este servicio.
+                        * No hay agentes inhabilitados ni con licencia pendientes de reemplazo en este servicio para la fecha seleccionada.
                       </p>
                     )}
                   </div>
@@ -2632,6 +2762,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
 
   // Formulario de emergencia para Gerente / Encargado de Nutricion
   const [gerEmgServicioId, setGerEmgServicioId] = useState<string>("");
+  const [gerEmgFecha, setGerEmgFecha] = useState<string>(getTodayStr());
   const [gerEmgNombre, setGerEmgNombre] = useState("");
   const [gerEmgDni, setGerEmgDni] = useState("");
   const [gerEmgComida, setGerEmgComida] = useState("Almuerzo");
@@ -2643,6 +2774,81 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
   const [gerEmgStaffServicio, setGerEmgStaffServicio] = useState<any[]>([]);
   const [emgOrigenFiltro, setEmgOrigenFiltro] = useState<"todos" | "nutricion" | "jefes">("todos");
 
+  // Fechas Anticipadas Habilitadas
+  const [fechasAnticipadas, setFechasAnticipadas] = useState<any[]>([]);
+  const [nuevaFechaAnticipada, setNuevaFechaAnticipada] = useState("");
+  const [descripcionAnticipada, setDescripcionAnticipada] = useState("");
+
+  const fetchAdvanceDates = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/advance-dates`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        setFechasAnticipadas(await res.json());
+      }
+    } catch (e) {
+      console.error("Error al obtener fechas anticipadas:", e);
+    }
+  };
+
+  const getNextSaturdayStr = () => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = (6 - day + 7) % 7 || 7;
+    d.setDate(d.getDate() + diff);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const getNextSundayStr = () => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = (7 - day) % 7 || 7;
+    d.setDate(d.getDate() + diff);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  const habilitarFechaAnticipada = async (fechaStr: string, descStr: string) => {
+    if (!fechaStr) return;
+    try {
+      const res = await fetch(`${API_URL}/api/advance-dates`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ fecha: fechaStr, descripcion: descStr })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        Swal.fire({ title: "Habilitado", text: `La fecha ${fechaStr.split('-').reverse().join('/')} fue autorizada para carga anticipada.`, icon: "success", timer: 2000, showConfirmButton: false, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        setNuevaFechaAnticipada("");
+        setDescripcionAnticipada("");
+        fetchAdvanceDates();
+      } else {
+        Swal.fire({ title: "Atención", text: data.error || "Error al habilitar fecha", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const deshabilitarFechaAnticipada = async (id: number) => {
+    try {
+      const res = await fetch(`${API_URL}/api/advance-dates/${id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        Swal.fire({ title: "Deshabilitado", text: "La fecha fue removida de la carga anticipada.", icon: "success", timer: 1500, showConfirmButton: false, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        fetchAdvanceDates();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchAdvanceDates();
+  }, [token]);
+
   useEffect(() => {
     if (servicios.length > 0 && !gerEmgServicioId) {
       setGerEmgServicioId(String(servicios[0].Id));
@@ -2651,7 +2857,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
 
   useEffect(() => {
     if (gerEmgServicioId) {
-      fetch(`${API_URL}/api/staff/active?servicioId=${gerEmgServicioId}`, {
+      fetch(`${API_URL}/api/staff/active?servicioId=${gerEmgServicioId}&fecha=${gerEmgFecha}`, {
         headers: { Authorization: `Bearer ${token}` }
       })
       .then(r => r.ok ? r.json() : [])
@@ -2660,7 +2866,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
     } else {
       setGerEmgStaffServicio([]);
     }
-  }, [gerEmgServicioId, token]);
+  }, [gerEmgServicioId, gerEmgFecha, token]);
 
   const submitGerenteEmergency = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2673,7 +2879,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
       return;
     }
     try {
-      const todayStr = getTodayStr();
+      const targetFecha = gerEmgFecha || getTodayStr();
       const justifCompleta = gerEmgJustificacion
         ? (gerEmgJustificacion.includes('[EMERGENCIA NUTRICIÓN / GERENCIA]') ? gerEmgJustificacion : `[EMERGENCIA NUTRICIÓN / GERENCIA] ${gerEmgJustificacion}`)
         : '[EMERGENCIA NUTRICIÓN / GERENCIA] Carga de emergencia por Encargado de Nutrición / Gerencia';
@@ -2689,8 +2895,9 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
           nombre: gerEmgNombre,
           apellido: "", 
           dni: gerEmgDni,
-          periodoInicio: todayStr,
-          periodoFin: todayStr,
+          fecha: targetFecha,
+          periodoInicio: targetFecha,
+          periodoFin: targetFecha,
           tipoComida: gerEmgComida,
           tipoDieta: gerEmgDieta,
           tipoDietaCena: gerEmgComida === 'Ambos' ? gerEmgDietaCena : undefined,
@@ -2698,7 +2905,6 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
           reemplazaId: (gerEmgTipo === "reemplazo" || gerEmgTipo === "reemplazo_excepcional") ? gerEmgReemplazaId : undefined,
           tipoSolicitud: gerEmgTipo,
           esExcepcional: gerEmgTipo === "reemplazo_excepcional",
-          solicitadoPorUsuarioId: undefined,
           autoAprobar: true,
           esNutricionGerencia: true,
           servicioId: Number(gerEmgServicioId)
@@ -3128,6 +3334,15 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
     if (r.Personal?.Servicio?.Nombre) return r.Personal.Servicio.Nombre;
     if (r.PersonalReemplazado?.Servicio?.Nombre) return r.PersonalReemplazado.Servicio.Nombre;
     if (r.SolicitadoPor?.Servicio?.Nombre) return r.SolicitadoPor.Servicio.Nombre;
+    if (r.JustificacionSolicitud && r.JustificacionSolicitud.includes('[SERVICIO:')) {
+      const match = r.JustificacionSolicitud.match(/\[SERVICIO:(.*?)\]/);
+      if (match && match[1]) return match[1];
+    }
+    const sId = r.servicioId || r.ServicioId;
+    if (sId) {
+      const sMatch = servicios.find((s: any) => s.Id === Number(sId));
+      if (sMatch) return sMatch.Nombre;
+    }
     return "Sin Servicio";
   };
 
@@ -3896,7 +4111,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
   const tabs = [
     { id: "Bandeja", label: "Emergencias", icon: <AlertTriangle className="w-4 h-4 mr-2" /> },
     { id: "CrearEmergencia", label: "Pedido de Emergencia", icon: <PlusCircle className="w-4 h-4 mr-2" /> },
-    { id: "Hospital", label: "Efectores", icon: <Building className="w-4 h-4 mr-2" /> },
+    { id: "Hospital", label: "Servicios", icon: <Building className="w-4 h-4 mr-2" /> },
     { id: "Reportes", label: "Reportes", icon: <FileText className="w-4 h-4 mr-2" /> },
     { id: "Auditoria", label: "Auditoría", icon: <Shield className="w-4 h-4 mr-2" /> },
     { id: "Configuracion", label: "Configuración", icon: <Settings className="w-4 h-4 mr-2" /> }
@@ -4081,7 +4296,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                           {e.JustificacionSolicitud && (
                             <div className="mt-3 bg-gray-50 dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 text-sm italic text-gray-700 dark:text-gray-300 relative">
                               <div className="absolute top-0 left-0 w-1 h-full bg-orange-400 rounded-l-xl"></div>
-                              "{e.JustificacionSolicitud}"
+                              "{e.JustificacionSolicitud.replace(/\[SERVICIO:.*?\]/g, '').trim()}"
                             </div>
                           )}
                           {e.JustificacionResolucion && (
@@ -4189,6 +4404,25 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                 accentColor="purple"
                 required
               />
+            </div>
+
+            {/* SELECTOR DE FECHA DE EMERGENCIA (HOY O FECHA ANTICIPADA) */}
+            <div className="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                Fecha del Pedido de Emergencia
+              </label>
+              <select
+                value={gerEmgFecha}
+                onChange={e => setGerEmgFecha(e.target.value)}
+                className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-purple-500 focus:ring-purple-500/50 px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-bold"
+              >
+                <option value={getTodayStr()}>📍 Hoy ({getTodayStr().split('-').reverse().join('/')})</option>
+                {fechasAnticipadas.map(f => (
+                  <option key={f.Id} value={f.FechaHabilitadaStr}>
+                    ⚡ {f.Descripcion || 'Carga Anticipada'} ({f.FechaHabilitadaStr.split('-').reverse().join('/')})
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* TIPO DE SOLICITUD */}
@@ -4572,7 +4806,6 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
               )}
             </div>
 
-
           </div>
         </div>
       )}
@@ -4761,6 +4994,100 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                       </label>
                     );
                   })}
+                </div>
+              </div>
+
+              {/* SECCIÓN HABILITACIÓN CARGA ANTICIPADA (SÁBADOS, DOMINGOS Y FERIADOS) */}
+              <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6">
+                <div className="mb-4">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                    <Zap className="w-5 h-5 mr-2 text-yellow-500 animate-pulse" /> Habilitación de Carga Anticipada (Fines de Semana y Feriados)
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Autoriza fechas futuras para que los Jefes de Servicio puedan cargar sus planillas de comida con antelación.
+                  </p>
+                </div>
+
+                {/* Botones de acción rápida */}
+                <div className="flex flex-wrap gap-3 mb-6 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20 p-4 rounded-xl border border-amber-200 dark:border-amber-800/50">
+                  <button
+                    type="button"
+                    onClick={() => habilitarFechaAnticipada(getNextSaturdayStr(), "Próximo Sábado")}
+                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-sm transition-all flex items-center cursor-pointer"
+                  >
+                    <PlusCircle className="w-4 h-4 mr-1.5" /> Habilitar Próximo Sábado ({getNextSaturdayStr().split('-').reverse().join('/')})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => habilitarFechaAnticipada(getNextSundayStr(), "Próximo Domingo")}
+                    className="bg-orange-600 hover:bg-orange-700 text-white font-bold text-xs px-4 py-2.5 rounded-lg shadow-sm transition-all flex items-center cursor-pointer"
+                  >
+                    <PlusCircle className="w-4 h-4 mr-1.5" /> Habilitar Próximo Domingo ({getNextSundayStr().split('-').reverse().join('/')})
+                  </button>
+
+                  {/* Picker personalizado de Feriados */}
+                  <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto lg:ml-auto">
+                    <input
+                      type="date"
+                      value={nuevaFechaAnticipada}
+                      onChange={e => setNuevaFechaAnticipada(e.target.value)}
+                      className="text-xs border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Ej: Feriado Patrio"
+                      value={descripcionAnticipada}
+                      onChange={e => setDescripcionAnticipada(e.target.value)}
+                      className="text-xs border-gray-300 dark:border-gray-700 rounded-lg px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-40"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!nuevaFechaAnticipada) {
+                          Swal.fire({ title: "Atención", text: "Por favor seleccione una fecha.", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+                          return;
+                        }
+                        habilitarFechaAnticipada(nuevaFechaAnticipada, descripcionAnticipada || "Feriado Autorizado");
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-3.5 py-2 rounded-lg shadow-sm transition-all flex items-center cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4 mr-1" /> Habilitar Feriado
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista de Fechas Autorizadas */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider">Fechas Autorizadas Vigentes:</h4>
+                  {fechasAnticipadas.length === 0 ? (
+                    <div className="p-4 text-xs text-center text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800/40 rounded-xl border border-gray-100 dark:border-gray-800 italic">
+                      No hay fechas anticipadas autorizadas actualmente. Usa los botones superiores para autorizar un fin de semana o feriado.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {fechasAnticipadas.map((f: any) => (
+                        <div key={f.Id} className="flex items-center justify-between bg-amber-50/70 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200 dark:border-amber-800/60 shadow-sm">
+                          <div className="flex items-center space-x-3">
+                            <div className="p-2 bg-amber-100 dark:bg-amber-900/50 rounded-lg text-amber-800 dark:text-amber-300 font-bold text-sm">
+                              ⚡ {f.FechaHabilitadaStr.split('-').reverse().join('/')}
+                            </div>
+                            <div>
+                              <div className="text-xs font-bold text-gray-900 dark:text-gray-100">{f.Descripcion || 'Carga Anticipada'}</div>
+                              <div className="text-[10px] text-gray-500 dark:text-gray-400">Autorizado por Gerencia</div>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => deshabilitarFechaAnticipada(f.Id)}
+                            className="text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 p-1.5 rounded-lg transition-colors cursor-pointer"
+                            title="Revocar / Deshabilitar esta fecha"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 
