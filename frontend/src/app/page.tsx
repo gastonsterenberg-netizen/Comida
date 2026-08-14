@@ -7,7 +7,7 @@ import { useTheme } from "next-themes";
 import Swal from 'sweetalert2';
 import { 
   LogOut, Sun, Moon, AlertTriangle, FileText, Settings, 
-  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, ChevronUp, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2, Shield, RefreshCw, RotateCcw
+  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, ChevronUp, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2, Shield, RefreshCw, RotateCcw, PlusCircle, Zap, Eye, EyeOff
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -228,6 +228,7 @@ export default function Home() {
 function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: number, hospitalName: string | null, servicioName: string | null, username: string) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
@@ -377,13 +378,21 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
                   <Lock className="h-5 w-5 text-gray-400" />
                 </div>
                 <input 
-                  type="password" 
+                  type={showPassword ? "text" : "password"} 
                   value={password} 
                   onChange={e => setPassword(e.target.value)} 
-                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
+                  className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
                   placeholder="••••••••"
                   required 
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors focus:outline-none cursor-pointer"
+                  title={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                >
+                  {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
               </div>
             </div>
             <button 
@@ -587,6 +596,9 @@ function AgentSearchableSelect({
             filteredOptions.map((item) => {
               const isSelected = String(item.Id) === String(selectedId);
               const nombre = item.NombreCompleto || `${item.Nombre || ''} ${item.Apellido || ''}`.trim();
+              const isLicencia = Boolean(item.bajaProvisoriaHoy || item.bajaDefinitivaHoy || item.BajaProvisoriaFecha || item.bajaMotivo || item.BajaMotivo);
+              const motivoText = item.bajaMotivo || item.BajaMotivo || (item.bajaProvisoriaHoy ? "Licencia / Inhabilitado" : null);
+
               return (
                 <div
                   key={item.Id}
@@ -597,8 +609,15 @@ function AgentSearchableSelect({
                   }}
                   className={`p-3 text-left cursor-pointer transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/40 ${isSelected ? bgSelected : ''}`}
                 >
-                  <div className="font-bold text-sm text-gray-900 dark:text-gray-100">
-                    {nombre}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="font-bold text-sm text-gray-900 dark:text-gray-100">
+                      {nombre}
+                    </div>
+                    {isLicencia && (
+                      <span className="text-[10px] font-bold uppercase bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded border border-amber-300 dark:border-amber-700 shrink-0">
+                        ⚠️ Licencia{motivoText ? `: ${motivoText}` : ''}
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                     DNI: <span className="font-semibold text-gray-700 dark:text-gray-300">{item.DNI}</span>
@@ -1180,11 +1199,11 @@ function JefePanel({
 
           <div>
             <label class="block text-xs font-bold mb-1">Motivo</label>
-            <select id="swal-motivo" class="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-2 rounded shadow-sm">
-              <option value="Licencia">Licencia</option>
-              <option value="Enfermedad">Enfermedad</option>
-              <option value="Maternidad">Maternidad</option>
-              <option value="Enfermedad Familiar">Enfermedad Familiar</option>
+            <select id="swal-motivo" class="w-full border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-2 rounded shadow-sm" style="background-color: ${theme === 'dark' ? '#1f2937' : '#ffffff'}; color: ${theme === 'dark' ? '#ffffff' : '#111827'};">
+              <option value="Licencia" style="background-color: ${theme === 'dark' ? '#1f2937' : '#ffffff'}; color: ${theme === 'dark' ? '#ffffff' : '#111827'};">Licencia</option>
+              <option value="Enfermedad" style="background-color: ${theme === 'dark' ? '#1f2937' : '#ffffff'}; color: ${theme === 'dark' ? '#ffffff' : '#111827'};">Enfermedad</option>
+              <option value="Maternidad" style="background-color: ${theme === 'dark' ? '#1f2937' : '#ffffff'}; color: ${theme === 'dark' ? '#ffffff' : '#111827'};">Maternidad</option>
+              <option value="Enfermedad Familiar" style="background-color: ${theme === 'dark' ? '#1f2937' : '#ffffff'}; color: ${theme === 'dark' ? '#ffffff' : '#111827'};">Enfermedad Familiar</option>
             </select>
           </div>
           
@@ -1827,7 +1846,12 @@ function JefePanel({
                     .filter(h => h.EmergenciaReemplazaId !== null && h.Estado !== 'Rechazado')
                     .map(h => h.EmergenciaReemplazaId)
                 );
-                const disponibles = staff.filter(p => (p.bajaProvisoriaHoy || p.bajaDefinitivaHoy) && !idsYaReemplazados.has(p.Id));
+
+                const esInhabilitado = (p: any) => Boolean(
+                  p.bajaProvisoriaHoy || p.bajaDefinitivaHoy || p.BajaProvisoriaFecha || p.bajaMotivo || p.BajaMotivo || p.Activo === false
+                );
+
+                const disponibles = staff.filter(p => esInhabilitado(p) && !idsYaReemplazados.has(p.Id));
 
                 return (
                   <div className="mt-3">
@@ -1835,14 +1859,14 @@ function JefePanel({
                       options={disponibles}
                       selectedId={emgReemplazaId}
                       onSelect={setEmgReemplazaId}
-                      label="Seleccionar a quién reemplaza (Agente de licencia/baja):"
+                      label="Seleccionar a quién reemplaza (Únicamente agentes inhabilitados / con licencia):"
                       placeholder="Buscar por nombre o DNI..."
                       accentColor="orange"
                       required
                     />
                     {disponibles.length === 0 && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 font-semibold">
-                        * Todos los agentes de licencia/baja ya poseen un reemplazo registrado.
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-semibold">
+                        * No hay agentes inhabilitados ni con licencia pendientes de reemplazo en este servicio.
                       </p>
                     )}
                   </div>
@@ -2428,6 +2452,125 @@ function JefePanel({
   );
 }
 
+interface ServiceSearchableSelectProps {
+  options: any[];
+  selectedId: string;
+  onSelect: (id: string) => void;
+  label?: string;
+  placeholder?: string;
+  accentColor?: string;
+  required?: boolean;
+}
+
+function ServiceSearchableSelect({
+  options,
+  selectedId,
+  onSelect,
+  label = "Seleccionar Servicio:",
+  placeholder = "Buscar servicio por nombre...",
+  accentColor = "purple",
+  required = false
+}: ServiceSearchableSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption = options.find(o => String(o.Id) === String(selectedId));
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const filteredOptions = options.filter(o =>
+    (o.Nombre || "").toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div ref={containerRef} className="relative w-full">
+      {label && (
+        <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
+          {label} {required && <span className="text-red-500">*</span>}
+        </label>
+      )}
+      
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl border cursor-pointer bg-white dark:bg-gray-800 transition-all ${
+          isOpen
+            ? `border-purple-500 ring-2 ring-purple-500/30`
+            : 'border-gray-300 dark:border-gray-700 hover:border-gray-400'
+        }`}
+      >
+        <span className={`text-sm font-semibold ${selectedOption ? 'text-gray-900 dark:text-gray-100' : 'text-gray-400'}`}>
+          {selectedOption ? selectedOption.Nombre : "-- Seleccionar Servicio --"}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${isOpen ? 'transform rotate-180' : ''}`} />
+      </div>
+
+      {isOpen && (
+        <div className="absolute z-50 left-0 right-0 mt-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl max-h-60 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-150">
+          <div className="p-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/80 sticky top-0 z-10 flex items-center">
+            <Search className="w-4 h-4 text-gray-400 mr-2 ml-1" />
+            <input
+              type="text"
+              autoFocus
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              placeholder={placeholder}
+              className="w-full text-xs bg-transparent border-none focus:outline-none text-gray-900 dark:text-gray-100 placeholder-gray-400"
+            />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="overflow-y-auto flex-1 divide-y divide-gray-100 dark:divide-gray-700/50">
+            {filteredOptions.length === 0 ? (
+              <div className="p-3 text-xs text-center text-gray-500 dark:text-gray-400">
+                No se encontraron servicios que coincidan.
+              </div>
+            ) : (
+              filteredOptions.map(s => {
+                const isSelected = String(s.Id) === String(selectedId);
+                return (
+                  <div
+                    key={s.Id}
+                    onClick={() => {
+                      onSelect(String(s.Id));
+                      setIsOpen(false);
+                      setSearchTerm("");
+                    }}
+                    className={`px-3.5 py-2.5 text-xs font-semibold cursor-pointer flex items-center justify-between transition-colors ${
+                      isSelected
+                        ? 'bg-purple-50 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 font-bold'
+                        : 'hover:bg-gray-100 dark:hover:bg-gray-700/60 text-gray-800 dark:text-gray-200'
+                    }`}
+                  >
+                    <span>{s.Nombre}</span>
+                    {isSelected && <Check className="w-4 h-4 text-purple-600 dark:text-purple-400" />}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = false, isPastAuthCena = false, dietasHabilitadasProp, onConfigUpdated }: { token: string, hospitalName?: string | null, username?: string | null, isPastAuthAlmuerzo?: boolean, isPastAuthCena?: boolean, dietasHabilitadasProp?: string[], onConfigUpdated?: (almuerzo: string, cena: string, dietas?: string[]) => void }) {
   const [emergencias, setEmergencias] = useState<any[]>([]);
   const [emergenciasAprobadas, setEmergenciasAprobadas] = useState<any[]>([]);
@@ -2486,6 +2629,100 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
   const [configAuthCena, setConfigAuthCena] = useState("18:00");
   const [dietasConfig, setDietasConfig] = useState<string[]>(dietasHabilitadasProp || DIETAS_DISPONIBLES);
   const { theme } = useTheme();
+
+  // Formulario de emergencia para Gerente / Encargado de Nutricion
+  const [gerEmgServicioId, setGerEmgServicioId] = useState<string>("");
+  const [gerEmgNombre, setGerEmgNombre] = useState("");
+  const [gerEmgDni, setGerEmgDni] = useState("");
+  const [gerEmgComida, setGerEmgComida] = useState("Almuerzo");
+  const [gerEmgDieta, setGerEmgDieta] = useState(dietasHabilitadasProp?.[0] || DIETAS_DISPONIBLES[0] || "Normal");
+  const [gerEmgDietaCena, setGerEmgDietaCena] = useState(dietasHabilitadasProp?.[0] || DIETAS_DISPONIBLES[0] || "Normal");
+  const [gerEmgTipo, setGerEmgTipo] = useState("extra");
+  const [gerEmgReemplazaId, setGerEmgReemplazaId] = useState("");
+  const [gerEmgJustificacion, setGerEmgJustificacion] = useState("Carga de emergencia por Encargado de Nutrición / Gerencia");
+  const [gerEmgStaffServicio, setGerEmgStaffServicio] = useState<any[]>([]);
+  const [emgOrigenFiltro, setEmgOrigenFiltro] = useState<"todos" | "nutricion" | "jefes">("todos");
+
+  useEffect(() => {
+    if (servicios.length > 0 && !gerEmgServicioId) {
+      setGerEmgServicioId(String(servicios[0].Id));
+    }
+  }, [servicios]);
+
+  useEffect(() => {
+    if (gerEmgServicioId) {
+      fetch(`${API_URL}/api/staff/active?servicioId=${gerEmgServicioId}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setGerEmgStaffServicio(data))
+      .catch(console.error);
+    } else {
+      setGerEmgStaffServicio([]);
+    }
+  }, [gerEmgServicioId, token]);
+
+  const submitGerenteEmergency = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (gerEmgTipo === "extra" && (!gerEmgNombre || !gerEmgDni)) {
+      Swal.fire({ title: "Atención", text: "Por favor complete el nombre y DNI del agente.", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+    if ((gerEmgTipo === "reemplazo" || gerEmgTipo === "reemplazo_excepcional") && !gerEmgReemplazaId) {
+      Swal.fire({ title: "Atención", text: "Por favor seleccione el agente a reemplazar.", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+    try {
+      const todayStr = getTodayStr();
+      const justifCompleta = gerEmgJustificacion
+        ? (gerEmgJustificacion.includes('[EMERGENCIA NUTRICIÓN / GERENCIA]') ? gerEmgJustificacion : `[EMERGENCIA NUTRICIÓN / GERENCIA] ${gerEmgJustificacion}`)
+        : '[EMERGENCIA NUTRICIÓN / GERENCIA] Carga de emergencia por Encargado de Nutrición / Gerencia';
+
+      const res = await fetch(`${API_URL}/api/emergencies`, {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}` 
+        },
+        body: JSON.stringify({
+          nombreCompleto: gerEmgNombre,
+          nombre: gerEmgNombre,
+          apellido: "", 
+          dni: gerEmgDni,
+          periodoInicio: todayStr,
+          periodoFin: todayStr,
+          tipoComida: gerEmgComida,
+          tipoDieta: gerEmgDieta,
+          tipoDietaCena: gerEmgComida === 'Ambos' ? gerEmgDietaCena : undefined,
+          justificacion: justifCompleta,
+          reemplazaId: (gerEmgTipo === "reemplazo" || gerEmgTipo === "reemplazo_excepcional") ? gerEmgReemplazaId : undefined,
+          tipoSolicitud: gerEmgTipo,
+          esExcepcional: gerEmgTipo === "reemplazo_excepcional",
+          solicitadoPorUsuarioId: undefined,
+          autoAprobar: true,
+          esNutricionGerencia: true,
+          servicioId: Number(gerEmgServicioId)
+        })
+      });
+      if (res.ok) {
+        Swal.fire({ 
+          title: "Éxito (Auto-autorizada)", 
+          text: "La solicitud de emergencia de Nutrición/Gerencia fue registrada y autorizada automáticamente.", 
+          icon: "success", 
+          background: theme === 'dark' ? '#1f2937' : '#fff', 
+          color: theme === 'dark' ? '#fff' : '#000' 
+        });
+        setGerEmgNombre(""); setGerEmgDni(""); setGerEmgReemplazaId("");
+        fetchEmergencias();
+        fetchEmergenciasAprobadas();
+      } else {
+        const data = await res.json();
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    } catch (e) {
+      Swal.fire({ title: "Error", text: "Error de red", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
 
   const toggleDietaConfig = (dietaNombre: string) => {
     if (dietasConfig.includes(dietaNombre)) {
@@ -3341,9 +3578,13 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
 
     // Si hay servicios disponibles, pedir confirmación/selección al Gerente
     if (serviciosDisponibles.length > 0) {
+      const swalBg = theme === 'dark' ? '#1f2937' : '#ffffff';
+      const swalText = theme === 'dark' ? '#ffffff' : '#111827';
+      const swalBorder = theme === 'dark' ? '#374151' : '#d1d5db';
+
       const optionsHtml = `
-        <option value="TODOS">-- Todos los Servicios (${serviciosDisponibles.length}) --</option>
-        ${serviciosDisponibles.map(s => `<option value="${s}">${s}</option>`).join('')}
+        <option value="TODOS" style="background-color: ${swalBg}; color: ${swalText};">-- Todos los Servicios (${serviciosDisponibles.length}) --</option>
+        ${serviciosDisponibles.map(s => `<option value="${s}" style="background-color: ${swalBg}; color: ${swalText};">${s}</option>`).join('')}
       `;
 
       const { value: sel } = await Swal.fire({
@@ -3352,7 +3593,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
         html: `
           <div style="margin-top: 15px; text-align: left;">
             <label style="display: block; font-size: 12px; font-weight: bold; margin-bottom: 6px; color: ${theme === 'dark' ? '#d1d5db' : '#374151'};">Servicio / Área:</label>
-            <select id="swal-servicio-voucher" class="swal2-input" style="width: 100%; margin: 0; font-size: 14px;">
+            <select id="swal-servicio-voucher" class="swal2-input" style="width: 100%; margin: 0; font-size: 14px; background-color: ${swalBg}; color: ${swalText}; border: 1px solid ${swalBorder}; border-radius: 8px;">
               ${optionsHtml}
             </select>
           </div>
@@ -3361,8 +3602,8 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
         confirmButtonText: "Imprimir Vouchers",
         cancelButtonText: "Cancelar",
         confirmButtonColor: "#3b82f6",
-        background: theme === 'dark' ? '#1f2937' : '#fff',
-        color: theme === 'dark' ? '#fff' : '#000',
+        background: swalBg,
+        color: swalText,
         preConfirm: () => {
           return (document.getElementById('swal-servicio-voucher') as HTMLSelectElement).value;
         }
@@ -3654,6 +3895,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
 
   const tabs = [
     { id: "Bandeja", label: "Emergencias", icon: <AlertTriangle className="w-4 h-4 mr-2" /> },
+    { id: "CrearEmergencia", label: "Pedido de Emergencia", icon: <PlusCircle className="w-4 h-4 mr-2" /> },
     { id: "Hospital", label: "Efectores", icon: <Building className="w-4 h-4 mr-2" /> },
     { id: "Reportes", label: "Reportes", icon: <FileText className="w-4 h-4 mr-2" /> },
     { id: "Auditoria", label: "Auditoría", icon: <Shield className="w-4 h-4 mr-2" /> },
@@ -3699,9 +3941,16 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
           return configAuthAlmuerzo;
         };
 
-        const listToDisplay = 
+        const rawListToDisplay = 
           emgSubTab === "pendientes" ? emergencias :
           emgSubTab === "aprobadas" ? emergenciasAprobadas : emergenciasRechazadas;
+
+        const listToDisplay = rawListToDisplay.filter(e => {
+          const isNutricion = e.JustificacionSolicitud?.includes('[EMERGENCIA NUTRICIÓN / GERENCIA]');
+          if (emgOrigenFiltro === 'nutricion') return isNutricion;
+          if (emgOrigenFiltro === 'jefes') return !isNutricion;
+          return true;
+        });
 
         return (
           <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
@@ -3718,42 +3967,51 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                 </p>
               </div>
               
-              <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl gap-1">
-                <button
-                  onClick={() => setEmgSubTab("pendientes")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center cursor-pointer ${
-                    emgSubTab === "pendientes" 
-                      ? 'bg-white dark:bg-gray-900 text-indigo-700 dark:text-indigo-300 shadow-sm' 
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
-                  }`}
-                >
-                  <AlertTriangle className="w-3.5 h-3.5 mr-1 text-orange-500" />
-                  Pendientes ({emergencias.length})
-                </button>
+              <div className="flex flex-wrap gap-2 items-center">
+                {/* Subfiltro Origen Nutricion / Jefes */}
+                <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl gap-1">
+                  <button onClick={() => setEmgOrigenFiltro('todos')} className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${emgOrigenFiltro === 'todos' ? 'bg-white dark:bg-gray-900 text-gray-900 dark:text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'}`}>Todas</button>
+                  <button onClick={() => setEmgOrigenFiltro('nutricion')} className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${emgOrigenFiltro === 'nutricion' ? 'bg-purple-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'}`}>⚡ Nutrición/Gerencia</button>
+                  <button onClick={() => setEmgOrigenFiltro('jefes')} className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all ${emgOrigenFiltro === 'jefes' ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'}`}>👤 Jefes de Servicio</button>
+                </div>
 
-                <button
-                  onClick={() => setEmgSubTab("aprobadas")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center cursor-pointer ${
-                    emgSubTab === "aprobadas" 
-                      ? 'bg-white dark:bg-gray-900 text-green-700 dark:text-green-300 shadow-sm' 
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
-                  }`}
-                >
-                  <CheckCircle className="w-3.5 h-3.5 mr-1 text-green-500" />
-                  Aprobadas ({emergenciasAprobadas.length})
-                </button>
+                <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl gap-1">
+                  <button
+                    onClick={() => setEmgSubTab("pendientes")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center cursor-pointer ${
+                      emgSubTab === "pendientes" 
+                        ? 'bg-white dark:bg-gray-900 text-indigo-700 dark:text-indigo-300 shadow-sm' 
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                    }`}
+                  >
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1 text-orange-500" />
+                    Pendientes ({emergencias.length})
+                  </button>
 
-                <button
-                  onClick={() => setEmgSubTab("rechazadas")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center cursor-pointer ${
-                    emgSubTab === "rechazadas" 
-                      ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow-sm' 
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
-                  }`}
-                >
-                  <X className="w-3.5 h-3.5 mr-1 text-red-500" />
-                  Rechazadas ({emergenciasRechazadas.length})
-                </button>
+                  <button
+                    onClick={() => setEmgSubTab("aprobadas")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center cursor-pointer ${
+                      emgSubTab === "aprobadas" 
+                        ? 'bg-white dark:bg-gray-900 text-green-700 dark:text-green-300 shadow-sm' 
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                    }`}
+                  >
+                    <CheckCircle className="w-3.5 h-3.5 mr-1 text-green-500" />
+                    Aprobadas ({emergenciasAprobadas.length})
+                  </button>
+
+                  <button
+                    onClick={() => setEmgSubTab("rechazadas")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center cursor-pointer ${
+                      emgSubTab === "rechazadas" 
+                        ? 'bg-white dark:bg-gray-900 text-red-700 dark:text-red-300 shadow-sm' 
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                    }`}
+                  >
+                    <X className="w-3.5 h-3.5 mr-1 text-red-500" />
+                    Rechazadas ({emergenciasRechazadas.length})
+                  </button>
+                </div>
               </div>
             </div>
             
@@ -3770,6 +4028,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
             ) : (
               <div className="divide-y divide-gray-200 dark:divide-gray-800">
                 {listToDisplay.map(e => {
+                  const isNutricion = e.JustificacionSolicitud?.includes('[EMERGENCIA NUTRICIÓN / GERENCIA]');
                   const nombreAgente = e.EmergenciaNombreCompleto
                     || e.Personal?.NombreCompleto
                     || `${e.EmergenciaNombre || ''} ${e.EmergenciaApellido || ''}`.trim()
@@ -3786,7 +4045,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                   const limitHora = getLimitHora(e);
 
                   return (
-                    <div key={e.Id} className="p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                    <div key={e.Id} className={`p-6 transition-colors ${isNutricion ? 'bg-purple-50/40 dark:bg-purple-950/20 hover:bg-purple-50/70 dark:hover:bg-purple-950/30' : 'hover:bg-gray-50 dark:hover:bg-gray-800/50'}`}>
                       <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-6">
                         <div className="flex-1">
                           <div className="flex items-center space-x-3 mb-2 flex-wrap gap-y-1">
@@ -3801,6 +4060,11 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                               <Utensils className="w-3.5 h-3.5 mr-1 text-blue-600 dark:text-blue-400" />
                               {getServicioNombre(e)}
                             </span>
+                            {isNutricion && (
+                              <span className="bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300 text-xs font-bold px-2.5 py-1 rounded-md border border-purple-300 dark:border-purple-700 flex items-center">
+                                ⚡ Nutrición / Gerencia (Auto-aprobada)
+                              </span>
+                            )}
                             <span className="text-xs text-gray-500 font-semibold">
                               Fecha: {fechaPedidoStr}
                             </span>
@@ -3887,6 +4151,230 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
           </div>
         );
       })()}
+
+      {/* CREAR EMERGENCIA CONTENT (GERENCIA / ENCARGADO DE NUTRICIÓN) */}
+      {activeTab === "CrearEmergencia" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-purple-200 dark:border-purple-900/40 overflow-hidden animate-in fade-in zoom-in-95 duration-300 p-6 flex flex-col gap-6">
+          <div className="border-b border-gray-200 dark:border-gray-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                <PlusCircle className="w-6 h-6 mr-2.5 text-purple-600 dark:text-purple-400" /> Cargar Pedido de Emergencia (Nutrición / Gerencia)
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Carga directa de emergencias para cualquier servicio del efector (fines de semana, feriados o imprevistos de guardia).</p>
+            </div>
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-extrabold bg-purple-100 dark:bg-purple-900/50 text-purple-800 dark:text-purple-300 border border-purple-300 dark:border-purple-700 shrink-0">
+              ⚡ Auto-Autorización Automática
+            </span>
+          </div>
+
+          <div className="bg-purple-50/70 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800/60 p-4 rounded-xl text-xs sm:text-sm text-purple-900 dark:text-purple-300 flex items-start space-x-3">
+            <AlertTriangle className="w-5 h-5 flex-shrink-0 text-purple-600 dark:text-purple-400 mt-0.5" />
+            <div>
+              <strong>Control de Auditoría:</strong> Toda emergencia cargada desde esta solapa quedará registrada como <strong>Auto-Autorizada</strong> y se identificará automáticamente con el sello <code className="bg-purple-200 dark:bg-purple-900 px-1.5 py-0.5 rounded font-mono text-purple-900 dark:text-purple-200 text-xs">[EMERGENCIA NUTRICIÓN / GERENCIA]</code> para el filtrado de control de Gerencia.
+            </div>
+          </div>
+
+          <form className="flex flex-col gap-6" onSubmit={submitGerenteEmergency}>
+            {/* SERVICIO DESTINO CON BUSCADOR INCORPORADO */}
+            <div className="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+              <ServiceSearchableSelect
+                options={servicios}
+                selectedId={gerEmgServicioId}
+                onSelect={id => {
+                  setGerEmgServicioId(id);
+                  setGerEmgReemplazaId("");
+                }}
+                label="1. Seleccionar Servicio de Destino (con Buscador)"
+                placeholder="Escribe para buscar el servicio (ej. Guardia, Cirugía, Clínica...)"
+                accentColor="purple"
+                required
+              />
+            </div>
+
+            {/* TIPO DE SOLICITUD */}
+            <div className="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+              <label className="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">2. Tipo de Solicitud</label>
+              <div className="flex flex-wrap gap-5">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="gerEmgTipo" 
+                    value="extra" 
+                    checked={gerEmgTipo === 'extra'} 
+                    onChange={() => {
+                      setGerEmgTipo('extra');
+                      setGerEmgJustificacion("Carga de emergencia por Encargado de Nutrición / Gerencia en fin de semana o feriado");
+                    }} 
+                    className="accent-purple-600 w-4 h-4" 
+                  /> 
+                  <span className="text-sm font-semibold">Agregado Extra / Guardia</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="gerEmgTipo" 
+                    value="reemplazo" 
+                    checked={gerEmgTipo === 'reemplazo'} 
+                    onChange={() => {
+                      setGerEmgTipo('reemplazo');
+                      setGerEmgJustificacion("por reemplazo de personal de turno");
+                    }} 
+                    className="accent-purple-600 w-4 h-4" 
+                  /> 
+                  <span className="text-sm font-semibold">Reemplazo de Personal</span>
+                </label>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input 
+                    type="radio" 
+                    name="gerEmgTipo" 
+                    value="reemplazo_excepcional" 
+                    checked={gerEmgTipo === 'reemplazo_excepcional'} 
+                    onChange={() => {
+                      setGerEmgTipo('reemplazo_excepcional');
+                      setGerEmgJustificacion("Reemplazo excepcional de última hora por Nutrición");
+                    }} 
+                    className="accent-purple-600 w-4 h-4" 
+                  /> 
+                  <span className="text-sm font-bold text-purple-700 dark:text-purple-400">⚡ Reemplazo Excepcional (Última Hora)</span>
+                </label>
+              </div>
+
+              {/* Selector A quién reemplaza */}
+              {(gerEmgTipo === 'reemplazo' || gerEmgTipo === 'reemplazo_excepcional') && (() => {
+                const idsYaReemplazados = new Set(
+                  emergenciasAprobadas
+                    .concat(emergencias)
+                    .filter(h => h.EmergenciaReemplazaId !== null && h.Estado !== 'Rechazado')
+                    .map(h => h.EmergenciaReemplazaId)
+                );
+
+                const esInhabilitado = (p: any) => Boolean(
+                  p.bajaProvisoriaHoy || p.bajaDefinitivaHoy || p.BajaProvisoriaFecha || p.bajaMotivo || p.BajaMotivo || p.Activo === false
+                );
+
+                const listaAMostrar = gerEmgStaffServicio.filter(p => esInhabilitado(p) && !idsYaReemplazados.has(p.Id));
+
+                return (
+                  <div className="mt-4">
+                    <AgentSearchableSelect
+                      options={listaAMostrar}
+                      selectedId={gerEmgReemplazaId}
+                      onSelect={setGerEmgReemplazaId}
+                      label={`Seleccionar a quién reemplaza (Únicamente agentes inhabilitados/licencias - Servicio ${servicios.find(s=>s.Id===Number(gerEmgServicioId))?.Nombre || ''}):`}
+                      placeholder="Buscar por nombre o DNI..."
+                      accentColor="purple"
+                      required
+                    />
+                    {listaAMostrar.length === 0 && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 font-semibold">
+                        * No hay agentes inhabilitados ni con licencia pendientes de reemplazo en este servicio.
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* DATOS DEL AGENTE (Si es extra) */}
+            {gerEmgTipo === 'extra' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Nombre Completo del Agente *</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={gerEmgNombre} 
+                    onChange={e => setGerEmgNombre(e.target.value)} 
+                    placeholder="Ej. Perez Juan" 
+                    className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-purple-500 focus:ring-purple-500/50 px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">DNI *</label>
+                  <input 
+                    type="text" 
+                    required 
+                    value={gerEmgDni} 
+                    onChange={e => setGerEmgDni(e.target.value)} 
+                    placeholder="Sin puntos" 
+                    className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-purple-500 focus:ring-purple-500/50 px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-mono" 
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* DATOS DE COMIDA Y DIETA */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Comida Solicitada</label>
+                <select 
+                  value={gerEmgComida} 
+                  onChange={e => setGerEmgComida(e.target.value)} 
+                  className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-purple-500 focus:ring-purple-500/50 px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold"
+                >
+                  <option value="Almuerzo">☀️ Almuerzo</option>
+                  <option value="Cena">🌙 Cena</option>
+                  <option value="Ambos">☀️🌙 Ambos (Almuerzo y Cena)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
+                  {gerEmgComida === 'Ambos' ? 'Dieta para Almuerzo' : 'Tipo de Dieta'}
+                </label>
+                <select 
+                  value={gerEmgDieta} 
+                  onChange={e => setGerEmgDieta(e.target.value)} 
+                  className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-purple-500 focus:ring-purple-500/50 px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold"
+                >
+                  {dietasConfig.map(d => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+
+              {gerEmgComida === 'Ambos' && (
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Dieta para Cena</label>
+                  <select 
+                    value={gerEmgDietaCena} 
+                    onChange={e => setGerEmgDietaCena(e.target.value)} 
+                    className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-purple-500 focus:ring-purple-500/50 px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold"
+                  >
+                    {dietasConfig.map(d => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* JUSTIFICACIÓN */}
+            <div>
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Justificación del Pedido *</label>
+              <textarea 
+                required 
+                rows={2} 
+                value={gerEmgJustificacion} 
+                onChange={e => setGerEmgJustificacion(e.target.value)} 
+                placeholder="Indique el motivo..." 
+                className="w-full text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-purple-500 focus:ring-purple-500/50 px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
+              />
+            </div>
+
+            <div className="flex justify-end">
+              <button 
+                type="submit" 
+                className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold px-6 py-3 rounded-xl shadow-lg transition-all transform hover:scale-[1.02] active:scale-95 flex items-center cursor-pointer text-sm"
+              >
+                <Zap className="w-5 h-5 mr-2 text-yellow-300" /> Registrar y Auto-Autorizar Emergencia
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* HOSPITAL CONTENT */}
       {activeTab === "Hospital" && (

@@ -17,7 +17,10 @@ declare global {
   }
 }
 
-export const authenticateToken = (req: Request, res: Response, next: NextFunction): void => {
+import { PrismaClient } from '@prisma/client';
+const prisma = new PrismaClient();
+
+export const authenticateToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   
@@ -26,14 +29,29 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
     return;
   }
   
-  jwt.verify(token, JWT_SECRET, (err, user: any) => {
-    if (err) {
+  jwt.verify(token, JWT_SECRET, async (err, decodedUser: any) => {
+    if (err || !decodedUser) {
       res.sendStatus(403);
       return;
     }
     
-    req.user = user;
-    next();
+    try {
+      const dbUser = await prisma.usuarios.findUnique({
+        where: { Id: decodedUser.userId },
+        select: { Activo: true }
+      });
+
+      if (!dbUser || dbUser.Activo === false) {
+        res.status(403).json({ error: 'Usuario inhabilitado. Sesión rechazada.' });
+        return;
+      }
+
+      req.user = decodedUser;
+      next();
+    } catch (e) {
+      req.user = decodedUser;
+      next();
+    }
   });
 };
 

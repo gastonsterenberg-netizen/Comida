@@ -76,6 +76,12 @@ app.post('/api/auth/login', async (req: Request, res: Response): Promise<void> =
       return;
     }
 
+    if (user.Activo === false) {
+      await logAudit(req, 'LOGIN_RECHAZADO', `Intento de acceso con cuenta inhabilitada: ${username}`, user.Id);
+      res.status(403).json({ error: 'Su usuario se encuentra inhabilitado. Acceso denegado.' });
+      return;
+    }
+
     const isValidPassword = await bcrypt.compare(password, user.ContrasenaHash);
     if (!isValidPassword) {
       await logAudit(req, 'LOGIN_FALLIDO', `Contraseña incorrecta`, user.Id);
@@ -890,13 +896,15 @@ app.get('/api/staff/active', authenticateToken, async (req: Request, res: Respon
 
   try {
     const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const todayStr = `${year}-${month}-${day}`;
     const today = new Date(`${todayStr}T00:00:00.000Z`);
 
     const staff = await prisma.personal.findMany({
       where: {
-        ServicioId: servicioId,
-        Activo: true
+        ServicioId: servicioId
       },
       include: {
         PedidosComida: {
@@ -907,14 +915,21 @@ app.get('/api/staff/active', authenticateToken, async (req: Request, res: Respon
     });
 
     const verifiedStaff = staff.map(s => {
-      // @ts-ignore
-      const isBajaHoy = s.BajaProvisoriaFecha && (
-        new Date(s.BajaProvisoriaFecha).getTime() <= today.getTime() && 
-        (!s.BajaProvisoriaHasta || new Date(s.BajaProvisoriaHasta).getTime() >= today.getTime())
-      );
+      let isBajaHoy = false;
+      if (s.BajaProvisoriaFecha) {
+        const d = new Date(s.BajaProvisoriaFecha);
+        const desdeStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+        
+        let hastaStr = desdeStr;
+        if (s.BajaProvisoriaHasta) {
+          const h = new Date(s.BajaProvisoriaHasta);
+          hastaStr = `${h.getUTCFullYear()}-${String(h.getUTCMonth() + 1).padStart(2, '0')}-${String(h.getUTCDate()).padStart(2, '0')}`;
+        }
+        isBajaHoy = todayStr >= desdeStr && todayStr <= hastaStr;
+      }
       return { 
         ...s,
-        bajaProvisoriaHoy: Boolean(isBajaHoy),
+        bajaProvisoriaHoy: Boolean(isBajaHoy || s.BajaProvisoriaFecha),
         bajaDefinitivaHoy: !s.Activo,
         bajaMotivo: s.BajaMotivo || null
       };
@@ -945,8 +960,8 @@ app.post('/api/staff/:id/baja', authenticateToken, async (req: Request, res: Res
 
     if (tipo === 'PROVISORIA') {
       const { desde, hasta, motivo } = req.body;
-      const startDate = desde ? new Date(desde) : today;
-      const endDate = hasta ? new Date(hasta) : startDate;
+      const startDate = desde ? new Date(`${desde}T00:00:00.000Z`) : today;
+      const endDate = hasta ? new Date(`${hasta}T23:59:59.999Z`) : new Date(`${startDate.toISOString().split('T')[0]}T23:59:59.999Z`);
       const bajaMotivo = motivo || null;
       // @ts-ignore
       await prisma.personal.update({ where: { Id: Number(id) }, data: { BajaProvisoriaFecha: startDate, BajaProvisoriaHasta: endDate, BajaMotivo: bajaMotivo } });
@@ -1254,13 +1269,14 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
 // 5.2 Crear solicitud de emergencia
 app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> => {
   const nombreCompleto = req.body.nombreCompleto || req.body.nombre || (req.body.apellido ? `${req.body.apellido} ${req.body.nombre}` : '');
-  const { dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId, esExcepcional, tipoSolicitud } = req.body;
+  const { dni, periodoInicio, periodoFin, tipoComida, tipoDieta, tipoDietaCena, justificacion, solicitadoPorUsuarioId, reemplazaId, esExcepcional, tipoSolicitud, autoAprobar, esNutricionGerencia } = req.body;
 
+  const isAutoAprobado = Boolean(autoAprobar || esNutricionGerencia);
   const isExcepcional = Boolean(esExcepcional || tipoSolicitud === 'reemplazo_excepcional');
 
-  // Validate authorization deadlines solo si NO es reemplazo excepcional
+  // Validate authorization deadlines solo si NO es auto-aprobado ni reemplazo excepcional
   let comidasToCheck = tipoComida === 'Ambos' ? ['Almuerzo', 'Cena'] : [tipoComida || 'Almuerzo'];
-  if (!isExcepcional) {
+  if (!isExcepcional && !isAutoAprobado) {
     for (const tc of comidasToCheck) {
       const errorMsg = await checkAuthDeadlines(solicitadoPorUsuarioId, tc);
       if (errorMsg) {
@@ -1275,6 +1291,12 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
     const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
     const start = today;
     const end = today;
+
+    // Construir justificación con la marca especial si es cargado por Nutrición / Gerencia
+    let finalJustificacion = justificacion || (isExcepcional ? 'Reemplazo excepcional de última hora' : 'Solicitud de emergencia');
+    if (isAutoAprobado && !finalJustificacion.includes('[EMERGENCIA NUTRICIÓN / GERENCIA]')) {
+      finalJustificacion = `[EMERGENCIA NUTRICIÓN / GERENCIA] ${finalJustificacion}`;
+    }
 
     // Si es reemplazo excepcional con titular, obtener la comida/dieta del titular asignado si no se especificaron
     let finalTipoDieta = tipoDieta || 'Normal';
@@ -1372,13 +1394,14 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
           TipoComida: tc,
           TipoDieta: tc === 'Cena' && tipoComida === 'Ambos' && tipoDietaCena ? tipoDietaCena : finalTipoDieta,
           SolicitadoPorUsuarioId: solicitadoPorUsuarioId,
-          Estado: isExcepcional ? 'Aprobado' : 'Pendiente',
+          Estado: (isAutoAprobado || isExcepcional) ? 'Aprobado' : 'Pendiente',
           EmergenciaNombreCompleto: nombreCompleto || '',
           EmergenciaDNI: dni || '',
           EmergenciaPeriodoInicio: start,
           EmergenciaPeriodoFin: end,
           EmergenciaReemplazaId: reemplazaId ? Number(reemplazaId) : null,
-          JustificacionSolicitud: justificacion || (isExcepcional ? 'Reemplazo excepcional de última hora' : null),
+          JustificacionSolicitud: finalJustificacion,
+          JustificacionResolucion: isAutoAprobado ? 'Auto-autorizado por Encargado de Nutrición / Gerencia' : null,
           EsExcepcional: isExcepcional
         });
       }
@@ -1386,8 +1409,8 @@ app.post('/api/emergencies', async (req: Request, res: Response): Promise<void> 
     }
 
     await prisma.pedidosComida.createMany({ data: newOrders });
-    await logAudit(req, isExcepcional ? 'REEMPLAZO_EXCEPCIONAL' : 'ALTA_EMERGENCIA', `Solicitud de emergencia (${isExcepcional ? 'Excepcional' : 'Normal'}) creada para DNI ${dni} del ${start.toISOString().split('T')[0]} al ${end.toISOString().split('T')[0]}`);
-    res.json({ message: isExcepcional ? 'Reemplazo excepcional registrado exitosamente.' : 'Solicitudes de emergencia creadas y pendientes de aprobación.' });
+    await logAudit(req, isAutoAprobado ? 'EMERGENCIA_NUTRICION_AUTOAPROBADA' : (isExcepcional ? 'REEMPLAZO_EXCEPCIONAL' : 'ALTA_EMERGENCIA'), `Solicitud de emergencia (${isAutoAprobado ? 'Nutrición Auto-aprobada' : (isExcepcional ? 'Excepcional' : 'Normal')}) creada para DNI ${dni}`);
+    res.json({ message: isAutoAprobado ? 'Solicitud de emergencia auto-autorizada y registrada exitosamente.' : (isExcepcional ? 'Reemplazo excepcional registrado exitosamente.' : 'Solicitudes de emergencia creadas y pendientes de aprobación.') });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al crear solicitud de emergencia' });
@@ -1542,7 +1565,7 @@ app.get('/api/emergencies/rejected', authenticateToken, async (req: Request, res
   }
 });
 
-// 5.3.6 Historial de emergencias
+// 5.3.6 Historial de emergencias (por Servicio u Hospital)
 app.get('/api/emergencies/history', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const userId = req.user?.userId || Number(req.query.userId);
   if (!userId) {
@@ -1551,26 +1574,40 @@ app.get('/api/emergencies/history', authenticateToken, async (req: Request, res:
   }
   
   try {
+    const requestingUser = await prisma.usuarios.findUnique({
+      where: { Id: userId }
+    });
+
     const fiveDaysAgo = new Date();
     fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
     const fiveDaysAgoUTC = new Date(Date.UTC(fiveDaysAgo.getFullYear(), fiveDaysAgo.getMonth(), fiveDaysAgo.getDate()));
     
+    let whereCondition: any = {
+      OR: [
+        { JustificacionSolicitud: { not: null } },
+        { EmergenciaReemplazaId: { not: null } }
+      ],
+      FechaPedido: { gte: fiveDaysAgoUTC }
+    };
+
+    if (requestingUser?.ServicioId) {
+      whereCondition.SolicitadoPor = { ServicioId: requestingUser.ServicioId };
+    } else if (requestingUser?.HospitalId) {
+      whereCondition.SolicitadoPor = { HospitalId: requestingUser.HospitalId };
+    } else {
+      whereCondition.SolicitadoPorUsuarioId = userId;
+    }
+
     const history = await prisma.pedidosComida.findMany({
-      where: { 
-        SolicitadoPorUsuarioId: userId,
-        OR: [
-          { JustificacionSolicitud: { not: null } },
-          { EmergenciaReemplazaId: { not: null } }
-        ],
-        FechaPedido: { gte: fiveDaysAgoUTC }
-      },
+      where: whereCondition,
       orderBy: { Id: 'desc' },
-      include: { PersonalReemplazado: true, Personal: true, EvaluadoPor: true }
+      include: { PersonalReemplazado: true, Personal: true, EvaluadoPor: true, SolicitadoPor: true }
     });
 
     const enriched = await enrichEmergencyList(history);
     res.json(enriched);
   } catch (error) {
+    console.error('Error fetching emergency history:', error);
     res.status(500).json({ error: 'Error al obtener historial' });
   }
 });
