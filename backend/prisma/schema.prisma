@@ -85,6 +85,7 @@ model Usuarios {
   Servicio            Servicios?      @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   PedidosSolicitados  PedidosComida[] @relation("PedidosSolicitados")
   PedidosEvaluados    PedidosComida[] @relation("PedidosEvaluados")
+  PedidosEntregados   PedidosComida[] @relation("PedidosEntregados")
   Auditorias          Auditoria[]
 }
 
@@ -106,10 +107,13 @@ model PedidosComida {
   JustificacionResolucion String?    @db.NVarChar(500)
   EsExcepcional           Boolean    @default(false)
   EvaluadoPorUsuarioId    Int?
+  FechaEntregado          DateTime?
+  EntregadoPorUsuarioId   Int?
   Personal                Personal?  @relation("PedidosPersonales", fields: [PersonalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   PersonalReemplazado     Personal?  @relation("Reemplazos", fields: [EmergenciaReemplazaId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   SolicitadoPor           Usuarios   @relation("PedidosSolicitados", fields: [SolicitadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   EvaluadoPor             Usuarios?  @relation("PedidosEvaluados", fields: [EvaluadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  EntregadoPor            Usuarios?  @relation("PedidosEntregados", fields: [EntregadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
 }
 
 model PadronHabilitados {

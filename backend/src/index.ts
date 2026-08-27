@@ -12,6 +12,7 @@ import fs from 'fs';
 import * as xlsx from 'xlsx';
 import { authenticateToken, isGerente, isJefeServicio } from './middleware/auth';
 import { logAudit } from './utils/audit';
+import { extractDniFromScan } from './utils/scan';
 
 dotenv.config();
 
@@ -294,6 +295,107 @@ app.put('/api/services/:id/toggle-voucher', authenticateToken, isGerente, async 
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: 'Error al actualizar el servicio' });
+  }
+});
+
+// 3.1.d Renombrar Servicio (Gerente)
+app.put('/api/services/:id', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const id = Number(req.params.id);
+  const { nombre } = req.body;
+  const hospitalId = req.user?.hospitalId;
+
+  if (!id || !hospitalId || !nombre || !String(nombre).trim()) {
+    res.status(400).json({ error: 'ID de servicio, hospital y nuevo nombre requeridos' });
+    return;
+  }
+
+  const cleanNombre = String(nombre).trim();
+
+  try {
+    const service = await prisma.servicios.findFirst({
+      where: { Id: id, HospitalId: hospitalId }
+    });
+
+    if (!service) {
+      res.status(404).json({ error: 'Servicio no encontrado' });
+      return;
+    }
+
+    const existingSameName = await prisma.servicios.findFirst({
+      where: {
+        HospitalId: hospitalId,
+        Nombre: cleanNombre,
+        NOT: { Id: id }
+      }
+    });
+
+    if (existingSameName) {
+      res.status(400).json({ error: `Ya existe un servicio con el nombre '${cleanNombre}' en este hospital.` });
+      return;
+    }
+
+    const updatedService = await prisma.servicios.update({
+      where: { Id: id },
+      data: { Nombre: cleanNombre }
+    });
+
+    await logAudit(req, 'RENOMBRAR_SERVICIO', `Servicio renombrado de '${service.Nombre}' a '${cleanNombre}' (ID: ${id})`);
+    res.json({ message: 'Nombre de servicio actualizado exitosamente', service: updatedService });
+  } catch (error) {
+    console.error('Error al renombrar servicio:', error);
+    res.status(500).json({ error: 'Error al actualizar el nombre del servicio' });
+  }
+});
+
+// 3.1.e Cambiar Servicio de un Agente (Gerente)
+app.put('/api/staff/:id/servicio', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const id = Number(req.params.id);
+  const { servicioId } = req.body;
+  const hospitalId = req.user?.hospitalId;
+
+  if (!id || !hospitalId || !servicioId) {
+    res.status(400).json({ error: 'ID del agente y nuevo servicio requeridos' });
+    return;
+  }
+
+  try {
+    const agente = await prisma.personal.findFirst({
+      where: { Id: id, HospitalId: hospitalId },
+      include: { Servicio: true }
+    });
+
+    if (!agente) {
+      res.status(404).json({ error: 'Agente no encontrado o no pertenece a tu hospital' });
+      return;
+    }
+
+    const targetService = await prisma.servicios.findFirst({
+      where: { Id: Number(servicioId), HospitalId: hospitalId }
+    });
+
+    if (!targetService) {
+      res.status(404).json({ error: 'El servicio destino especificado no existe' });
+      return;
+    }
+
+    const oldServiceNombre = agente.Servicio?.Nombre || 'Sin servicio';
+
+    const updatedAgente = await prisma.personal.update({
+      where: { Id: id },
+      data: { ServicioId: Number(servicioId) },
+      include: { Servicio: true }
+    });
+
+    await logAudit(
+      req, 
+      'CAMBIO_SERVICIO_AGENTE', 
+      `Agente '${agente.NombreCompleto}' (DNI ${agente.DNI}) cambiado del servicio '${oldServiceNombre}' al servicio '${targetService.Nombre}'`
+    );
+
+    res.json({ message: 'Servicio del agente actualizado exitosamente', agente: updatedAgente });
+  } catch (error) {
+    console.error('Error al cambiar servicio del agente:', error);
+    res.status(500).json({ error: 'Error al cambiar servicio del agente' });
   }
 });
 
@@ -1178,12 +1280,42 @@ app.post('/api/staff/:id/revertir-baja', authenticateToken, async (req: Request,
 
 // 4.3 Registrar o eliminar pedido de comida (y 4.4 validación de 10AM)
 app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void> => {
-  const { personalId, tipoComida, tipoDieta, solicitadoPorUsuarioId } = req.body;
+  const { personalId, tipoComida, tipoDieta, solicitadoPorUsuarioId, fecha } = req.body;
   
-  const errorMsg = await checkDeadlines(solicitadoPorUsuarioId, tipoComida);
-  if (errorMsg) {
-    res.status(400).json({ error: errorMsg });
-    return;
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+
+  const targetFechaStr = fecha && /^\d{4}-\d{2}-\d{2}$/.test(fecha) ? fecha : todayStr;
+  const targetDate = new Date(`${targetFechaStr}T00:00:00.000Z`);
+
+  if (targetFechaStr === todayStr) {
+    const errorMsg = await checkDeadlines(solicitadoPorUsuarioId, tipoComida);
+    if (errorMsg) {
+      res.status(400).json({ error: errorMsg });
+      return;
+    }
+  } else if (targetFechaStr > todayStr) {
+    const user = await prisma.usuarios.findUnique({ where: { Id: solicitadoPorUsuarioId } });
+    if (!user || !user.HospitalId) {
+      res.status(400).json({ error: 'Usuario sin hospital asignado para validacion de fecha anticipada.' });
+      return;
+    }
+
+    const habilitada = await prisma.fechasAnticipadasHabilitadas.findFirst({
+      where: {
+        HospitalId: user.HospitalId,
+        FechaHabilitada: targetDate,
+        Activo: true
+      }
+    });
+
+    if (!habilitada) {
+      res.status(400).json({ error: `La fecha seleccionada (${targetFechaStr.split('-').reverse().join('/')}) no se encuentra habilitada por Gerencia para carga anticipada.` });
+      return;
+    }
   }
 
   try {
@@ -1197,15 +1329,16 @@ app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void
       res.status(403).json({ error: 'El agente no se encuentra en el padrón de habilitados para recibir comida.' });
       return;
     }
-    const now = new Date();
-    const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
-
     const crossCheck = await prisma.pedidosComida.findFirst({
       where: {
-        Personal: { DNI: personal.DNI },
+        FechaPedido: targetDate,
         TipoComida: tipoComida,
-        FechaPedido: today,
-        PersonalId: { not: personalId }
+        Estado: { in: ['Pendiente', 'Aprobado'] },
+        OR: [
+          { Personal: { DNI: personal.DNI } },
+          { EmergenciaDNI: personal.DNI }
+        ],
+        NOT: { PersonalId: personalId }
       },
       include: {
         SolicitadoPor: { include: { Servicio: true } },
@@ -1214,8 +1347,11 @@ app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void
     });
 
     if (crossCheck) {
-      const sNombre = crossCheck.SolicitadoPor?.Servicio?.Nombre || crossCheck.Personal?.Servicio?.Nombre || 'otro servicio';
-      res.status(403).json({ error: `El agente con DNI ${personal.DNI} ya tiene este pedido (${tipoComida}) asignado en el servicio "${sNombre}".` });
+      const esEmergencia = Boolean(crossCheck.EmergenciaDNI);
+      const sNombre = esEmergencia 
+        ? 'una solicitud de emergencia' 
+        : `el servicio "${crossCheck.SolicitadoPor?.Servicio?.Nombre || crossCheck.Personal?.Servicio?.Nombre || 'otro servicio'}"`;
+      res.status(403).json({ error: `El agente ${personal.NombreCompleto} (DNI ${personal.DNI}) ya posee este pedido (${tipoComida}) asignado mediante ${sNombre}.` });
       return;
     }
 
@@ -1223,7 +1359,7 @@ app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void
       where: {
         PersonalId: personalId,
         TipoComida: tipoComida,
-        FechaPedido: today
+        FechaPedido: targetDate
       }
     });
 
@@ -1244,7 +1380,16 @@ app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void
       if (!padron.EsGuardia24h) {
         const otherMealType = tipoComida === 'Almuerzo' ? 'Cena' : 'Almuerzo';
         const hasOtherMeal = await prisma.pedidosComida.findFirst({
-          where: { PersonalId: personalId, FechaPedido: today, TipoComida: otherMealType }
+          where: {
+            FechaPedido: targetDate,
+            TipoComida: otherMealType,
+            Estado: { in: ['Pendiente', 'Aprobado'] },
+            OR: [
+              { PersonalId: personalId },
+              { Personal: { DNI: personal.DNI } },
+              { EmergenciaDNI: personal.DNI }
+            ]
+          }
         });
         if (hasOtherMeal) {
           res.status(403).json({ error: 'El agente (Guardia 12h) solo puede pedir una comida por día.' });
@@ -1255,7 +1400,7 @@ app.post('/api/orders/toggle', async (req: Request, res: Response): Promise<void
       // Crear nuevo pedido
       await prisma.pedidosComida.create({
         data: {
-          FechaPedido: today,
+          FechaPedido: targetDate,
           TipoComida: tipoComida,
           TipoDieta: tipoDieta || 'Normal',
           PersonalId: personalId,
@@ -1354,34 +1499,52 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
           throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) solo puede solicitar 1 comida por día.`);
         }
         if (isAlmuerzo && o.almuerzoDieta) {
-          const cenaExistente = await prisma.pedidosComida.findFirst({
-            where: { FechaPedido: targetDate, TipoComida: 'Cena', Personal: { DNI: personal.DNI } },
+          const cenaExistentePlanilla = await prisma.pedidosComida.findFirst({
+            where: {
+              FechaPedido: targetDate,
+              TipoComida: 'Cena',
+              Estado: { in: ['Pendiente', 'Aprobado'] },
+              Personal: { DNI: personal.DNI },
+              OR: [
+                { EmergenciaDNI: null },
+                { EmergenciaDNI: '' }
+              ]
+            },
             include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
           });
-          if (cenaExistente) {
-            const cenaServicioId = cenaExistente.SolicitadoPor?.ServicioId || cenaExistente.Personal?.ServicioId;
+          if (cenaExistentePlanilla) {
+            const cenaServicioId = cenaExistentePlanilla.SolicitadoPor?.ServicioId || cenaExistentePlanilla.Personal?.ServicioId;
             if (solicitanteServicioId && cenaServicioId === solicitanteServicioId) {
-              // El mismo servicio esta cambiando de Cena a Almuerzo: borramos la Cena anterior
-              await prisma.pedidosComida.delete({ where: { Id: cenaExistente.Id } });
+              // El mismo servicio esta cambiando de Cena a Almuerzo: borramos la Cena anterior de la planilla
+              await prisma.pedidosComida.delete({ where: { Id: cenaExistentePlanilla.Id } });
             } else {
-              const sNombre = cenaExistente.SolicitadoPor?.Servicio?.Nombre || cenaExistente.Personal?.Servicio?.Nombre || 'otro servicio';
-              throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrada una Cena para esa fecha en el servicio "${sNombre}".`);
+              const sNombre = cenaExistentePlanilla.SolicitadoPor?.Servicio?.Nombre || cenaExistentePlanilla.Personal?.Servicio?.Nombre || 'otro servicio';
+              throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrada una Cena para esa fecha en la planilla del servicio "${sNombre}".`);
             }
           }
         }
         if (isCena && o.cenaDieta) {
-          const almuerzoExistente = await prisma.pedidosComida.findFirst({
-            where: { FechaPedido: targetDate, TipoComida: 'Almuerzo', Personal: { DNI: personal.DNI } },
+          const almuerzoExistentePlanilla = await prisma.pedidosComida.findFirst({
+            where: {
+              FechaPedido: targetDate,
+              TipoComida: 'Almuerzo',
+              Estado: { in: ['Pendiente', 'Aprobado'] },
+              Personal: { DNI: personal.DNI },
+              OR: [
+                { EmergenciaDNI: null },
+                { EmergenciaDNI: '' }
+              ]
+            },
             include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
           });
-          if (almuerzoExistente) {
-            const almuerzoServicioId = almuerzoExistente.SolicitadoPor?.ServicioId || almuerzoExistente.Personal?.ServicioId;
+          if (almuerzoExistentePlanilla) {
+            const almuerzoServicioId = almuerzoExistentePlanilla.SolicitadoPor?.ServicioId || almuerzoExistentePlanilla.Personal?.ServicioId;
             if (solicitanteServicioId && almuerzoServicioId === solicitanteServicioId) {
-              // El mismo servicio esta cambiando de Almuerzo a Cena: borramos el Almuerzo anterior
-              await prisma.pedidosComida.delete({ where: { Id: almuerzoExistente.Id } });
+              // El mismo servicio esta cambiando de Almuerzo a Cena: borramos el Almuerzo anterior de la planilla
+              await prisma.pedidosComida.delete({ where: { Id: almuerzoExistentePlanilla.Id } });
             } else {
-              const sNombre = almuerzoExistente.SolicitadoPor?.Servicio?.Nombre || almuerzoExistente.Personal?.Servicio?.Nombre || 'otro servicio';
-              throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrado un Almuerzo para esa fecha en el servicio "${sNombre}".`);
+              const sNombre = almuerzoExistentePlanilla.SolicitadoPor?.Servicio?.Nombre || almuerzoExistentePlanilla.Personal?.Servicio?.Nombre || 'otro servicio';
+              throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) ya tiene registrado un Almuerzo para esa fecha en la planilla del servicio "${sNombre}".`);
             }
           }
         }
@@ -1392,13 +1555,18 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
           where: {
             FechaPedido: targetDate,
             TipoComida: 'Almuerzo',
-            Personal: { DNI: personal.DNI }
+            Estado: { in: ['Pendiente', 'Aprobado'] },
+            OR: [
+              { Personal: { DNI: personal.DNI } },
+              { EmergenciaDNI: personal.DNI }
+            ]
           },
           include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
         });
         if (almuerzoExistente) {
-          const sNombre = almuerzoExistente.SolicitadoPor?.Servicio?.Nombre || almuerzoExistente.Personal?.Servicio?.Nombre || 'otro servicio';
-          throw new Error(`El agente ${personal.NombreCompleto} ya tiene un Almuerzo solicitado en el servicio "${sNombre}".`);
+          const esEmergencia = Boolean(almuerzoExistente.EmergenciaDNI);
+          const sNombre = esEmergencia ? 'una solicitud de emergencia' : `el servicio "${almuerzoExistente.SolicitadoPor?.Servicio?.Nombre || almuerzoExistente.Personal?.Servicio?.Nombre || 'otro servicio'}"`;
+          throw new Error(`El agente ${personal.NombreCompleto} (DNI ${personal.DNI}) ya tiene un Almuerzo solicitado mediante ${sNombre}.`);
         }
         
         newOrders.push({
@@ -1415,13 +1583,18 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
           where: {
             FechaPedido: targetDate,
             TipoComida: 'Cena',
-            Personal: { DNI: personal.DNI }
+            Estado: { in: ['Pendiente', 'Aprobado'] },
+            OR: [
+              { Personal: { DNI: personal.DNI } },
+              { EmergenciaDNI: personal.DNI }
+            ]
           },
           include: { SolicitadoPor: { include: { Servicio: true } }, Personal: { include: { Servicio: true } } }
         });
         if (cenaExistente) {
-          const sNombre = cenaExistente.SolicitadoPor?.Servicio?.Nombre || cenaExistente.Personal?.Servicio?.Nombre || 'otro servicio';
-          throw new Error(`El agente ${personal.NombreCompleto} ya tiene una Cena solicitada en el servicio "${sNombre}".`);
+          const esEmergencia = Boolean(cenaExistente.EmergenciaDNI);
+          const sNombre = esEmergencia ? 'una solicitud de emergencia' : `el servicio "${cenaExistente.SolicitadoPor?.Servicio?.Nombre || cenaExistente.Personal?.Servicio?.Nombre || 'otro servicio'}"`;
+          throw new Error(`El agente ${personal.NombreCompleto} (DNI ${personal.DNI}) ya tiene una Cena solicitada mediante ${sNombre}.`);
         }
 
         newOrders.push({
@@ -1686,12 +1859,15 @@ async function enrichEmergencyList(list: any[]) {
       dni = p.PersonalReemplazado.DNI;
     }
 
-    let servicioObj = p.Servicio || p.Personal?.Servicio || p.PersonalReemplazado?.Servicio || p.SolicitadoPor?.Servicio;
-    if (!servicioObj && p.JustificacionSolicitud && p.JustificacionSolicitud.includes('[SERVICIO:')) {
+    let servicioObj = null;
+    if (p.JustificacionSolicitud && p.JustificacionSolicitud.includes('[SERVICIO:')) {
       const match = p.JustificacionSolicitud.match(/\[SERVICIO:(.*?)\]/);
       if (match && match[1]) {
         servicioObj = { Nombre: match[1] };
       }
+    }
+    if (!servicioObj) {
+      servicioObj = p.Servicio || p.Personal?.Servicio || p.PersonalReemplazado?.Servicio || p.SolicitadoPor?.Servicio;
     }
 
     return { 
@@ -1703,7 +1879,7 @@ async function enrichEmergencyList(list: any[]) {
   });
 }
 
-// 5.3 Obtener solicitudes de emergencia pendientes para el Gerente
+// 5.3 Obtener solicitudes de emergencia pendientes para el Gerente (hoy y días posteriores)
 app.get('/api/emergencies/pending', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
   if (!hospitalId) {
@@ -1718,9 +1894,10 @@ app.get('/api/emergencies/pending', authenticateToken, async (req: Request, res:
     const pending = await prisma.pedidosComida.findMany({
       where: { 
         Estado: 'Pendiente',
-        FechaPedido: today,
+        FechaPedido: { gte: today },
         SolicitadoPor: { HospitalId: hospitalId }
       },
+      orderBy: { Id: 'desc' },
       include: { 
         SolicitadoPor: { include: { Servicio: true, Hospital: true } }, 
         PersonalReemplazado: { include: { Servicio: true, Hospital: true } },
@@ -1735,7 +1912,7 @@ app.get('/api/emergencies/pending', authenticateToken, async (req: Request, res:
   }
 });
 
-// 5.3.4 Obtener solicitudes de emergencia aprobadas del día para el Gerente
+// 5.3.4 Obtener solicitudes de emergencia aprobadas para el Gerente (hoy y días posteriores)
 app.get('/api/emergencies/approved', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
   if (!hospitalId) {
@@ -1750,7 +1927,7 @@ app.get('/api/emergencies/approved', authenticateToken, async (req: Request, res
     const approved = await prisma.pedidosComida.findMany({
       where: { 
         Estado: 'Aprobado',
-        FechaPedido: today,
+        FechaPedido: { gte: today },
         SolicitadoPor: { HospitalId: hospitalId }
       },
       orderBy: { Id: 'desc' },
@@ -1769,7 +1946,7 @@ app.get('/api/emergencies/approved', authenticateToken, async (req: Request, res
   }
 });
 
-// 5.3.5 Obtener solicitudes de emergencia rechazadas del día para el Gerente
+// 5.3.5 Obtener solicitudes de emergencia rechazadas para el Gerente (hoy y días posteriores)
 app.get('/api/emergencies/rejected', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
   if (!hospitalId) {
@@ -1784,7 +1961,7 @@ app.get('/api/emergencies/rejected', authenticateToken, async (req: Request, res
     const rejected = await prisma.pedidosComida.findMany({
       where: { 
         Estado: 'Rechazado',
-        FechaPedido: today,
+        FechaPedido: { gte: today },
         SolicitadoPor: { HospitalId: hospitalId }
       },
       orderBy: { Id: 'desc' },
@@ -1829,7 +2006,28 @@ app.get('/api/emergencies/history', authenticateToken, async (req: Request, res:
     };
 
     if (requestingUser?.ServicioId) {
-      whereCondition.SolicitadoPor = { ServicioId: requestingUser.ServicioId };
+      const jefeServicioObj = await prisma.servicios.findUnique({ where: { Id: requestingUser.ServicioId } });
+      const jefeServicioNombre = jefeServicioObj?.Nombre || '';
+
+      whereCondition = {
+        AND: [
+          {
+            OR: [
+              { JustificacionSolicitud: { not: null } },
+              { EmergenciaReemplazaId: { not: null } }
+            ]
+          },
+          { FechaPedido: { gte: fiveDaysAgoUTC } },
+          {
+            OR: [
+              { SolicitadoPor: { ServicioId: requestingUser.ServicioId } },
+              { Personal: { ServicioId: requestingUser.ServicioId } },
+              { PersonalReemplazado: { ServicioId: requestingUser.ServicioId } },
+              ...(jefeServicioNombre ? [{ JustificacionSolicitud: { contains: `[SERVICIO:${jefeServicioNombre}]` } }] : [])
+            ]
+          }
+        ]
+      };
     } else if (requestingUser?.HospitalId) {
       whereCondition.SolicitadoPor = { HospitalId: requestingUser.HospitalId };
     } else {
@@ -1843,7 +2041,18 @@ app.get('/api/emergencies/history', authenticateToken, async (req: Request, res:
     });
 
     const enriched = await enrichEmergencyList(history);
-    res.json(enriched);
+    let finalHistory = enriched;
+    if (requestingUser?.ServicioId) {
+      const jefeServicioObj = await prisma.servicios.findUnique({ where: { Id: requestingUser.ServicioId } });
+      if (jefeServicioObj?.Nombre) {
+        const jNombre = jefeServicioObj.Nombre.trim().toLowerCase();
+        finalHistory = enriched.filter((e: any) => {
+          const eServicioNombre = e.Servicio?.Nombre ? e.Servicio.Nombre.trim().toLowerCase() : '';
+          return eServicioNombre === jNombre;
+        });
+      }
+    }
+    res.json(finalHistory);
   } catch (error) {
     console.error('Error fetching emergency history:', error);
     res.status(500).json({ error: 'Error al obtener historial' });
@@ -1958,12 +2167,18 @@ app.get('/api/reports', authenticateToken, async (req: Request, res: Response): 
     }
 
     // Role-based filtering
+    let jefeServicioNombre = '';
     if (user?.roleId === 3) {
       // JEFE_SERVICIO: ver todos los pedidos pertenecientes a su servicio
       if (user.servicioId) {
+        const jefeServicioObj = await prisma.servicios.findUnique({ where: { Id: user.servicioId } });
+        jefeServicioNombre = jefeServicioObj?.Nombre || '';
+
         whereClause.OR = [
           { SolicitadoPor: { ServicioId: user.servicioId } },
-          { Personal: { ServicioId: user.servicioId } }
+          { Personal: { ServicioId: user.servicioId } },
+          { PersonalReemplazado: { ServicioId: user.servicioId } },
+          ...(jefeServicioNombre ? [{ JustificacionSolicitud: { contains: `[SERVICIO:${jefeServicioNombre}]` } }] : [])
         ];
       } else {
         whereClause.SolicitadoPorUsuarioId = user.userId;
@@ -2031,18 +2246,36 @@ app.get('/api/reports', authenticateToken, async (req: Request, res: Response): 
     }
 
     const finalReport = filteredReport.map(r => {
-      let servicio = r.Personal?.Servicio || 
-                     r.PersonalReemplazado?.Servicio || 
-                     r.SolicitadoPor?.Servicio || 
-                     (r.EmergenciaDNI ? padronMap.get(r.EmergenciaDNI) : null) || 
-                     null;
+      let servicio = null;
+      if (r.JustificacionSolicitud && r.JustificacionSolicitud.includes('[SERVICIO:')) {
+        const match = r.JustificacionSolicitud.match(/\[SERVICIO:(.*?)\]/);
+        if (match && match[1]) {
+          servicio = { Nombre: match[1] };
+        }
+      }
+      if (!servicio) {
+        servicio = r.Personal?.Servicio || 
+                   r.PersonalReemplazado?.Servicio || 
+                   r.SolicitadoPor?.Servicio || 
+                   (r.EmergenciaDNI ? padronMap.get(r.EmergenciaDNI) : null) || 
+                   null;
+      }
       return {
         ...r,
         Servicio: servicio
       };
     });
 
-    res.json(finalReport);
+    // Si es JEFE_SERVICIO, filtrar estrictamente para que el servicio efectivo coincida con su servicio
+    let resultReport = finalReport;
+    if (user?.roleId === 3 && jefeServicioNombre) {
+      resultReport = finalReport.filter(r => {
+        const itemServicioNombre = r.Servicio?.Nombre ? r.Servicio.Nombre.trim().toLowerCase() : '';
+        return itemServicioNombre === jefeServicioNombre.trim().toLowerCase();
+      });
+    }
+
+    res.json(resultReport);
   } catch (error) {
     res.status(500).json({ error: 'Error al generar el reporte' });
   }
@@ -2176,7 +2409,13 @@ app.get('/api/admin/auditoria', authenticateToken, async (req: Request, res: Res
 app.get('/api/hospital/config', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
   if (!hospitalId) {
-    res.status(400).json({ error: 'Hospital no especificado' });
+    res.json({
+      LimiteAlmuerzo: '10:00',
+      LimiteCena: '17:00',
+      LimiteAutorizacionAlmuerzo: '11:00',
+      LimiteAutorizacionCena: '18:00',
+      DietasHabilitadas: 'Normal,Gástrica,Diabética,Hepática,Vegetariano,Celíaca'
+    });
     return;
   }
   
@@ -2257,6 +2496,11 @@ app.post('/api/personal/bulk', authenticateToken, async (req: Request, res: Resp
 
   try {
     let imported = 0;
+    let createdCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    const details: any[] = [];
+
     const getRowVal = (r: any, ...possibleKeys: string[]) => {
       for (const pk of possibleKeys) {
         if (r[pk] !== undefined && r[pk] !== null) return r[pk];
@@ -2272,39 +2516,169 @@ app.post('/api/personal/bulk', authenticateToken, async (req: Request, res: Resp
       return '';
     };
 
-    for (const row of data) {
+    const sanitizeEncoding = (str: string): string => {
+      if (!str) return '';
+      return String(str)
+        .replace(/Â°/g, '°')
+        .replace(/Âº/g, 'º')
+        .replace(/Â/g, '')
+        .replace(/Ã±/g, 'ñ')
+        .replace(/Ã+/g, 'Ñ')
+        .replace(/Ã¡/g, 'á')
+        .replace(/Ã©/g, 'é')
+        .replace(/Ã/g, 'í')
+        .replace(/Ã³/g, 'ó')
+        .replace(/Ãº/g, 'ú')
+        .replace(/Ã/g, 'Á')
+        .replace(/Ã‰/g, 'É')
+        .replace(/Ã /g, 'Í')
+        .replace(/Ã"/g, 'Ó')
+        .replace(/Ãš/g, 'Ú')
+        .replace(/[\uFFFD\u00A0]/g, '')
+        .trim();
+    };
 
+    const normalizeForMatching = (str: string): string => {
+      return sanitizeEncoding(str)
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]/g, "");
+    };
+
+    // PASO 1: Pre-validar que TODOS los hospitales y servicios del archivo existan en la base de datos antes de realizar cualquier cambio
+    const missingServices = new Set<string>();
+    const missingHospitals = new Set<string>();
+
+    let rIdx = 0;
+    for (const row of data) {
+      rIdx++;
       const docVal = getRowVal(row, 'documento', 'dni', 'num_doc', 'numdoc');
       const agenteVal = getRowVal(row, 'agente', 'nombre', 'nombrecompleto', 'agente_nombre');
       if (!docVal || !agenteVal) continue;
 
-      const efectorStr = String(getRowVal(row, 'efector', 'hospital', 'establecimiento') || '').trim();
-      const servicioStr = String(getRowVal(row, 'servicio', 'area', 'sector') || '').trim();
+      const efectorStr = sanitizeEncoding(String(getRowVal(row, 'efector', 'hospital', 'establecimiento') || ''));
+      const servicioStr = sanitizeEncoding(String(getRowVal(row, 'servicio', 'area', 'sector') || ''));
+
+      if (!servicioStr) continue;
 
       let hospital = await prisma.hospitales.findFirst({ where: { Nombre: efectorStr } });
       if (!hospital) {
         const todosHospitales = await prisma.hospitales.findMany();
-        hospital = todosHospitales.find(h => h.Nombre.trim().toLowerCase() === efectorStr.toLowerCase()) || null;
+        const targetNormH = normalizeForMatching(efectorStr);
+        hospital = todosHospitales.find(h => 
+          h.Nombre.trim().toLowerCase() === efectorStr.toLowerCase() ||
+          normalizeForMatching(h.Nombre) === targetNormH
+        ) || null;
       }
       if (!hospital) {
-        const uniqueCode = efectorStr.substring(0,3).toUpperCase() + Math.random().toString(36).substring(2, 6).toUpperCase();
-        hospital = await prisma.hospitales.create({
-          data: { Nombre: efectorStr, Codigo: uniqueCode }
-        });
+        missingHospitals.add(efectorStr || 'Efector sin nombre');
+        continue;
       }
 
       let servicio = await prisma.servicios.findFirst({ where: { Nombre: servicioStr, HospitalId: hospital.Id } });
       if (!servicio) {
         const todosServicios = await prisma.servicios.findMany({ where: { HospitalId: hospital.Id } });
-        servicio = todosServicios.find(s => s.Nombre.trim().toLowerCase() === servicioStr.toLowerCase()) || null;
-      }
-      if (!servicio) {
-        servicio = await prisma.servicios.create({
-          data: { Nombre: servicioStr, HospitalId: hospital.Id }
-        });
+        const targetNormS = normalizeForMatching(servicioStr);
+        servicio = todosServicios.find(s => 
+          s.Nombre.trim().toLowerCase() === servicioStr.toLowerCase() ||
+          normalizeForMatching(s.Nombre) === targetNormS
+        ) || null;
       }
 
-      const nombreCompleto = String(agenteVal).trim();
+      if (!servicio) {
+        missingServices.add(`"${servicioStr}" (Efector: "${hospital ? hospital.Nombre : efectorStr}")`);
+      }
+    }
+
+    if (missingHospitals.size > 0) {
+      const hList = Array.from(missingHospitals).join(', ');
+      res.status(400).json({
+        error: `No se realizó la importación. Los siguientes establecimientos/hospitales no existen en el sistema: ${hList}. Por favor verifique el archivo o cree el establecimiento antes de volver a importar.`
+      });
+      return;
+    }
+
+    if (missingServices.size > 0) {
+      const sList = Array.from(missingServices).join(', ');
+      res.status(400).json({
+        error: `No se realizó la importación. Los siguientes servicios no existen en el sistema: ${sList}. Por favor corrija el nombre del servicio en el archivo o cree el servicio correspondiente en SISAR antes de volver a importar.`
+      });
+      return;
+    }
+
+    // PASO 2: Procesar la importación masiva sabiendo que todos los servicios existen
+    let rowIndex = 0;
+    for (const row of data) {
+      rowIndex++;
+      const docVal = getRowVal(row, 'documento', 'dni', 'num_doc', 'numdoc');
+      const agenteVal = getRowVal(row, 'agente', 'nombre', 'nombrecompleto', 'agente_nombre');
+      
+      if (!docVal || !agenteVal) {
+        skippedCount++;
+        details.push({
+          rowNumber: rowIndex,
+          type: 'OMITIDO',
+          reason: 'Falta Documento (DNI) o Nombre de Agente'
+        });
+        continue;
+      }
+
+      const efectorStr = sanitizeEncoding(String(getRowVal(row, 'efector', 'hospital', 'establecimiento') || ''));
+      const servicioStr = sanitizeEncoding(String(getRowVal(row, 'servicio', 'area', 'sector') || ''));
+
+      let hospital = await prisma.hospitales.findFirst({ where: { Nombre: efectorStr } });
+      if (!hospital) {
+        const todosHospitales = await prisma.hospitales.findMany();
+        const targetNormH = normalizeForMatching(efectorStr);
+        hospital = todosHospitales.find(h => 
+          h.Nombre.trim().toLowerCase() === efectorStr.toLowerCase() ||
+          normalizeForMatching(h.Nombre) === targetNormH
+        ) || null;
+      }
+      if (!hospital) {
+        skippedCount++;
+        details.push({
+          rowNumber: rowIndex,
+          type: 'OMITIDO',
+          reason: `Hospital '${efectorStr}' no encontrado`
+        });
+        continue;
+      }
+
+      let servicio = await prisma.servicios.findFirst({ where: { Nombre: servicioStr, HospitalId: hospital.Id } });
+      if (!servicio) {
+        const todosServicios = await prisma.servicios.findMany({ where: { HospitalId: hospital.Id } });
+        const targetNormS = normalizeForMatching(servicioStr);
+        servicio = todosServicios.find(s => 
+          s.Nombre.trim().toLowerCase() === servicioStr.toLowerCase() ||
+          normalizeForMatching(s.Nombre) === targetNormS
+        ) || null;
+      }
+      if (!servicio) {
+        skippedCount++;
+        details.push({
+          rowNumber: rowIndex,
+          type: 'OMITIDO',
+          reason: `Servicio '${servicioStr}' no encontrado`
+        });
+        continue;
+      }
+
+      const rawDniStr = String(docVal).trim();
+      const dniStr = rawDniStr.replace(/[^0-9]/g, '');
+
+      if (!dniStr) {
+        skippedCount++;
+        details.push({
+          rowNumber: rowIndex,
+          type: 'OMITIDO',
+          reason: `Documento de DNI inválido: '${rawDniStr}'`
+        });
+        continue;
+      }
+
+      const rawNombre = String(agenteVal).trim();
       const isTruthy = (v: any) => {
         if (!v) return false;
         const str = String(v).trim().toLowerCase();
@@ -2315,7 +2689,69 @@ app.post('/api/personal/bulk', authenticateToken, async (req: Request, res: Resp
       const isGuardia12 = isTruthy(getRowVal(row, 'esguardia12', 'esguardia12h', 'guardia12', 'guardia12h', 'g12'));
       const conVianda = isTruthy(getRowVal(row, 'con_vianda', 'convianda', 'vianda'));
 
-      const dniStr = String(docVal).trim();
+      const existingAgente = await prisma.personal.findUnique({
+        where: { DNI: dniStr },
+        include: { Hospital: true, Servicio: true }
+      });
+
+      // Lógica de protección de nombre: si el agente existe y el nombre en DB es más completo o igual de largo, no sobreescribir con un nombre incompleto
+      let nombreCompleto = rawNombre;
+      if (existingAgente && existingAgente.NombreCompleto) {
+        const dbName = existingAgente.NombreCompleto.trim();
+        const hasReplacementChars = rawNombre.includes('') || rawNombre.includes('?');
+        const isDbNameLongerOrEqual = dbName.length >= rawNombre.length;
+
+        if (isDbNameLongerOrEqual || hasReplacementChars) {
+          nombreCompleto = dbName;
+        }
+      }
+
+      if (existingAgente) {
+        updatedCount++;
+        const changes: string[] = [];
+
+        if (existingAgente.NombreCompleto !== nombreCompleto) {
+          changes.push(`Nombre: '${existingAgente.NombreCompleto}' -> '${nombreCompleto}'`);
+        }
+        if (existingAgente.HospitalId !== hospital.Id) {
+          changes.push(`Efector: '${existingAgente.Hospital?.Nombre}' -> '${hospital.Nombre}'`);
+        }
+        if (existingAgente.ServicioId !== servicio.Id) {
+          changes.push(`Servicio: '${existingAgente.Servicio?.Nombre}' -> '${servicio.Nombre}'`);
+        }
+        if (existingAgente.ConVianda !== conVianda) {
+          changes.push(`Con Vianda: ${existingAgente.ConVianda ? 'SI' : 'NO'} -> ${conVianda ? 'SI' : 'NO'}`);
+        }
+        if (existingAgente.EsGuardia24 !== isGuardia24) {
+          changes.push(`Guardia 24h: ${existingAgente.EsGuardia24 ? 'SI' : 'NO'} -> ${isGuardia24 ? 'SI' : 'NO'}`);
+        }
+        if (existingAgente.EsGuardia12 !== isGuardia12) {
+          changes.push(`Guardia 12h: ${existingAgente.EsGuardia12 ? 'SI' : 'NO'} -> ${isGuardia12 ? 'SI' : 'NO'}`);
+        }
+
+        details.push({
+          rowNumber: rowIndex,
+          type: 'ACTUALIZADO',
+          dni: dniStr,
+          nombre: nombreCompleto,
+          efector: hospital.Nombre,
+          servicio: servicio.Nombre,
+          changes: changes.length > 0 ? changes : ['Sin cambios de campos (datos idénticos)']
+        });
+      } else {
+        createdCount++;
+        details.push({
+          rowNumber: rowIndex,
+          type: 'NUEVO',
+          dni: dniStr,
+          nombre: nombreCompleto,
+          efector: hospital.Nombre,
+          servicio: servicio.Nombre,
+          conVianda,
+          isGuardia24,
+          isGuardia12
+        });
+      }
 
       await prisma.personal.upsert({
         where: { DNI: dniStr },
@@ -2370,11 +2806,317 @@ app.post('/api/personal/bulk', authenticateToken, async (req: Request, res: Resp
       imported++;
     }
 
-    await logAudit(req, 'IMPORTACION_EXCEL', `Se procesaron e importaron ${imported} registros desde archivo Excel`);
-    res.json({ message: 'Importacion completada', count: imported });
+    await logAudit(req, 'IMPORTACION_EXCEL', `Importación completada: ${createdCount} nuevos, ${updatedCount} actualizados, ${skippedCount} omitidos.`);
+    res.json({
+      message: 'Importacion completada',
+      count: imported,
+      createdCount,
+      updatedCount,
+      skippedCount,
+      details
+    });
   } catch (error) {
     console.error('Error importing personal:', error);
     res.status(500).json({ error: 'Error al importar datos' });
+  }
+});
+
+// 6. ENTREGAS DE VIANDAS MEDIANTE ESCANEO DNI / QR
+app.get('/api/deliveries/scan-check', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  const { code, fecha, tipoComida } = req.query;
+
+  if (!hospitalId) {
+    res.status(403).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+
+  const rawCode = String(code || '').trim();
+  if (!rawCode) {
+    res.status(400).json({ error: 'Código o DNI no proporcionado' });
+    return;
+  }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+
+  const targetFechaStr = fecha && /^\d{4}-\d{2}-\d{2}$/.test(String(fecha)) ? String(fecha) : todayStr;
+  const targetDate = new Date(`${targetFechaStr}T00:00:00.000Z`);
+
+  try {
+    let serviceId: number | null = null;
+    let searchedDni: string | null = null;
+    let isConsolidado = false;
+
+    if (rawCode.startsWith('SERVICE_ORDER:')) {
+      const parts = rawCode.split(':');
+      if (parts[1]) serviceId = Number(parts[1]);
+      isConsolidado = true;
+    } else {
+      searchedDni = extractDniFromScan(rawCode);
+    }
+
+    let agenteMain: any = null;
+    if (searchedDni) {
+      agenteMain = await prisma.personal.findFirst({
+        where: { DNI: searchedDni, HospitalId: Number(hospitalId) },
+        include: { Servicio: true }
+      });
+      if (!agenteMain) {
+        agenteMain = await prisma.padronHabilitados.findFirst({
+          where: { DNI: searchedDni, HospitalId: Number(hospitalId) },
+          include: { Servicio: true }
+        });
+      }
+    }
+
+    // Si el servicio del agente escaneado utiliza Voucher Consolidado (VoucherIndividual === false)
+    if (agenteMain?.ServicioId && agenteMain?.Servicio?.VoucherIndividual === false) {
+      serviceId = agenteMain.ServicioId;
+      isConsolidado = true;
+    }
+
+    let servicioObj: any = null;
+    if (serviceId) {
+      servicioObj = await prisma.servicios.findUnique({ where: { Id: Number(serviceId) } });
+    }
+
+    let rawPedidos: any[] = [];
+
+    if (isConsolidado && serviceId) {
+      // Para Voucher Consolidado: Cargar TODOS los pedidos aprobados de ese servicio para el efector y fecha
+      rawPedidos = await prisma.pedidosComida.findMany({
+        where: {
+          FechaPedido: targetDate,
+          Estado: 'Aprobado',
+          OR: [
+            { Personal: { ServicioId: Number(serviceId) } },
+            { PersonalReemplazado: { ServicioId: Number(serviceId) } },
+            { SolicitadoPor: { ServicioId: Number(serviceId) } },
+            { JustificacionSolicitud: { contains: `[SERVICIO:` } }
+          ]
+        },
+        include: {
+          Personal: { include: { Servicio: true } },
+          PersonalReemplazado: { include: { Servicio: true } },
+          SolicitadoPor: { include: { Servicio: true } },
+          EntregadoPor: true
+        },
+        orderBy: { Id: 'asc' }
+      });
+
+      if (servicioObj) {
+        rawPedidos = rawPedidos.filter(p => {
+          const sNombre = p.Personal?.Servicio?.Nombre || p.PersonalReemplazado?.Servicio?.Nombre || p.SolicitadoPor?.Servicio?.Nombre;
+          if (sNombre && sNombre === servicioObj.Nombre) return true;
+          if (p.JustificacionSolicitud && p.JustificacionSolicitud.includes(`[SERVICIO:${servicioObj.Nombre}]`)) return true;
+          return p.Personal?.ServicioId === serviceId || p.PersonalReemplazado?.ServicioId === serviceId;
+        });
+      }
+    } else if (searchedDni) {
+      // Para Voucher Individual: Cargar el pedido directo del DNI escaneado
+      rawPedidos = await prisma.pedidosComida.findMany({
+        where: {
+          FechaPedido: targetDate,
+          Estado: 'Aprobado',
+          OR: [
+            { Personal: { DNI: searchedDni } },
+            { EmergenciaDNI: searchedDni },
+            { PersonalReemplazado: { DNI: searchedDni } }
+          ]
+        },
+        include: {
+          Personal: { include: { Servicio: true } },
+          PersonalReemplazado: { include: { Servicio: true } },
+          SolicitadoPor: { include: { Servicio: true } },
+          EntregadoPor: true
+        }
+      });
+    }
+
+    let enrichedPedidos = await enrichEmergencyList(rawPedidos);
+    if (tipoComida) {
+      enrichedPedidos = enrichedPedidos.filter((p: any) => p.TipoComida === String(tipoComida));
+    }
+
+    if (!servicioObj) {
+      const s = agenteMain?.Servicio || (rawPedidos[0]?.Personal?.Servicio) || (rawPedidos[0]?.SolicitadoPor?.Servicio);
+      if (s) {
+        servicioObj = s;
+      }
+    }
+
+    const formattedPedidos = enrichedPedidos.map((p: any) => {
+      const sNombre = p.Servicio?.Nombre || p.Personal?.Servicio?.Nombre || p.PersonalReemplazado?.Servicio?.Nombre || p.SolicitadoPor?.Servicio?.Nombre || 'Servicio General';
+      const aNombre = p.EmergenciaNombreCompleto || p.Personal?.NombreCompleto || p.PersonalReemplazado?.NombreCompleto || 'Agente';
+      const aDni = p.EmergenciaDNI || p.Personal?.DNI || p.PersonalReemplazado?.DNI || '-';
+
+      return {
+        Id: p.Id,
+        AgenteNombre: aNombre,
+        AgenteDNI: aDni,
+        ServicioNombre: sNombre,
+        TipoComida: p.TipoComida,
+        TipoDieta: p.TipoDieta,
+        Estado: p.Estado,
+        Entregado: Boolean(p.FechaEntregado),
+        FechaEntregado: p.FechaEntregado ? new Date(p.FechaEntregado).toISOString() : null,
+        EntregadoPor: p.EntregadoPor?.NombreCompleto || p.EntregadoPor?.NombreUsuario || null,
+        Justificacion: p.JustificacionSolicitud ? p.JustificacionSolicitud.replace(/\[SERVICIO:.*?\]/g, '').trim() : ''
+      };
+    });
+
+    res.json({
+      mode: isConsolidado ? 'servicio' : 'individual',
+      dniScanned: searchedDni,
+      agenteScanned: agenteMain ? {
+        NombreCompleto: agenteMain.NombreCompleto,
+        DNI: agenteMain.DNI,
+        ServicioNombre: agenteMain.Servicio?.Nombre || 'Servicio'
+      } : null,
+      servicio: servicioObj ? {
+        Id: servicioObj.Id,
+        Nombre: servicioObj.Nombre,
+        VoucherIndividual: servicioObj.VoucherIndividual
+      } : null,
+      pedidos: formattedPedidos
+    });
+  } catch (error: any) {
+    console.error('Error al chequear escaneo:', error);
+    res.status(500).json({ error: 'Error al procesar escaneo: ' + (error?.message || String(error)) });
+  }
+});
+
+app.post('/api/deliveries/confirm-delivery', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const { pedidoIds } = req.body;
+  const userId = req.user?.userId || (req.user as any)?.id;
+
+  if (!Array.isArray(pedidoIds) || pedidoIds.length === 0) {
+    res.status(400).json({ error: 'Debe seleccionar al menos un pedido para entregar.' });
+    return;
+  }
+
+  try {
+    const ids = pedidoIds.map(Number);
+
+    const yaEntregados = await prisma.pedidosComida.findMany({
+      where: {
+        Id: { in: ids },
+        FechaEntregado: { not: null }
+      }
+    });
+
+    if (yaEntregados.length > 0) {
+      res.status(400).json({
+        error: `Algunos pedidos seleccionados ya habían sido entregados previamente.`
+      });
+      return;
+    }
+
+    await prisma.pedidosComida.updateMany({
+      where: { Id: { in: ids } },
+      data: {
+        FechaEntregado: new Date(),
+        EntregadoPorUsuarioId: Number(userId)
+      }
+    });
+
+    await logAudit(req, 'ENTREGA_RACIONES_DNI_QR', `Entregadas ${ids.length} raciones mediante escaneo de DNI/QR`);
+    res.json({ message: `Se registraron exitosamente ${ids.length} entrega(s) de raciones.` });
+  } catch (error: any) {
+    console.error('Error al confirmar entrega:', error);
+    res.status(500).json({ error: 'Error al registrar entrega: ' + (error?.message || String(error)) });
+  }
+});
+
+// Obtener resumen de entregas (progreso e historial descendente) para un hospital, fecha y tipoComida
+app.get('/api/deliveries/summary', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  const { fecha, tipoComida } = req.query;
+
+  if (!hospitalId) {
+    res.status(403).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
+
+  const targetFechaStr = fecha && /^\d{4}-\d{2}-\d{2}$/.test(String(fecha)) ? String(fecha) : todayStr;
+  const targetDate = new Date(`${targetFechaStr}T00:00:00.000Z`);
+
+  try {
+    const whereCondition: any = {
+      FechaPedido: targetDate,
+      Estado: 'Aprobado',
+      SolicitadoPor: { HospitalId: Number(hospitalId) }
+    };
+
+    if (tipoComida && (tipoComida === 'Almuerzo' || tipoComida === 'Cena')) {
+      whereCondition.TipoComida = String(tipoComida);
+    }
+
+    const rawPedidos = await prisma.pedidosComida.findMany({
+      where: whereCondition,
+      include: {
+        Personal: { include: { Servicio: true } },
+        PersonalReemplazado: { include: { Servicio: true } },
+        SolicitadoPor: { include: { Servicio: true } },
+        EntregadoPor: true
+      },
+      orderBy: { Id: 'asc' }
+    });
+
+    const enriched = await enrichEmergencyList(rawPedidos);
+
+    const totalApproved = enriched.length;
+    const deliveredList = enriched.filter((p: any) => Boolean(p.FechaEntregado));
+    const totalDelivered = deliveredList.length;
+    const totalPending = totalApproved - totalDelivered;
+    const percentage = totalApproved > 0 ? Math.round((totalDelivered / totalApproved) * 100) : 0;
+
+    // Ordenar historial por FechaEntregado DESC (el último entregado siempre primero)
+    deliveredList.sort((a: any, b: any) => {
+      const timeA = new Date(a.FechaEntregado).getTime();
+      const timeB = new Date(b.FechaEntregado).getTime();
+      return timeB - timeA;
+    });
+
+    const historyFormatted = deliveredList.map((p: any) => {
+      const sNombre = p.Servicio?.Nombre || p.Personal?.Servicio?.Nombre || p.PersonalReemplazado?.Servicio?.Nombre || p.SolicitadoPor?.Servicio?.Nombre || 'Servicio General';
+      const aNombre = p.EmergenciaNombreCompleto || p.Personal?.NombreCompleto || p.PersonalReemplazado?.NombreCompleto || 'Agente';
+      const aDni = p.EmergenciaDNI || p.Personal?.DNI || p.PersonalReemplazado?.DNI || '-';
+
+      return {
+        Id: p.Id,
+        AgenteNombre: aNombre,
+        AgenteDNI: aDni,
+        ServicioNombre: sNombre,
+        TipoComida: p.TipoComida,
+        TipoDieta: p.TipoDieta,
+        FechaEntregado: p.FechaEntregado ? new Date(p.FechaEntregado).toISOString() : null,
+        EntregadoPor: p.EntregadoPor?.NombreCompleto || p.EntregadoPor?.NombreUsuario || 'Nutrición'
+      };
+    });
+
+    res.json({
+      targetFechaStr,
+      tipoComida: tipoComida || 'Todos',
+      totalApproved,
+      totalDelivered,
+      totalPending,
+      percentage,
+      deliveriesHistory: historyFormatted
+    });
+  } catch (error: any) {
+    console.error('Error al obtener resumen de entregas:', error);
+    res.status(500).json({ error: 'Error al procesar el resumen de entregas: ' + (error?.message || String(error)) });
   }
 });
 

@@ -9,7 +9,7 @@ services:
       - "${BACKEND_PORT:-3001}:3001"
     environment:
       - PORT=3001
-      - DATABASE_URL=${DATABASE_URL:-sqlserver://host.docker.internal;database=ComidaDB;user=sa;password=YourPassword;trustServerCertificate=true;}
+      - DATABASE_URL=${DATABASE_URL:-sqlserver://host.docker.internal:49927;database=ComidaDB;user=sa;password=12345678$$EP;trustServerCertificate=true;}
       - JWT_SECRET=${JWT_SECRET:-super_secret_jwt_key_change_in_production}
       - TZ=America/Argentina/Buenos_Aires
     extra_hosts:

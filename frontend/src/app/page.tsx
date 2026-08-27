@@ -7,7 +7,7 @@ import { useTheme } from "next-themes";
 import Swal from 'sweetalert2';
 import { 
   LogOut, Sun, Moon, AlertTriangle, FileText, Settings, 
-  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, ChevronUp, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2, Shield, RefreshCw, RotateCcw, PlusCircle, Zap, Eye, EyeOff
+  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, ChevronUp, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2, Shield, RefreshCw, RotateCcw, PlusCircle, Zap, Eye, EyeOff, QrCode, Scan, Edit3, ArrowRightLeft
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -63,7 +63,7 @@ export default function Home() {
   const [dietasHabilitadas, setDietasHabilitadas] = useState<string[]>(DIETAS_DISPONIBLES);
 
   useEffect(() => {
-    if (token) {
+    if (token && role !== "RRHH" && role !== "Admin" && hospitalName) {
       fetch(`${API_URL}/api/hospital/config`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => r.json())
       .then(d => {
@@ -77,7 +77,7 @@ export default function Home() {
         }
       }).catch(console.error);
     }
-  }, [token]);
+  }, [token, role, hospitalName]);
 
   const currentTotalMins = currentTime ? (currentTime.getHours() * 60 + currentTime.getMinutes()) : 0;
   const [lAh, lAm] = limiteAlmuerzo.split(':').map(Number);
@@ -230,7 +230,9 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [step, setStep] = useState(1); // 1: Credentials, 2: 2FA, 3: Change Password
   const [tempToken, setTempToken] = useState("");
@@ -445,13 +447,21 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
                   <Lock className="h-5 w-5 text-gray-400" />
                 </div>
                 <input 
-                  type="password" 
+                  type={showNewPassword ? "text" : "password"} 
                   value={newPassword} 
                   onChange={e => setNewPassword(e.target.value)} 
-                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
+                  className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
                   placeholder="••••••••"
                   required 
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors focus:outline-none cursor-pointer"
+                  title={showNewPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                >
+                  {showNewPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
               </div>
             </div>
             <div>
@@ -461,13 +471,21 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
                   <Lock className="h-5 w-5 text-gray-400" />
                 </div>
                 <input 
-                  type="password" 
+                  type={showConfirmPassword ? "text" : "password"} 
                   value={confirmPassword} 
                   onChange={e => setConfirmPassword(e.target.value)} 
-                  className="block w-full pl-10 pr-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
+                  className="block w-full pl-10 pr-10 py-2.5 border border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 placeholder-gray-400 transition-shadow" 
                   placeholder="••••••••"
                   required 
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors focus:outline-none cursor-pointer"
+                  title={showConfirmPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                </button>
               </div>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -690,15 +708,17 @@ function JefePanel({
   const [emgTipo, setEmgTipo] = useState((isPastAuthAlmuerzo && isPastAuthCena) ? "reemplazo_excepcional" : "reemplazo");
 
   useEffect(() => {
-    if (isPastAuthAlmuerzo && isPastAuthCena) {
-      if (emgTipo !== 'reemplazo_excepcional') {
-        setEmgTipo('reemplazo_excepcional');
-        setEmgJustificacion("Reemplazo excepcional de última hora");
+    if (emgFecha === getTodayStr()) {
+      if (isPastAuthAlmuerzo && isPastAuthCena) {
+        if (emgTipo !== 'reemplazo_excepcional') {
+          setEmgTipo('reemplazo_excepcional');
+          setEmgJustificacion("Reemplazo excepcional de última hora");
+        }
+      } else if (isPastAuthAlmuerzo && (emgComida === 'Almuerzo' || emgComida === 'Ambos')) {
+        setEmgComida('Cena');
       }
-    } else if (isPastAuthAlmuerzo && (emgComida === 'Almuerzo' || emgComida === 'Ambos')) {
-      setEmgComida('Cena');
     }
-  }, [isPastAuthAlmuerzo, isPastAuthCena]);
+  }, [isPastAuthAlmuerzo, isPastAuthCena, emgFecha]);
   const [emgReemplazaId, setEmgReemplazaId] = useState("");
   const [emgSearchTerm, setEmgSearchTerm] = useState("");
   const [emgJustificacion, setEmgJustificacion] = useState("por reemplazo de personal");
@@ -839,6 +859,10 @@ function JefePanel({
 
   useEffect(() => {
     fetchStaff(fechaPlanilla);
+    setSelections({});
+    setSavedSelections({});
+    loadOrdersForDate(fechaPlanilla);
+    setEmgFecha(fechaPlanilla);
   }, [fechaPlanilla]);
 
   const [openGroup, setOpenGroup] = useState<"mi_servicio" | "otros">("mi_servicio");
@@ -907,9 +931,9 @@ function JefePanel({
   const [selections, setSelections] = useState<{ [id: number]: { almuerzo: string | null, cena: string | null } }>({});
   const [savedSelections, setSavedSelections] = useState<{ [id: number]: { almuerzo: string | null, cena: string | null } }>({});
 
-  const loadTodayOrders = () => {
-    const today = getTodayStr();
-    fetch(`${API_URL}/api/reports?fechaInicio=${today}&fechaFin=${today}`, {
+  const loadOrdersForDate = (targetFecha?: string) => {
+    const fechaToLoad = targetFecha || fechaPlanilla;
+    fetch(`${API_URL}/api/reports?fechaInicio=${fechaToLoad}&fechaFin=${fechaToLoad}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     .then(r => {
@@ -924,14 +948,23 @@ function JefePanel({
       if (!Array.isArray(data)) return;
       const newSelections: { [id: number]: { almuerzo: string | null, cena: string | null } } = {};
       data.forEach((r: any) => {
-        if (r.PersonalId) {
-          if (!newSelections[r.PersonalId]) {
-            newSelections[r.PersonalId] = { almuerzo: null, cena: null };
+        const pId = r.PersonalId || (r.Personal ? r.Personal.Id : null) || (r.EmergenciaReemplazaId ? Number(r.EmergenciaReemplazaId) : null);
+        const pDni = r.EmergenciaDNI || (r.Personal ? r.Personal.DNI : null);
+        
+        let matchedAgentId = pId;
+        if (!matchedAgentId && pDni) {
+          const found = staff.find((s: any) => s.DNI === pDni);
+          if (found) matchedAgentId = found.Id;
+        }
+
+        if (matchedAgentId) {
+          if (!newSelections[matchedAgentId]) {
+            newSelections[matchedAgentId] = { almuerzo: null, cena: null };
           }
           if (r.TipoComida.toLowerCase() === 'almuerzo') {
-            newSelections[r.PersonalId].almuerzo = r.TipoDieta;
+            newSelections[matchedAgentId].almuerzo = r.TipoDieta;
           } else if (r.TipoComida.toLowerCase() === 'cena') {
-            newSelections[r.PersonalId].cena = r.TipoDieta;
+            newSelections[matchedAgentId].cena = r.TipoDieta;
           }
         }
       });
@@ -942,10 +975,8 @@ function JefePanel({
   };
 
   useEffect(() => {
-    loadTodayOrders();
-
     const handleFocus = () => {
-      loadTodayOrders();
+      loadOrdersForDate(fechaPlanilla);
     };
 
     window.addEventListener('focus', handleFocus);
@@ -955,7 +986,7 @@ function JefePanel({
       window.removeEventListener('focus', handleFocus);
       document.removeEventListener('visibilitychange', handleFocus);
     };
-  }, [token]);
+  }, [token, fechaPlanilla]);
 
   const toggleSelection = (personalId: number, tipoComida: "almuerzo" | "cena", tipoDieta: string) => {
     const isDeadline = fechaPlanilla === getTodayStr() ? (tipoComida === "almuerzo" ? isPastAlmuerzo : isPastCena) : false;
@@ -1105,19 +1136,7 @@ function JefePanel({
       });
       if (res.ok) {
         Swal.fire({ title: "Guardado", text: "Todos los pedidos se guardaron exitosamente.", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-        setSavedSelections(prev => {
-          const next = JSON.parse(JSON.stringify(prev));
-          Object.keys(selections).forEach(idStr => {
-            const id = Number(idStr);
-            if (!next[id]) next[id] = { almuerzo: null, cena: null };
-            if (planillaTab === 'almuerzo') {
-              next[id].almuerzo = selections[id].almuerzo;
-            } else {
-              next[id].cena = selections[id].cena;
-            }
-          });
-          return next;
-        });
+        loadOrdersForDate(fechaPlanilla);
       } else {
         const data = await res.json();
         Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
@@ -1867,7 +1886,34 @@ function JefePanel({
 
       {/* SECCION: EMERGENCIA */}
       {activeTab === "Emergencias" && (
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-orange-200 dark:border-orange-900/30 overflow-hidden animate-in fade-in zoom-in-95 duration-300 flex flex-col gap-6 p-6">
+      <div className="space-y-4">
+        {/* BANNER DESTACADO PARA EMERGENCIA ANTICIPADA */}
+        {emgFecha !== getTodayStr() && (
+          <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white px-6 py-4 rounded-2xl shadow-md flex items-center justify-between animate-in fade-in duration-300 border border-amber-300">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 bg-white/20 rounded-xl shrink-0">
+                <Zap className="w-6 h-6 text-yellow-200" />
+              </div>
+              <div>
+                <h4 className="font-black text-sm uppercase tracking-wide flex items-center gap-2">
+                  ⚡ CARGA DE EMERGENCIA ANTICIPADA HABILITADA POR GERENCIA
+                </h4>
+                <p className="text-xs text-amber-100 mt-0.5 font-medium">
+                  Estás registrando una solicitud de emergencia para la fecha futura <span className="font-black underline">{emgFecha.split('-').reverse().join('/')}</span> ({fechasAnticipadasActivas.find(f=>f.FechaHabilitadaStr===emgFecha)?.Descripcion || 'Fecha Futura Autorizada'}).
+                </p>
+              </div>
+            </div>
+            <span className="hidden sm:inline-block text-[11px] font-black bg-white/25 px-3.5 py-1.5 rounded-full uppercase border border-white/40 shrink-0">
+              Emergencia Anticipada
+            </span>
+          </div>
+        )}
+
+        <div className={`rounded-2xl shadow-sm overflow-hidden animate-in fade-in zoom-in-95 duration-300 flex flex-col gap-6 p-6 transition-all ${
+          emgFecha !== getTodayStr() 
+            ? 'bg-gradient-to-b from-amber-50/90 via-orange-50/40 to-white dark:from-amber-950/30 dark:via-orange-950/20 dark:to-gray-900 border-2 border-amber-400 dark:border-amber-700/60 shadow-lg' 
+            : 'bg-white dark:bg-gray-900 border border-orange-200 dark:border-orange-900/30'
+        }`}>
           
           <div className="border-b border-gray-200 dark:border-gray-800 pb-4">
             <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
@@ -1876,7 +1922,7 @@ function JefePanel({
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Para reemplazos de personal inhabilitado o agregados extra justificados.</p>
           </div>
 
-          {isPastAuthAlmuerzo && isPastAuthCena && (
+          {isPastAuthAlmuerzo && isPastAuthCena && emgFecha === getTodayStr() && (
             <div className="bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-800 p-4 rounded-xl flex items-center space-x-3 text-purple-900 dark:text-purple-300">
               <AlertTriangle className="w-5 h-5 flex-shrink-0 text-purple-600 dark:text-purple-400" />
               <div className="text-xs sm:text-sm">
@@ -1888,10 +1934,21 @@ function JefePanel({
           <form className="flex flex-col gap-6" onSubmit={submitEmergency}>
             
             {/* SELECTOR DE FECHA DE EMERGENCIA (HOY O FECHA ANTICIPADA) */}
-            <div className="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
-                Fecha del Pedido de Emergencia
-              </label>
+            <div className={`p-4 rounded-xl border transition-all ${
+              emgFecha !== getTodayStr()
+                ? 'bg-amber-100/70 dark:bg-amber-950/60 border-amber-400 dark:border-amber-700'
+                : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700'
+            }`}>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Fecha del Pedido de Emergencia
+                </label>
+                {emgFecha !== getTodayStr() && (
+                  <span className="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300 bg-amber-200 dark:bg-amber-900 px-2 py-0.5 rounded-md">
+                    ⚡ Fecha Anticipada
+                  </span>
+                )}
+              </div>
               <select
                 value={emgFecha}
                 onChange={e => {
@@ -1914,12 +1971,12 @@ function JefePanel({
             <div className="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
               <label className="block text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">Tipo de Solicitud</label>
               <div className="flex flex-wrap gap-5">
-                <label className={`flex items-center gap-2 ${isPastAuthAlmuerzo && isPastAuthCena ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                <label className={`flex items-center gap-2 ${emgFecha === getTodayStr() && isPastAuthAlmuerzo && isPastAuthCena ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                   <input 
                     type="radio" 
                     name="emgTipo" 
                     value="reemplazo" 
-                    disabled={isPastAuthAlmuerzo && isPastAuthCena}
+                    disabled={emgFecha === getTodayStr() && isPastAuthAlmuerzo && isPastAuthCena}
                     checked={emgTipo === 'reemplazo'} 
                     onChange={() => {
                       setEmgTipo('reemplazo');
@@ -1930,12 +1987,12 @@ function JefePanel({
                   <span className="text-sm font-semibold">Reemplazo de Personal</span>
                 </label>
 
-                <label className={`flex items-center gap-2 ${isPastAuthAlmuerzo && isPastAuthCena ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                <label className={`flex items-center gap-2 ${emgFecha === getTodayStr() && isPastAuthAlmuerzo && isPastAuthCena ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                   <input 
                     type="radio" 
                     name="emgTipo" 
                     value="extra" 
-                    disabled={isPastAuthAlmuerzo && isPastAuthCena}
+                    disabled={emgFecha === getTodayStr() && isPastAuthAlmuerzo && isPastAuthCena}
                     checked={emgTipo === 'extra'} 
                     onChange={() => {
                       setEmgTipo('extra');
@@ -2037,7 +2094,7 @@ function JefePanel({
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
                   {emgTipo === 'reemplazo_excepcional' ? 'Nombre y Apellido de la persona que retira' : 'Nombre y Apellido'}
                 </label>
-                <input type="text" value={emgNombre} onChange={e => setEmgNombre(e.target.value)} disabled={emgTipo !== 'reemplazo_excepcional' && isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Ej. Carlos Ruiz" required />
+                <input type="text" value={emgNombre} onChange={e => setEmgNombre(e.target.value)} disabled={emgFecha === getTodayStr() && emgTipo !== 'reemplazo_excepcional' && isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" placeholder="Ej. Carlos Ruiz" required />
               </div>
               <div>
                 <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1.5">
@@ -2053,7 +2110,7 @@ function JefePanel({
                   maxLength={8}
                   pattern="\d{7,8}"
                   title="El DNI debe contener 7 u 8 dígitos numéricos"
-                  disabled={emgTipo !== 'reemplazo_excepcional' && isPastAlmuerzo && isPastCena} 
+                  disabled={emgFecha === getTodayStr() && emgTipo !== 'reemplazo_excepcional' && isPastAlmuerzo && isPastCena} 
                   className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 focus:ring-orange-500/50 sm:text-sm disabled:opacity-50 px-3 py-2.5 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100" 
                   placeholder="Ej. 11223344 (8 dígitos)" 
                   required 
@@ -2061,23 +2118,23 @@ function JefePanel({
               </div>
             </div>
 
-            {/* ROW 3: Comida y Dieta (Las emergencias corresponden al día de hoy) */}
+            {/* ROW 3: Comida y Dieta */}
             {emgTipo !== 'reemplazo_excepcional' && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5 bg-gray-50 dark:bg-gray-800/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Comida</label>
                   <div className="flex gap-4">
-                    {!isPastAuthAlmuerzo && (
+                    {(!isPastAuthAlmuerzo || emgFecha !== getTodayStr()) && (
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="radio" name="emgComida" value="Almuerzo" checked={emgComida === 'Almuerzo'} onChange={() => setEmgComida('Almuerzo')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Almuerzo</span>
                       </label>
                     )}
-                    {!isPastAuthCena && (
+                    {(!isPastAuthCena || emgFecha !== getTodayStr()) && (
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="radio" name="emgComida" value="Cena" checked={emgComida === 'Cena'} onChange={() => setEmgComida('Cena')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Cena</span>
                       </label>
                     )}
-                    {(!isPastAuthAlmuerzo && !isPastAuthCena) && (
+                    {((!isPastAuthAlmuerzo && !isPastAuthCena) || emgFecha !== getTodayStr()) && (
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input type="radio" name="emgComida" value="Ambos" checked={emgComida === 'Ambos'} onChange={() => setEmgComida('Ambos')} className="accent-orange-500 w-4 h-4" /> <span className="text-sm">Ambos</span>
                       </label>
@@ -2089,14 +2146,14 @@ function JefePanel({
                   <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                     {emgComida === 'Ambos' ? 'Dieta Almuerzo' : 'Dieta'}
                   </label>
-                  <select value={emgDieta} onChange={e => setEmgDieta(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                  <select value={emgDieta} onChange={e => setEmgDieta(e.target.value)} disabled={emgFecha === getTodayStr() && isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
                     {dietas.map(d => <option key={d} value={d}>{d}</option>)}
                   </select>
                   
                   {emgComida === 'Ambos' && (
                     <div className="mt-3">
                       <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Dieta Cena</label>
-                      <select value={emgDietaCena} onChange={e => setEmgDietaCena(e.target.value)} disabled={isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
+                      <select value={emgDietaCena} onChange={e => setEmgDietaCena(e.target.value)} disabled={emgFecha === getTodayStr() && isPastAlmuerzo && isPastCena} className="w-full rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-orange-500 sm:text-sm px-3 py-2 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100">
                         {dietas.map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
                     </div>
@@ -2108,7 +2165,7 @@ function JefePanel({
             <div className="flex justify-end mt-2 pt-4 border-t border-gray-200 dark:border-gray-800">
               <button 
                 type="submit" 
-                disabled={emgTipo !== 'reemplazo_excepcional' && isPastAlmuerzo && isPastCena} 
+                disabled={emgFecha === getTodayStr() && emgTipo !== 'reemplazo_excepcional' && isPastAlmuerzo && isPastCena} 
                 className={`inline-flex items-center justify-center py-2.5 px-6 border border-transparent shadow-sm text-sm font-bold rounded-lg text-white transition-all transform hover:scale-[1.02] active:scale-95 disabled:opacity-50 ${emgTipo === 'reemplazo_excepcional' ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700' : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600'}`}
               >
                 <CheckCircle className="w-4 h-4 mr-2" /> 
@@ -2117,6 +2174,7 @@ function JefePanel({
             </div>
           </form>
         </div>
+      </div>
       )}
 
       {/* HISTORIAL DE EMERGENCIAS */}
@@ -2476,25 +2534,25 @@ function JefePanel({
           <div className="flex flex-wrap gap-2">
             <button 
               onClick={() => handleImprimirVouchers('Almuerzo')} 
-              disabled={!isPastAuthAlmuerzo || reportes.length === 0}
+              disabled={(repDesde === getTodayStr() && !isPastAuthAlmuerzo) || reportes.length === 0}
               className={`flex items-center px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all cursor-pointer ${
-                !isPastAuthAlmuerzo || reportes.length === 0
+                (repDesde === getTodayStr() && !isPastAuthAlmuerzo) || reportes.length === 0
                   ? 'bg-gray-200 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed'
                   : 'bg-orange-500 hover:bg-orange-600 text-white transform hover:scale-[1.02] active:scale-95'
               }`}
-              title={!isPastAuthAlmuerzo ? `Disponible una vez vencido el horario tope de autorización (${limiteAuthAlmuerzo || '11:00'} hs)` : 'Imprimir vouchers de Almuerzo'}
+              title={repDesde === getTodayStr() && !isPastAuthAlmuerzo ? `Disponible una vez vencido el horario tope de autorización (${limiteAuthAlmuerzo || '11:00'} hs)` : 'Imprimir vouchers de Almuerzo'}
             >
               <Printer className="w-4 h-4 mr-2" /> Vouchers Alm.
             </button>
             <button 
               onClick={() => handleImprimirVouchers('Cena')} 
-              disabled={!isPastAuthCena || reportes.length === 0}
+              disabled={(repDesde === getTodayStr() && !isPastAuthCena) || reportes.length === 0}
               className={`flex items-center px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all cursor-pointer ${
-                !isPastAuthCena || reportes.length === 0
+                (repDesde === getTodayStr() && !isPastAuthCena) || reportes.length === 0
                   ? 'bg-gray-200 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed'
                   : 'bg-indigo-600 hover:bg-indigo-700 text-white transform hover:scale-[1.02] active:scale-95'
               }`}
-              title={!isPastAuthCena ? `Disponible una vez vencido el horario tope de autorización (${limiteAuthCena || '18:00'} hs)` : 'Imprimir vouchers de Cena'}
+              title={repDesde === getTodayStr() && !isPastAuthCena ? `Disponible una vez vencido el horario tope de autorización (${limiteAuthCena || '18:00'} hs)` : 'Imprimir vouchers de Cena'}
             >
               <Printer className="w-4 h-4 mr-2" /> Vouchers Cena
             </button>
@@ -2778,6 +2836,222 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
   const [fechasAnticipadas, setFechasAnticipadas] = useState<any[]>([]);
   const [nuevaFechaAnticipada, setNuevaFechaAnticipada] = useState("");
   const [descripcionAnticipada, setDescripcionAnticipada] = useState("");
+
+  // Estado para Módulo de Entregas (Escáner DNI / QR)
+  const [scanInput, setScanInput] = useState("");
+  const [scanFecha, setScanFecha] = useState(getTodayStr());
+  const [scanTipoComida, setScanTipoComida] = useState<"Almuerzo" | "Cena">(new Date().getHours() < 15 ? "Almuerzo" : "Cena");
+  const [scanResult, setScanResult] = useState<any | null>(null);
+  const [selectedPedidoIds, setSelectedPedidoIds] = useState<number[]>([]);
+  const [cargandoScan, setCargandoScan] = useState(false);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+
+  // Resumen de entregas e Historial
+  const [summaryData, setSummaryData] = useState<{
+    totalApproved: number;
+    totalDelivered: number;
+    totalPending: number;
+    percentage: number;
+    deliveriesHistory: any[];
+  } | null>(null);
+  const [cargandoSummary, setCargandoSummary] = useState(false);
+  const [filtroHistorialEntregas, setFiltroHistorialEntregas] = useState("");
+
+  const fetchDeliverySummary = async () => {
+    setCargandoSummary(true);
+    try {
+      const res = await fetch(`${API_URL}/api/deliveries/summary?fecha=${scanFecha}&tipoComida=${scanTipoComida}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSummaryData(data);
+      }
+    } catch (e) {
+      console.error("Error al cargar resumen de entregas:", e);
+    } finally {
+      setCargandoSummary(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "Entregas" && token) {
+      fetchDeliverySummary();
+    }
+  }, [activeTab, scanFecha, scanTipoComida, token]);
+
+  const playBeep = () => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = 880;
+      gain.gain.value = 0.1;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleConfirmDelivery = async (idsToConfirm?: number[], scanDataOverride?: any) => {
+    const ids = idsToConfirm || selectedPedidoIds;
+    const targetScanResult = scanDataOverride !== undefined ? scanDataOverride : scanResult;
+
+    if (!ids || ids.length === 0) {
+      Swal.fire({
+        title: "Atención",
+        text: "Debe seleccionar al menos una ración para registrar la entrega.",
+        icon: "warning",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_URL}/api/deliveries/confirm-delivery`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ pedidoIds: ids })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        let agenteNombre = '';
+        if (targetScanResult && targetScanResult.pedidos) {
+          const matched = targetScanResult.pedidos.find((p: any) => ids.includes(p.Id));
+          if (matched) agenteNombre = matched.AgenteNombre;
+        }
+
+        Swal.fire({
+          title: "¡Entrega Confirmada!",
+          text: agenteNombre 
+            ? `Ración entregada a ${agenteNombre} exitosamente.` 
+            : (data.message || "Raciones marcadas como entregadas."),
+          icon: "success",
+          timer: 1800,
+          showConfirmButton: false,
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+        playBeep();
+
+        if (targetScanResult) {
+          const updatedPedidos = targetScanResult.pedidos.map((p: any) => {
+            if (ids.includes(p.Id)) {
+              return {
+                ...p,
+                Entregado: true,
+                FechaEntregado: new Date().toISOString(),
+                EntregadoPor: username || 'Nutrición'
+              };
+            }
+            return p;
+          });
+          setScanResult({ ...targetScanResult, pedidos: updatedPedidos });
+          setSelectedPedidoIds(prev => prev.filter(id => !ids.includes(id)));
+        }
+        fetchDeliverySummary();
+      } else {
+        Swal.fire({
+          title: "Error al Entregar",
+          text: data.error || "No se pudo registrar la entrega",
+          icon: "error",
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      Swal.fire({
+        title: "Error",
+        text: "Error al registrar la entrega",
+        icon: "error",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+    } finally {
+      setTimeout(() => {
+        scanInputRef.current?.focus();
+      }, 150);
+    }
+  };
+
+  const handleScanCheck = async (codeOverride?: string) => {
+    const code = codeOverride !== undefined ? codeOverride : scanInput;
+    if (!code || !code.trim()) return;
+
+    setCargandoScan(true);
+    try {
+      const res = await fetch(`${API_URL}/api/deliveries/scan-check?code=${encodeURIComponent(code.trim())}&fecha=${scanFecha}&tipoComida=${scanTipoComida}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setScanResult(data);
+        const pendIds = (data.pedidos || []).filter((p: any) => !p.Entregado).map((p: any) => p.Id);
+        setSelectedPedidoIds(pendIds);
+        setScanInput("");
+
+        const isConsolidado = data.mode === 'servicio' || data.servicio?.VoucherIndividual === false;
+        const shouldAutoConfirm = !isConsolidado;
+
+        if (shouldAutoConfirm) {
+          if (pendIds.length > 0) {
+            // SI ES VOUCHER INDIVIDUAL O ESCANEO INDIVIDUAL DE 1 AGENTE -> Entrega automática instantánea
+            await handleConfirmDelivery(pendIds, data);
+          } else if (data.pedidos && data.pedidos.length > 0) {
+            // Ya fue entregada previamente
+            const yaEntregado = data.pedidos[0];
+            playBeep();
+            Swal.fire({
+              title: "⚠️ Ración Ya Entregada",
+              text: `La ración de ${yaEntregado.AgenteNombre} (DNI: ${yaEntregado.AgenteDNI}) ya fue entregada previamente.`,
+              icon: "warning",
+              timer: 3000,
+              showConfirmButton: true,
+              background: theme === 'dark' ? '#1f2937' : '#fff',
+              color: theme === 'dark' ? '#fff' : '#000'
+            });
+          } else {
+            // No existe pedido aprobado
+            playBeep();
+            Swal.fire({
+              title: "⚠️ Sin Ración Autorizada",
+              text: `No existe pedido aprobado para el DNI ${data.dniScanned || code.trim()} en ${scanTipoComida} (${scanFecha.split('-').reverse().join('/')}).`,
+              icon: "warning",
+              timer: 3000,
+              showConfirmButton: true,
+              background: theme === 'dark' ? '#1f2937' : '#fff',
+              color: theme === 'dark' ? '#fff' : '#000'
+            });
+          }
+        } else {
+          // VOUCHER CONSOLIDADO (mode === 'servicio'): Carga la lista de raciones y requiere selección / clic manual
+          playBeep();
+        }
+      } else {
+        Swal.fire({
+          title: "Atención",
+          text: data.error || "No se encontraron solicitudes registradas",
+          icon: "warning",
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      Swal.fire({ title: "Error", text: "Error de comunicación con el servidor", icon: "error" });
+    } finally {
+      setCargandoScan(false);
+      setTimeout(() => {
+        scanInputRef.current?.focus();
+      }, 150);
+    }
+  };
 
   const fetchAdvanceDates = async () => {
     try {
@@ -3186,6 +3460,90 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
       }
     } catch (e) {
       Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
+
+  const renombrarServicioModal = async (servicioId: number, nombreActual: string) => {
+    const { value: nuevoNombre } = await Swal.fire({
+      title: 'Corregir Nombre del Servicio',
+      input: 'text',
+      inputValue: nombreActual,
+      inputLabel: 'Nuevo nombre para el servicio',
+      showCancelButton: true,
+      confirmButtonText: 'Guardar Nombre',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000',
+      inputValidator: (value) => {
+        if (!value || !value.trim()) return 'Debes ingresar un nombre válido';
+      }
+    });
+
+    if (nuevoNombre && nuevoNombre.trim() !== nombreActual) {
+      try {
+        const res = await fetch(`${API_URL}/api/services/${servicioId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ nombre: nuevoNombre.trim() })
+        });
+        if (res.ok) {
+          Swal.fire({ title: "Éxito", text: "Nombre del servicio actualizado correctamente", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          fetchServicios();
+        } else {
+          const data = await res.json();
+          Swal.fire({ title: "Error", text: data.error || "No se pudo actualizar el nombre del servicio", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      } catch (e) {
+        Swal.fire({ title: "Error", text: "Error de conexión al actualizar servicio", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    }
+  };
+
+  const cambiarServicioAgenteModal = async (agenteId: number, nombreAgente: string, servicioActualId: number) => {
+    const optionsHtml = servicios.map((s: any) => 
+      `<option value="${s.Id}" ${s.Id === servicioActualId ? 'selected' : ''}>${s.Nombre}</option>`
+    ).join('');
+
+    const { value: nuevoServicioId } = await Swal.fire({
+      title: `Cambiar Servicio de Agente`,
+      html:
+        `<p style="font-size:13px; font-weight:bold; margin-bottom:10px; color:${theme === 'dark' ? '#d1d5db' : '#374151'}; font-family:sans-serif;">Agente: ${nombreAgente}</p>` +
+        `<label style="display:block; text-align:left; font-size:12px; font-weight:bold; margin-bottom:4px; color:${theme === 'dark' ? '#9ca3af' : '#6b7280'};">Seleccione el servicio destino:</label>` +
+        `<select id="swal-select-servicio" class="swal2-select" style="display:flex; width:100%; margin: 8px 0 16px 0; background-color:${theme === 'dark' ? '#374151' : '#fff'}; color:${theme === 'dark' ? '#fff' : '#000'}; border-color:${theme === 'dark' ? '#4b5563' : '#d1d5db'};">${optionsHtml}</select>`,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Transferir Agente',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000',
+      preConfirm: () => {
+        const selectEl = document.getElementById('swal-select-servicio') as HTMLSelectElement;
+        const val = selectEl ? selectEl.value : '';
+        if (!val) {
+          Swal.showValidationMessage('Debes seleccionar un servicio');
+          return false;
+        }
+        return Number(val);
+      }
+    });
+
+    if (nuevoServicioId && nuevoServicioId !== servicioActualId) {
+      try {
+        const res = await fetch(`${API_URL}/api/staff/${agenteId}/servicio`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ servicioId: nuevoServicioId })
+        });
+        if (res.ok) {
+          Swal.fire({ title: "Éxito", text: "Agente transferido exitosamente", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          fetchServicios();
+        } else {
+          const data = await res.json();
+          Swal.fire({ title: "Error", text: data.error || "No se pudo cambiar el servicio del agente", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      } catch (e) {
+        Swal.fire({ title: "Error", text: "Error de conexión al transferir agente", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
     }
   };
 
@@ -3889,7 +4247,8 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
         const counts: Record<string, number> = {};
         consolidados.forEach(p => { counts[p.TipoDieta] = (counts[p.TipoDieta] || 0) + 1; });
         const dietasText = Object.entries(counts).map(([dieta, cant]) => `${dieta} (${cant})`).join(' | ');
-        const qrData = encodeURIComponent(`${servicio}-${tipo}-${date}-Total:${totalPlatos}`);
+        const sIdMatch = consolidados[0].ServicioId || consolidados[0].Personal?.ServicioId || consolidados[0].PersonalReemplazado?.ServicioId || consolidados[0].SolicitadoPor?.ServicioId;
+        const qrData = encodeURIComponent(sIdMatch ? `SERVICE_ORDER:${sIdMatch}` : `${servicio}-${tipo}-${date}-Total:${totalPlatos}`);
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
 
         vouchersHTML += `
@@ -4114,7 +4473,8 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
     { id: "Hospital", label: "Servicios", icon: <Building className="w-4 h-4 mr-2" /> },
     { id: "Reportes", label: "Reportes", icon: <FileText className="w-4 h-4 mr-2" /> },
     { id: "Auditoria", label: "Auditoría", icon: <Shield className="w-4 h-4 mr-2" /> },
-    { id: "Configuracion", label: "Configuración", icon: <Settings className="w-4 h-4 mr-2" /> }
+    { id: "Configuracion", label: "Configuración", icon: <Settings className="w-4 h-4 mr-2" /> },
+    { id: "Entregas", label: "Entrega", icon: <QrCode className="w-4 h-4 mr-2 text-indigo-500" /> }
   ];
 
   return (
@@ -4141,9 +4501,454 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
         ))}
       </div>
 
+      {/* PUNTO DE ENTREGA (ESCÁNER DNI / QR) */}
+      {activeTab === "Entregas" && (
+        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
+          
+          {/* BARRA DE PROGRESO DE ENTREGAS */}
+          <div className="bg-gradient-to-br from-blue-50/80 via-white to-indigo-50/60 dark:from-gray-900 dark:via-gray-900 dark:to-gray-950 rounded-2xl shadow-sm border border-blue-150 dark:border-gray-800 p-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-950/60 px-3 py-1 rounded-full border border-indigo-200 dark:border-indigo-800">
+                  📊 Indicador de Avance de Entregas
+                </span>
+                <h3 className="text-xl font-black text-gray-900 dark:text-gray-100 mt-2 flex items-center">
+                  <Utensils className="w-5 h-5 mr-2 text-indigo-500" />
+                  Progreso del Turno ({scanTipoComida} - {scanFecha.split('-').reverse().join('/')})
+                </h3>
+              </div>
+
+              {/* KPI BADGES */}
+              <div className="flex flex-wrap gap-2 text-xs font-extrabold">
+                <div className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-3.5 py-1.5 rounded-xl flex items-center shadow-xs">
+                  <CheckCircle className="w-4 h-4 mr-1.5 text-emerald-500" />
+                  Entregadas: <strong className="ml-1 text-sm">{summaryData?.totalDelivered ?? 0}</strong>
+                </div>
+                <div className="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-3.5 py-1.5 rounded-xl flex items-center shadow-xs">
+                  <AlertTriangle className="w-4 h-4 mr-1.5 text-amber-500" />
+                  Faltan Entregar: <strong className="ml-1 text-sm">{summaryData?.totalPending ?? 0}</strong>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-3.5 py-1.5 rounded-xl flex items-center shadow-xs">
+                  <Users className="w-4 h-4 mr-1.5 text-blue-500" />
+                  Total Aprobadas: <strong className="ml-1 text-sm">{summaryData?.totalApproved ?? 0}</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* BARRA DE PROGRESO */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between text-xs font-bold text-gray-600 dark:text-gray-400">
+                <span>Completado: {summaryData?.totalDelivered ?? 0} de {summaryData?.totalApproved ?? 0} raciones ({summaryData?.percentage ?? 0}%)</span>
+                <span>Faltan: {summaryData?.totalPending ?? 0} raciones</span>
+              </div>
+              <div className="w-full bg-gray-200 dark:bg-gray-800 h-6 rounded-2xl overflow-hidden shadow-inner p-1 border border-gray-300/70 dark:border-gray-700 relative">
+                <div 
+                  className="bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500 h-full rounded-xl transition-all duration-700 ease-out flex items-center justify-end pr-3 text-[11px] font-black text-white shadow-sm"
+                  style={{ width: `${Math.max(summaryData?.percentage ?? 0, 2)}%` }}
+                >
+                  {(summaryData?.percentage ?? 0) >= 8 && `${summaryData?.percentage}%`}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
+            
+            {/* HEADER CON INDICADOR DE ESTADO */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 pb-6 border-b border-gray-200 dark:border-gray-800">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                  <QrCode className="w-6 h-6 mr-2 text-blue-600 dark:text-blue-400" /> 
+                  Estación de Entrega de Viandas (DNI / QR)
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Escanee el DNI físico del agente o el código QR del voucher para validar y registrar la entrega en tiempo real.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Fecha */}
+                <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700">
+                  <span className="text-xs font-bold text-gray-500">Fecha:</span>
+                  <input 
+                    type="date" 
+                    value={scanFecha} 
+                    onChange={e => setScanFecha(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-gray-900 dark:text-gray-100 focus:outline-none"
+                  />
+                </div>
+
+                {/* Tipo Comida */}
+                <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl gap-1">
+                  <button
+                    onClick={() => setScanTipoComida("Almuerzo")}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                      scanTipoComida === "Almuerzo"
+                        ? 'bg-amber-500 text-white shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                    }`}
+                  >
+                    ☀️ Almuerzo
+                  </button>
+                  <button
+                    onClick={() => setScanTipoComida("Cena")}
+                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                      scanTipoComida === "Cena"
+                        ? 'bg-indigo-600 text-white shadow-sm'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
+                    }`}
+                  >
+                    🌙 Cena
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* CAJA DE ESCANEO ACTIVA (AUTOFOCUS) */}
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (scanInput.trim()) {
+                  handleScanCheck(scanInput.trim());
+                }
+              }}
+              className="mb-8"
+            >
+              <div className="relative flex items-center">
+                <Scan className="w-6 h-6 absolute left-4 text-blue-500 animate-pulse" />
+                <input
+                  ref={scanInputRef}
+                  type="text"
+                  value={scanInput}
+                  onChange={(e) => setScanInput(e.target.value)}
+                  placeholder="📲 LECTOR ACTIVO: Escanee el DNI o QR aquí (o ingrese DNI y presione Enter)..."
+                  className="w-full pl-12 pr-28 py-4 bg-blue-50/50 dark:bg-gray-800/60 border-2 border-blue-400 dark:border-blue-600 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40 rounded-2xl font-bold text-gray-900 dark:text-gray-100 text-base placeholder-gray-400 transition-all"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  disabled={cargandoScan || !scanInput.trim()}
+                  className="absolute right-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl transition-all shadow-sm flex items-center"
+                >
+                  {cargandoScan ? <RefreshCw className="w-4 h-4 animate-spin mr-1" /> : <Search className="w-4 h-4 mr-1" />}
+                  Buscar
+                </button>
+              </div>
+            </form>
+
+            {/* RESULTADO DEL ESCANEO */}
+            {cargandoScan && (
+              <div className="p-12 text-center flex flex-col items-center">
+                <RefreshCw className="w-10 h-10 text-blue-500 animate-spin mb-3" />
+                <p className="text-sm font-bold text-gray-600 dark:text-gray-400">Verificando raciones registradas...</p>
+              </div>
+            )}
+
+            {!cargandoScan && !scanResult && (
+              <div className="p-12 text-center flex flex-col items-center bg-gray-50/50 dark:bg-gray-800/20 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
+                <QrCode className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
+                <h3 className="text-base font-bold text-gray-700 dark:text-gray-300">Estación Lista para Escanear</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md">
+                  Aproxime el código de barras PDF417 del DNI físico del agente o el código QR del voucher al lector de cocina.
+                </p>
+              </div>
+            )}
+
+            {!cargandoScan && scanResult && (
+              <div className="space-y-6">
+                {scanResult.pedidos.length === 0 ? (
+                  <div className="p-6 bg-red-50 dark:bg-red-950/30 border-2 border-red-300 dark:border-red-800 rounded-2xl text-center">
+                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-2" />
+                    <h3 className="text-lg font-extrabold text-red-700 dark:text-red-400">
+                      ❌ SIN RACIÓN SOLICITADA PARA HOY
+                    </h3>
+                    <p className="text-sm text-red-600 dark:text-red-300 mt-1 font-medium">
+                      No se encontró ninguna solicitud autorizada para {scanResult.dniScanned ? `el DNI ${scanResult.dniScanned}` : 'el código escaneado'} en la fecha {scanFecha.split('-').reverse().join('/')}.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    {/* ENCABEZADO DE SERVICIO / AGENTE */}
+                    <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-6 rounded-2xl shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                      <div>
+                        <div className="flex items-center space-x-2">
+                          <span className="bg-white/20 text-white text-xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">
+                            {scanResult.mode === 'servicio' ? '🏢 Servicio Consolidado' : '👤 Entrega Individual'}
+                          </span>
+                          <span className="bg-amber-400 text-gray-900 text-xs font-black px-3 py-1 rounded-full uppercase">
+                            {scanTipoComida}
+                          </span>
+                        </div>
+                        <h3 className="text-2xl font-black mt-2">
+                          {scanResult.servicio ? scanResult.servicio.Nombre : (scanResult.agenteScanned?.NombreCompleto || scanResult.pedidos[0]?.ServicioNombre || 'Servicio')}
+                        </h3>
+                        <p className="text-xs text-blue-100 mt-0.5">
+                          Total Raciones Registradas: <strong className="text-white text-sm">{scanResult.pedidos.length}</strong> | Entregadas: <strong className="text-green-300 text-sm">{scanResult.pedidos.filter((p: any) => p.Entregado).length}</strong> | Pendientes: <strong className="text-yellow-300 text-sm">{scanResult.pedidos.filter((p: any) => !p.Entregado).length}</strong>
+                        </p>
+                      </div>
+
+                      {/* ACCIONES RÁPIDAS DE ENTREGA */}
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleConfirmDelivery(scanResult.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id))}
+                          disabled={scanResult.pedidos.filter((p: any) => !p.Entregado).length === 0}
+                          className="px-4 py-2.5 bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white text-xs font-black rounded-xl transition-all shadow-sm flex items-center cursor-pointer"
+                        >
+                          <CheckCircle className="w-4 h-4 mr-1.5" />
+                          Entregar TODAS las Pendientes ({scanResult.pedidos.filter((p: any) => !p.Entregado).length})
+                        </button>
+
+                        <button
+                          onClick={() => handleConfirmDelivery(selectedPedidoIds)}
+                          disabled={selectedPedidoIds.length === 0}
+                          className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white text-xs font-black rounded-xl transition-all shadow-sm flex items-center cursor-pointer"
+                        >
+                          <Utensils className="w-4 h-4 mr-1.5" />
+                          Entregar Seleccionadas ({selectedPedidoIds.length})
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* GRILLA DE RACIONES DEL SERVICIO / AGENTE */}
+                    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm">
+                      <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
+                        <h4 className="text-sm font-extrabold text-gray-900 dark:text-gray-100 flex items-center">
+                          <Users className="w-4 h-4 mr-2 text-indigo-500" />
+                          Integrantes y Raciones del Servicio
+                        </h4>
+
+                        <div className="flex items-center space-x-2 text-xs">
+                          <button
+                            onClick={() => {
+                              const pendIds = scanResult.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id);
+                              setSelectedPedidoIds(pendIds);
+                            }}
+                            className="text-blue-600 dark:text-blue-400 font-bold hover:underline"
+                          >
+                            Seleccionar Pendientes
+                          </button>
+                          <span className="text-gray-300">|</span>
+                          <button
+                            onClick={() => setSelectedPedidoIds([])}
+                            className="text-gray-500 font-bold hover:underline"
+                          >
+                            Deseleccionar
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="divide-y divide-gray-200 dark:divide-gray-800">
+                        {scanResult.pedidos.map((p: any) => {
+                          const isSelected = selectedPedidoIds.includes(p.Id);
+                          const isEntregado = p.Entregado;
+                          const isDietaEspecial = (p.TipoDieta || '').toLowerCase() !== 'normal';
+
+                          return (
+                            <div 
+                              key={p.Id} 
+                              className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
+                                isEntregado 
+                                  ? 'bg-green-50/50 dark:bg-green-950/20' 
+                                  : isSelected 
+                                  ? 'bg-blue-50/60 dark:bg-blue-950/30' 
+                                  : 'hover:bg-gray-50 dark:hover:bg-gray-800/40'
+                              }`}
+                            >
+                              <div className="flex items-center space-x-4">
+                                {!isEntregado && (
+                                  <input
+                                    type="checkbox"
+                                    checked={isSelected}
+                                    onChange={(e) => {
+                                      if (e.target.checked) {
+                                        setSelectedPedidoIds(prev => [...prev, p.Id]);
+                                      } else {
+                                        setSelectedPedidoIds(prev => prev.filter(id => id !== p.Id));
+                                      }
+                                    }}
+                                    className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
+                                  />
+                                )}
+
+                                <div>
+                                  <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                                    <h4 className="text-base font-bold text-gray-900 dark:text-gray-100">
+                                      {p.AgenteNombre}
+                                    </h4>
+                                    <span className="text-xs text-gray-500 font-semibold">
+                                      DNI: {p.AgenteDNI}
+                                    </span>
+                                    {isDietaEspecial && (
+                                      <span className="bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 text-xs font-black px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center">
+                                        🥗 {p.TipoDieta}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                    Servicio: <strong>{p.ServicioNombre}</strong> • Dieta: <strong className="text-gray-700 dark:text-gray-300">{p.TipoDieta}</strong>
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* ESTADO & BOTÓN INDIVIDUAL */}
+                              <div className="flex items-center space-x-3">
+                                {isEntregado ? (
+                                  <div className="text-right">
+                                    <span className="inline-flex items-center text-xs font-black bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 px-3 py-1.5 rounded-xl border border-green-300 dark:border-green-800">
+                                      <CheckCircle className="w-3.5 h-3.5 mr-1 text-green-600" />
+                                      ENTREGADO {p.FechaEntregado ? new Date(p.FechaEntregado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' }) + ' hs' : ''}
+                                    </span>
+                                    {p.EntregadoPor && (
+                                      <div className="text-[10px] text-gray-400 mt-0.5">Por: {p.EntregadoPor}</div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => handleConfirmDelivery([p.Id])}
+                                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center cursor-pointer"
+                                  >
+                                    <Check className="w-3.5 h-3.5 mr-1" />
+                                    Entregar Ración
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* HISTORIAL DE ENTREGAS EN LA MISMA VISTA (ÚLTIMO PRIMERO) */}
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                  <History className="w-5 h-5 mr-2 text-indigo-500" />
+                  Historial de Entregas Realizadas
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Las entregas registradas en este turno figuran en tiempo real. <strong>El último escaneo exitoso se ubica siempre al principio.</strong>
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-3 w-full sm:w-auto">
+                <div className="relative w-full sm:w-64">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                  <input 
+                    type="text"
+                    value={filtroHistorialEntregas}
+                    onChange={e => setFiltroHistorialEntregas(e.target.value)}
+                    placeholder="Buscar agente, DNI o servicio..."
+                    className="w-full pl-9 pr-3 py-1.5 text-xs font-semibold rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <button
+                  onClick={fetchDeliverySummary}
+                  className="p-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl text-gray-600 dark:text-gray-300"
+                  title="Actualizar historial"
+                >
+                  <RefreshCw className={`w-4 h-4 ${cargandoSummary ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6">
+              {!summaryData?.deliveriesHistory || summaryData.deliveriesHistory.length === 0 ? (
+                <div className="p-12 text-center text-gray-400 dark:text-gray-500 italic bg-gray-50/50 dark:bg-gray-800/20 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
+                  <History className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                  <p className="font-bold text-sm">Aún no hay entregas registradas para la fecha y turno seleccionados.</p>
+                  <p className="text-xs mt-1">Escanee un DNI en el cuadro superior para registrar la primera ración.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto border border-gray-200 dark:border-gray-800 rounded-xl">
+                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                    <thead className="bg-gray-50 dark:bg-gray-800/50 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Hora Entrega</th>
+                        <th className="px-4 py-3 text-left">Agente / DNI</th>
+                        <th className="px-4 py-3 text-left">Servicio</th>
+                        <th className="px-4 py-3 text-left">Comida / Dieta</th>
+                        <th className="px-4 py-3 text-left">Registrado Por</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-xs">
+                      {summaryData.deliveriesHistory
+                        .filter((item: any) => {
+                          if (!filtroHistorialEntregas.trim()) return true;
+                          const query = filtroHistorialEntregas.toLowerCase();
+                          return (
+                            (item.AgenteNombre || '').toLowerCase().includes(query) ||
+                            (item.AgenteDNI || '').toLowerCase().includes(query) ||
+                            (item.ServicioNombre || '').toLowerCase().includes(query)
+                          );
+                        })
+                        .map((item: any, idx: number) => {
+                          const isLatest = idx === 0;
+                          return (
+                            <tr 
+                              key={item.Id} 
+                              className={`transition-colors ${
+                                isLatest 
+                                  ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-l-4 border-l-emerald-500 font-semibold' 
+                                  : 'hover:bg-gray-50 dark:hover:bg-gray-800/40'
+                              }`}
+                            >
+                              <td className="px-4 py-3 whitespace-nowrap font-mono font-bold text-gray-900 dark:text-gray-100">
+                                <div className="flex items-center space-x-1.5">
+                                  {isLatest && (
+                                    <span className="bg-emerald-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full uppercase animate-pulse">
+                                      Último
+                                    </span>
+                                  )}
+                                  <span>
+                                    {item.FechaEntregado 
+                                      ? new Date(item.FechaEntregado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' }) + ' hs'
+                                      : '-'}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <div className="font-bold text-gray-900 dark:text-gray-100">{item.AgenteNombre}</div>
+                                <div className="text-[10px] text-gray-500 font-mono">DNI: {item.AgenteDNI}</div>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300 font-medium">
+                                {item.ServicioNombre}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-bold px-2 py-0.5 rounded-md mr-1.5">
+                                  {item.TipoComida}
+                                </span>
+                                <span className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold px-2 py-0.5 rounded-md">
+                                  {item.TipoDieta}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-gray-500 dark:text-gray-400">
+                                {item.EntregadoPor}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      )}
+
       {/* BANDEJA CONTENT */}
       {activeTab === "Bandeja" && (() => {
         const isAuthExpired = (e: any) => {
+          const fPedidoStr = e.FechaPedido ? e.FechaPedido.split('T')[0] : getTodayStr();
+          if (fPedidoStr !== getTodayStr()) return false;
+
           const comida = (e.TipoComida || '').toLowerCase();
           if (comida === 'almuerzo') return isPastAuthAlmuerzo;
           if (comida === 'cena') return isPastAuthCena;
@@ -4369,7 +5174,34 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
 
       {/* CREAR EMERGENCIA CONTENT (GERENCIA / ENCARGADO DE NUTRICIÓN) */}
       {activeTab === "CrearEmergencia" && (
-        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-purple-200 dark:border-purple-900/40 overflow-hidden animate-in fade-in zoom-in-95 duration-300 p-6 flex flex-col gap-6">
+        <div className="space-y-4">
+          {/* BANNER DESTACADO PARA EMERGENCIA ANTICIPADA */}
+          {gerEmgFecha !== getTodayStr() && (
+            <div className="bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white px-6 py-4 rounded-2xl shadow-md flex items-center justify-between animate-in fade-in duration-300 border border-amber-300">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-white/20 rounded-xl shrink-0">
+                  <Zap className="w-6 h-6 text-yellow-200" />
+                </div>
+                <div>
+                  <h4 className="font-black text-sm uppercase tracking-wide flex items-center gap-2">
+                    ⚡ CARGA DE EMERGENCIA ANTICIPADA DE GERENCIA / NUTRICIÓN
+                  </h4>
+                  <p className="text-xs text-amber-100 mt-0.5 font-medium">
+                    Estás registrando una emergencia para la fecha futura <span className="font-black underline">{gerEmgFecha.split('-').reverse().join('/')}</span> ({fechasAnticipadas.find(f=>f.FechaHabilitadaStr===gerEmgFecha)?.Descripcion || 'Fecha Futura Autorizada'}).
+                  </p>
+                </div>
+              </div>
+              <span className="hidden sm:inline-block text-[11px] font-black bg-white/25 px-3.5 py-1.5 rounded-full uppercase border border-white/40 shrink-0">
+                Emergencia Anticipada
+              </span>
+            </div>
+          )}
+
+          <div className={`rounded-2xl shadow-sm overflow-hidden animate-in fade-in zoom-in-95 duration-300 p-6 flex flex-col gap-6 transition-all ${
+            gerEmgFecha !== getTodayStr()
+              ? 'bg-gradient-to-b from-amber-50/90 via-orange-50/40 to-white dark:from-amber-950/30 dark:via-orange-950/20 dark:to-gray-900 border-2 border-amber-400 dark:border-amber-700/60 shadow-lg'
+              : 'bg-white dark:bg-gray-900 border border-purple-200 dark:border-purple-900/40'
+          }`}>
           <div className="border-b border-gray-200 dark:border-gray-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
@@ -4407,10 +5239,21 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
             </div>
 
             {/* SELECTOR DE FECHA DE EMERGENCIA (HOY O FECHA ANTICIPADA) */}
-            <div className="bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
-              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">
-                Fecha del Pedido de Emergencia
-              </label>
+            <div className={`p-4 rounded-xl border transition-all ${
+              gerEmgFecha !== getTodayStr()
+                ? 'bg-amber-100/70 dark:bg-amber-950/60 border-amber-400 dark:border-amber-700'
+                : 'bg-gray-50 dark:bg-gray-800/40 border-gray-200 dark:border-gray-700'
+            }`}>
+              <div className="flex justify-between items-center mb-1">
+                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                  Fecha del Pedido de Emergencia
+                </label>
+                {gerEmgFecha !== getTodayStr() && (
+                  <span className="text-[10px] font-black uppercase text-amber-800 dark:text-amber-300 bg-amber-200 dark:bg-amber-900 px-2 py-0.5 rounded-md">
+                    ⚡ Fecha Anticipada
+                  </span>
+                )}
+              </div>
               <select
                 value={gerEmgFecha}
                 onChange={e => setGerEmgFecha(e.target.value)}
@@ -4608,6 +5451,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
             </div>
           </form>
         </div>
+      </div>
       )}
 
       {/* HOSPITAL CONTENT */}
@@ -4654,6 +5498,14 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                             <span className="font-extrabold text-gray-900 dark:text-gray-100 text-base">{s.Nombre}</span>
                             <button
                               type="button"
+                              onClick={() => renombrarServicioModal(s.Id, s.Nombre)}
+                              className="p-1 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded transition-colors"
+                              title="Corregir/Renombrar Nombre de Servicio"
+                            >
+                              <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => toggleAgentesServicio(s.Id)}
                               className={`text-[11px] px-2.5 py-0.5 rounded-full font-extrabold flex items-center transition-all shadow-sm cursor-pointer ${
                                 openAgentesServicios[s.Id]
@@ -4692,9 +5544,19 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                                         <User className="w-3 h-3 mr-1.5 text-gray-400" />
                                         {p.NombreCompleto}
                                       </span>
-                                      <span className="text-[11px] text-gray-500 dark:text-gray-400 font-mono">
-                                        DNI: {p.DNI}
-                                      </span>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="text-[11px] text-gray-500 dark:text-gray-400 font-mono">
+                                          DNI: {p.DNI}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          onClick={() => cambiarServicioAgenteModal(p.Id, p.NombreCompleto, s.Id)}
+                                          className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-800/60 rounded border border-indigo-200 dark:border-indigo-800 flex items-center text-[10px] font-bold transition-colors cursor-pointer"
+                                          title="Cambiar de servicio a este agente"
+                                        >
+                                          <ArrowRightLeft className="w-3 h-3 mr-1" /> Mover Servicio
+                                        </button>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -5254,6 +6116,25 @@ function RRHHPanel({ token }: { token: string }) {
   const [gerentes, setGerentes] = useState<any[]>([]);
   const [importando, setImportando] = useState(false);
   const [importProgress, setImportProgress] = useState(0);
+  const [importLogText, setImportLogText] = useState<string | null>(null);
+  const [importSummary, setImportSummary] = useState<{
+    total: number;
+    created: number;
+    updated: number;
+    skipped: number;
+  } | null>(null);
+
+  const descargarLogImportacion = () => {
+    if (!importLogText) return;
+    const element = document.createElement("a");
+    const file = new Blob([importLogText], { type: 'text/plain;charset=utf-8' });
+    element.href = URL.createObjectURL(file);
+    const dateStr = new Date().toISOString().slice(0, 10) + '_' + new Date().toTimeString().slice(0, 8).replace(/:/g, '');
+    element.download = `Log_Importacion_Personal_${dateStr}.txt`;
+    document.body.appendChild(element);
+    element.click();
+    document.body.removeChild(element);
+  };
 
   const [logsAuditoria, setLogsAuditoria] = useState<any[]>([]);
   const [cargandoAuditoria, setCargandoAuditoria] = useState(false);
@@ -5788,6 +6669,9 @@ function RRHHPanel({ token }: { token: string }) {
 
     setImportando(true);
     setImportProgress(0);
+    setImportLogText(null);
+    setImportSummary(null);
+
     const reader = new FileReader();
     reader.onload = async (evt) => {
       try {
@@ -5805,6 +6689,10 @@ function RRHHPanel({ token }: { token: string }) {
 
         const CHUNK_SIZE = 500;
         let totalImported = 0;
+        let totalCreated = 0;
+        let totalUpdated = 0;
+        let totalSkipped = 0;
+        let allDetails: any[] = [];
         let hasError = false;
         
         for (let i = 0; i < data.length; i += CHUNK_SIZE) {
@@ -5817,7 +6705,13 @@ function RRHHPanel({ token }: { token: string }) {
           
           if (res.ok) {
             const respData = await res.json();
-            totalImported += respData.count;
+            totalImported += respData.count || 0;
+            totalCreated += respData.createdCount || 0;
+            totalUpdated += respData.updatedCount || 0;
+            totalSkipped += respData.skippedCount || 0;
+            if (respData.details && Array.isArray(respData.details)) {
+              allDetails = allDetails.concat(respData.details);
+            }
             setImportProgress(Math.min(100, Math.round(((i + chunk.length) / data.length) * 100)));
           } else {
             const errData = await res.json();
@@ -5828,8 +6722,63 @@ function RRHHPanel({ token }: { token: string }) {
         }
 
         if (!hasError) {
-          Swal.fire('Éxito', `Se importaron/actualizaron ${totalImported} registros`, 'success');
-          fetchHospitales(); // refrescar
+          const nowStr = new Date().toLocaleString('es-AR');
+          let logTxt = `================================================================================\n`;
+          logTxt += `LOG DE AUDITORÍA - IMPORTACIÓN MASIVA DE PERSONAL (SisAR)\n`;
+          logTxt += `================================================================================\n`;
+          logTxt += `Fecha y Hora         : ${nowStr}\n`;
+          logTxt += `Archivo Procesado   : ${file.name}\n`;
+          logTxt += `Total Filas         : ${data.length}\n`;
+          logTxt += `--------------------------------------------------------------------------------\n`;
+          logTxt += `RESUMEN GENERAL DE OPERACIONES:\n`;
+          logTxt += `  - Agentes Creados (Nuevos)        : ${totalCreated}\n`;
+          logTxt += `  - Agentes Actualizados (Repetidos) : ${totalUpdated}\n`;
+          logTxt += `  - Filas Omitidas / Inválidas      : ${totalSkipped}\n`;
+          logTxt += `================================================================================\n\n`;
+          logTxt += `DETALLE INDIVIDUAL DE ACCIONES TOMADAS POR FILA:\n`;
+          logTxt += `--------------------------------------------------------------------------------\n`;
+
+          allDetails.forEach((item, index) => {
+            const numFila = index + 1;
+            if (item.type === 'NUEVO') {
+              logTxt += `[AGENTE NUEVO] Fila #${numFila} | DNI: ${item.dni} | Nombre: ${item.nombre} | Efector: ${item.efector} | Servicio: ${item.servicio} | Vianda: ${item.conVianda ? 'SI' : 'NO'} | Guardia24h: ${item.isGuardia24 ? 'SI' : 'NO'}\n`;
+            } else if (item.type === 'ACTUALIZADO') {
+              const cambiosStr = item.changes ? item.changes.join(' | ') : 'Sin cambios';
+              logTxt += `[AGENTE REPETIDO / ACTUALIZADO] Fila #${numFila} | DNI: ${item.dni} | Nombre: ${item.nombre} | Efector: ${item.efector} | Servicio: ${item.servicio} | Modificaciones: [${cambiosStr}]\n`;
+            } else if (item.type === 'OMITIDO') {
+              logTxt += `[FILA OMITIDA] Fila #${numFila} | Razón: ${item.reason || 'Sin datos mínimos'}\n`;
+            }
+          });
+
+          logTxt += `\n================================================================================\n`;
+          logTxt += `FIN DEL REPORT DE IMPORTACIÓN - SISAR\n`;
+          logTxt += `================================================================================\n`;
+
+          setImportLogText(logTxt);
+          setImportSummary({
+            total: data.length,
+            created: totalCreated,
+            updated: totalUpdated,
+            skipped: totalSkipped
+          });
+
+          Swal.fire({
+            title: '¡Importación Finalizada!',
+            html: `
+              <div class="text-left text-sm space-y-2">
+                <p>Se procesó el archivo Excel con éxito:</p>
+                <ul class="list-disc pl-5 font-semibold">
+                  <li class="text-green-600">Nuevos Agentes Creados: <strong>${totalCreated}</strong></li>
+                  <li class="text-amber-600">Agentes Repetidos / Actualizados: <strong>${totalUpdated}</strong></li>
+                  ${totalSkipped > 0 ? `<li class="text-red-600">Filas Omitidas: <strong>${totalSkipped}</strong></li>` : ''}
+                </ul>
+                <p class="text-xs text-gray-500 mt-2">Se ha generado el reporte de log detallado (.txt). Puedes descargarlo abajo.</p>
+              </div>
+            `,
+            icon: 'success'
+          });
+
+          fetchHospitales();
         }
       } catch (err) {
         Swal.fire('Error', 'Error al procesar el archivo Excel', 'error');
@@ -6369,6 +7318,58 @@ function RRHHPanel({ token }: { token: string }) {
               </div>
             )}
           </div>
+
+          {/* INFORME Y DESCARGA DE LOG DE AUDITORÍA DE IMPORTACIÓN */}
+          {importLogText && importSummary && (
+            <div className="mt-8 pt-8 border-t border-gray-200 dark:border-gray-800 animate-in fade-in zoom-in-95 duration-300">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900 dark:text-gray-100 flex items-center">
+                    <FileText className="w-5 h-5 mr-2 text-indigo-500" />
+                    Resultado y Auditoría de la Última Importación
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Detalle de agentes creados, repetidos/actualizados y campos modificados.
+                  </p>
+                </div>
+
+                <button
+                  onClick={descargarLogImportacion}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl shadow-md transition-all flex items-center cursor-pointer"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Descargar Log de Auditoría (.txt)
+                </button>
+              </div>
+
+              {/* RESUMEN DE BADGES */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 mb-4">
+                <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 p-3.5 rounded-xl">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-blue-600 dark:text-blue-400">Total Filas</span>
+                  <div className="text-2xl font-black text-gray-900 dark:text-white mt-1">{importSummary.total}</div>
+                </div>
+                <div className="bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 p-3.5 rounded-xl">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Nuevos Creados</span>
+                  <div className="text-2xl font-black text-emerald-700 dark:text-emerald-400 mt-1">{importSummary.created}</div>
+                </div>
+                <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 p-3.5 rounded-xl">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-amber-600 dark:text-amber-400">Repetidos / Actualizados</span>
+                  <div className="text-2xl font-black text-amber-700 dark:text-amber-400 mt-1">{importSummary.updated}</div>
+                </div>
+                <div className="bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 p-3.5 rounded-xl">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-red-600 dark:text-red-400">Filas Omitidas</span>
+                  <div className="text-2xl font-black text-red-700 dark:text-red-400 mt-1">{importSummary.skipped}</div>
+                </div>
+              </div>
+
+              {/* CONSOLA PREVISUALIZADORA DE LOG */}
+              <div className="relative">
+                <div className="bg-gray-900 text-emerald-400 p-4 rounded-2xl font-mono text-xs max-h-80 overflow-y-auto shadow-inner border border-gray-800 whitespace-pre-wrap leading-relaxed">
+                  {importLogText}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       )}
