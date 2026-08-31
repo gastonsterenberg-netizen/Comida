@@ -1,0 +1,4262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Generador de Plantel de Personal - SisAR</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --border: #e2e8f0;
+      --success: #16a34a;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --radius: 16px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      padding: 24px;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 1050px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+      color: white;
+      padding: 28px 32px;
+      border-radius: var(--radius);
+      box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.3);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .header h1 {
+      font-size: 1.5rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .header p {
+      color: #93c5fd;
+      font-size: 0.875rem;
+      margin-top: 4px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      padding: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    label {
+      font-size: 0.825rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    input, select, textarea {
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1.5px solid var(--border);
+      font-size: 0.95rem;
+      outline: none;
+      transition: all 0.2s;
+      background: #fff;
+    }
+
+    input:focus, select:focus, textarea:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    .btn {
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #15803d;
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: #f1f5f9;
+      color: #334155;
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover {
+      background: #e2e8f0;
+    }
+
+    .btn-danger {
+      background: #fee2e2;
+      color: var(--danger);
+    }
+
+    .btn-danger:hover {
+      background: #fca5a5;
+    }
+
+    .agent-form-grid {
+      display: grid;
+      grid-template-columns: 160px 1fr 200px 120px;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    @media (max-width: 850px) {
+      .agent-form-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .table-container {
+      overflow-x: auto;
+      margin-top: 16px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.9rem;
+    }
+
+    th {
+      background: #f1f5f9;
+      padding: 14px 16px;
+      font-weight: 700;
+      color: #475569;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .badge {
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      display: inline-block;
+    }
+
+    .badge-0 {
+      background: #f1f5f9;
+      color: #64748b;
+    }
+
+    .badge-1 {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .badge-2 {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.6);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      z-index: 100;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .modal-backdrop.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal {
+      background: white;
+      border-radius: var(--radius);
+      max-width: 650px;
+      width: 100%;
+      padding: 24px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .stats-bar {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    .stat-pill {
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 0.825rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .stat-pill strong {
+      color: var(--text);
+      font-weight: 800;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- ENCABEZADO -->
+    <div class="header">
+      <div>
+        <h1>📋 Generador de Plantel de Personal - SisAR</h1>
+        <p>Seleccione el Efector y Servicio e ingrese los agentes para exportar el archivo CSV listo para importar.</p>
+      </div>
+      <button class="btn btn-secondary" onclick="openExcelModal()">
+        📋 Pegar desde Excel
+      </button>
+    </div>
+
+    <!-- SECCIÓN 1: DATOS DEL EFECTOR Y SERVICIO (COMBOS CONECTADOS Y FILTRADOS) -->
+    <div class="card">
+      <div class="card-title">
+        <span>🏥</span> Datos del Efector y Servicio
+      </div>
+      <div class="grid-2">
+        <div class="form-group">
+          <label for="efectorSelect">Efector / Hospital</label>
+          <select id="efectorSelect" onchange="onEfectorChange()">
+            <!-- Se puebla dinámicamente desde el catálogo -->
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="servicioSelect">Servicio / Área</label>
+          <select id="servicioSelect">
+            <!-- Se filtra dinámicamente según el Efector seleccionado -->
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECCIÓN 2: FORMULARIO DE INGRESO DE AGENTES -->
+    <div class="card">
+      <div class="card-title">
+        <span>👤</span> Carga Individual de Agentes
+      </div>
+      
+      <form id="agentForm" onsubmit="addAgent(event)">
+        <div class="agent-form-grid">
+          <div class="form-group">
+            <label for="dniInput">DNI</label>
+            <input type="text" id="dniInput" placeholder="Ej: 21336610" required autocomplete="off">
+          </div>
+          
+          <div class="form-group">
+            <label for="nombreInput">Apellido y Nombre</label>
+            <input type="text" id="nombreInput" placeholder="Ej: GIMENEZ, JULIO FERNANDO" required autocomplete="off">
+          </div>
+
+          <div class="form-group">
+            <label for="racionSelect">Cantidad Ración</label>
+            <select id="racionSelect">
+              <option value="1">1 (Guardia 12h)</option>
+              <option value="2">2 (Guardia 24h)</option>
+              <option value="0">0 (Inhabilitado)</option>
+            </select>
+          </div>
+
+          <button type="submit" class="btn btn-primary">
+            + Agregar
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- SECCIÓN 3: LISTADO Y EXPORTACIÓN -->
+    <div class="card">
+      <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <div class="card-title" style="margin-bottom: 0;">
+          <span>📄</span> Agentes Cargados (<span id="totalCount">0</span>)
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button class="btn btn-danger" onclick="clearAllAgents()" id="btnClearAll" style="display: none;">
+            🗑️ Vaciar Lista
+          </button>
+          <button class="btn btn-success" onclick="exportCSV()" id="btnExport" disabled>
+            💾 Descargar CSV para SisAR
+          </button>
+        </div>
+      </div>
+
+      <div class="stats-bar" id="statsBar">
+        <div class="stat-pill">Total: <strong id="statTotal">0</strong></div>
+        <div class="stat-pill">Guardia 12h (1 Ración): <strong id="statG12">0</strong></div>
+        <div class="stat-pill">Guardia 24h (2 Raciones): <strong id="statG24">0</strong></div>
+        <div class="stat-pill">Inhabilitados (0): <strong id="statDisabled">0</strong></div>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>DNI</th>
+              <th>Apellido y Nombre</th>
+              <th>Raciones</th>
+              <th>Valores CSV (con_vianda;esguardia12;esguardia24)</th>
+              <th style="text-align: right;">Acción</th>
+            </tr>
+          </thead>
+          <tbody id="agentTableBody">
+            <tr>
+              <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 30px;">
+                No hay agentes agregados aún. Ingrese datos arriba o utilice el botón "Pegar desde Excel".
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- MODAL PARA PEGAR DESDE EXCEL -->
+  <div class="modal-backdrop" id="excelModal">
+    <div class="modal">
+      <h3 style="font-size: 1.2rem; font-weight: 800;">📋 Pegar Lista desde Excel</h3>
+      <p style="font-size: 0.875rem; color: var(--text-muted);">
+        Copie las columnas desde Excel (DNI y NombreCompleto) y péguelas aquí abajo.<br>
+        Cada fila debe contener el DNI y el Nombre separados por tabulación o coma.
+      </p>
+      
+      <div class="form-group">
+        <label for="excelPasteTextarea">Contenido Pegado de Excel</label>
+        <textarea id="excelPasteTextarea" rows="8" placeholder="21336610&#10013;GIMENEZ JULIO FERNANDO&#10;27364778&#10013;SERGIO ACOSTA"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="excelDefaultRacion">Asignar Ración por Defecto a esta lista</label>
+        <select id="excelDefaultRacion">
+          <option value="1">1 (Guardia 12h)</option>
+          <option value="2">2 (Guardia 24h)</option>
+          <option value="0">0 (Inhabilitado)</option>
+        </select>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px;">
+        <button class="btn btn-secondary" onclick="closeExcelModal()">Cancelar</button>
+        <button class="btn btn-primary" onclick="processExcelPaste()">Procesar e Importar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // CATÁLOGO COMPLETO HARCODEADO DE EFECTORES Y SERVICIOS DESDE SISAR
+    const CATALOG_DATA = {
+  "hospitales": [
+    {
+      "Id": 1046,
+      "Nombre": "HOSPITAL ANGEL C PADILLA"
+    },
+    {
+      "Id": 1047,
+      "Nombre": "HOSPITAL CENTRO DE SALUD ZENON SANTILLAN"
+    },
+    {
+      "Id": 1048,
+      "Nombre": "HOSPITAL DEL NIÑO JESUS"
+    },
+    {
+      "Id": 1049,
+      "Nombre": "HOSPITAL EVA PERON"
+    },
+    {
+      "Id": 1050,
+      "Nombre": "HOSPITAL NICOLAS AVELLANEDA"
+    },
+    {
+      "Id": 1051,
+      "Nombre": "HOSPITAL REGIONAL DE CONCEPCION"
+    },
+    {
+      "Id": 1052,
+      "Nombre": "INSTITUTO DE MATERNIDAD"
+    }
+  ],
+  "servicios": [
+    {
+      "Id": 5717,
+      "Nombre": "(sin servicio declaro)",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5693,
+      "Nombre": "4° PISO ENFERMERIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5695,
+      "Nombre": "5° PISO ENFERMERIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5692,
+      "Nombre": "6° PISO GINECOLOGIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5694,
+      "Nombre": "6° PISO ONCOLOGIA ENFERMERIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5163,
+      "Nombre": "ADMISION DE GUARDIA FEBRIL",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5164,
+      "Nombre": "ADMISION DE GUARDIA MAYOR",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5016,
+      "Nombre": "ADMISION GESTION TURNOS",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5017,
+      "Nombre": "ADMISION GESTION TURNOS - SERVICIO CERRADO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5390,
+      "Nombre": "ADMISION GUARDIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5391,
+      "Nombre": "AGENTES DE TRASLADO",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5686,
+      "Nombre": "ANATOMIA PATOLOGICA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5018,
+      "Nombre": "ATENCION AMBULATORIA - SERVICIO CERRADO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5392,
+      "Nombre": "BIOINGINIERIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5292,
+      "Nombre": "COMITE DE DOCENCIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5567,
+      "Nombre": "CONSULTORIO EXTERNO ADULTOS",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5720,
+      "Nombre": "CONTABLE",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5393,
+      "Nombre": "COORDIANCION SALA DE PARTOS",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5394,
+      "Nombre": "COORDINACION DE QUIROFANO",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5395,
+      "Nombre": "COORDINACION LABORATORIO CENTRAL Y GUARDIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5396,
+      "Nombre": "COORDINACION SALA DE INTERNACION CONJUNTA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5397,
+      "Nombre": "COORDINACION SERVICIO DIAGNOSTICO POR IMAGENES",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5398,
+      "Nombre": "CUIDADOS CRITICOS UTI 1 COVID-UTI",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5399,
+      "Nombre": "CUIDADOS CRITICOS UTI 2 COVID-UTI",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5400,
+      "Nombre": "CUIDADOS CRITICOS UTI 3 COVID-UTI",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5165,
+      "Nombre": "DEPARTAMENTO ADMINISTRATIVO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5019,
+      "Nombre": "DEPARTAMENTO ADMINISTRATIVO CONTABLE",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5433,
+      "Nombre": "DEPARTAMENTO CLINICO",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5166,
+      "Nombre": "DEPARTAMENTO CONTABLE",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5293,
+      "Nombre": "DEPARTAMENTO CONTABLE FINANCIERO",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5434,
+      "Nombre": "DEPARTAMENTO DE CIRUGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5020,
+      "Nombre": "DEPARTAMENTO DE CIRUGIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5568,
+      "Nombre": "DEPARTAMENTO DE EMERGENCIAS-EMERGENCIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5021,
+      "Nombre": "DEPARTAMENTO DE ENFERMEDADES NEURO CARDIO VASCULARES",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5022,
+      "Nombre": "DEPARTAMENTO DE ENFERMERIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5167,
+      "Nombre": "DEPARTAMENTO DE ENFERMERIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5569,
+      "Nombre": "DEPARTAMENTO DE ENFERMERIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5401,
+      "Nombre": "DEPARTAMENTO DE ENFERMERIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5294,
+      "Nombre": "DEPARTAMENTO DE ENFERMERIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5435,
+      "Nombre": "DEPARTAMENTO DE ENFERMERIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5295,
+      "Nombre": "DEPARTAMENTO DE GESTION DE CAPITAL HUMANO",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5023,
+      "Nombre": "DEPARTAMENTO DE GESTION PACIENTE",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5436,
+      "Nombre": "DEPARTAMENTO DE PEDIATRIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5437,
+      "Nombre": "DEPARTAMENTO DE PERSONAL",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5570,
+      "Nombre": "DEPARTAMENTO DE PERSONAL",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5296,
+      "Nombre": "DEPARTAMENTO EMERGENCIAS - CUIDADOS CRITICOS Y PROGRESIVOS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5682,
+      "Nombre": "DEPARTAMENTO ENFERMERIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5168,
+      "Nombre": "DEPARTAMENTO GESTION DE PACIENTE",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5571,
+      "Nombre": "DEPARTAMENTO GESTION PACIENTE",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5438,
+      "Nombre": "DEPARTAMENTO GESTION PACIENTE",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5623,
+      "Nombre": "DEPARTAMENTO GESTION PACIENTES",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5572,
+      "Nombre": "DEPARTAMENTO MATERNO - INFANTE",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5439,
+      "Nombre": "DEPARTAMENTO MATERNO INFANTIL",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5624,
+      "Nombre": "DEPARTAMENTO NEONATOLOGIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5625,
+      "Nombre": "DEPARTAMENTO PERSONAL",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5626,
+      "Nombre": "DEPARTAMENTO RECURSOS HUMANOS",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5169,
+      "Nombre": "DEPARTAMENTO RECURSOS HUMANOS",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5024,
+      "Nombre": "DEPARTAMENTO RECURSOS HUMANOS",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5170,
+      "Nombre": "DEPARTAMENTO SERVICIOS AUXILIARES DE DIAGNOSTICO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5025,
+      "Nombre": "DEPOSITO DE FARMACIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5707,
+      "Nombre": "DIRECCION",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5697,
+      "Nombre": "DIRECCION DE TRASLADO SANITARIO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5026,
+      "Nombre": "DIRECCION DEL HOSPITAL ANGEL C PADILLA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5440,
+      "Nombre": "DIRECCION HOSPITAL AVELLANEDA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5171,
+      "Nombre": "DIRECCION HOSPITAL CENTRO DE SALUD",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5297,
+      "Nombre": "DIRECCION HOSPITAL DEL NIÑO JESUS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5573,
+      "Nombre": "DIRECCION HOSPITAL REGIONAL DE CONCEPCION",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5679,
+      "Nombre": "DIRECCION INSTITUTO DE MATERNIDAD",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5298,
+      "Nombre": "DIVISION ADMINISTRACION DE PERSONAL",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5172,
+      "Nombre": "DIVISION ADMINISTRATIVA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5027,
+      "Nombre": "DIVISION ADMINISTRATIVA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5441,
+      "Nombre": "DIVISION ADMISION GUARDIAS PERINATOLOGIA Y GUARDIA MAYOR",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5627,
+      "Nombre": "DIVISION COMPRAS",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5299,
+      "Nombre": "DIVISION COMPRAS Y CONTRATACIONES",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5173,
+      "Nombre": "DIVISION COMPRAS Y CONTRATACIONES",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5028,
+      "Nombre": "DIVISION COMPRAS Y SUMINISTRO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5628,
+      "Nombre": "DIVISION CONTABLE (TESORERIA)",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5029,
+      "Nombre": "DIVISION CONTABLE Y FINANZAS",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5629,
+      "Nombre": "DIVISION EPIDEMIOLOGIA Y ESTADISTICA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5300,
+      "Nombre": "DIVISION ESTERILIZACION",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5030,
+      "Nombre": "DIVISION INFORMATICA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5301,
+      "Nombre": "DIVISION PERSONAL",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5442,
+      "Nombre": "DIVISION RECUPERO DE COSTOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5443,
+      "Nombre": "DIVISION RECURSOS HUMANOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5574,
+      "Nombre": "DIVISION SERV. GENERALES Y MANTENIMIENTO",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5302,
+      "Nombre": "DIVISION SERVICIOS GENERALES Y MANTENIMIENTO",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5031,
+      "Nombre": "DIVISION SERVICIOS GENERALES Y MANTENIMIENTO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5174,
+      "Nombre": "DIVISION SG Y MANTENIMIENTO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5175,
+      "Nombre": "DIVISION SISTEMA DE INFORMACION",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5176,
+      "Nombre": "DIVISION TESORERIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5726,
+      "Nombre": "ENFERMERA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5032,
+      "Nombre": "ENFERMERIA - UNIDAD SHOCK ROOM",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5688,
+      "Nombre": "ENFERMERIA 6° PISO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5575,
+      "Nombre": "ENFERMERIA AMBULATORIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5689,
+      "Nombre": "ENFERMERIA CONSULTORIO EXTERNO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5303,
+      "Nombre": "ENFERMERIA CONSULTORIOS EXTERNOS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5304,
+      "Nombre": "ENFERMERIA DE EMERGENCIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5685,
+      "Nombre": "ENFERMERIA DE SALA DE PARTOS",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5177,
+      "Nombre": "ENFERMERIA DIALISIS EMERGENCIA -  SERVICIO CERRADO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5305,
+      "Nombre": "ENFERMERIA HOSPITAL DE DIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5306,
+      "Nombre": "ENFERMERIA QUIROFANO",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5307,
+      "Nombre": "ENFERMERIA SALA 1 - CLINICA COVID",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5308,
+      "Nombre": "ENFERMERIA SALA 11 - QUEMADOS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5309,
+      "Nombre": "ENFERMERIA SALA 12 - HEMATO ONCOLOGIA E INMUNODEPRIMIDOS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5310,
+      "Nombre": "ENFERMERIA SALA 2 - CLINICA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5311,
+      "Nombre": "ENFERMERIA SALA 5 - CLINICA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5312,
+      "Nombre": "ENFERMERIA SALA 6 - CIRUGIA Y TRAUMATOLOGIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5313,
+      "Nombre": "ENFERMERIA SALA 7 - CLINICA E INFECTOCONTAGIOSOS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5402,
+      "Nombre": "ENFERMERIA SALAS INTERNACION PEDIATRICA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5314,
+      "Nombre": "ENFERMERIA SIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5403,
+      "Nombre": "ENFERMERIA TERAPIA INTENSIVA PEDIATRICA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5576,
+      "Nombre": "ENFERMERIA UNIDAD CUIDADOS CRITICOS 1",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5577,
+      "Nombre": "ENFERMERIA UNIDAD CUIDADOS CRITICOS 2",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5315,
+      "Nombre": "ENFERMERIA UNIDAD CUIDADOS CRITICOS CARDIOVASCULARES-UTI",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5578,
+      "Nombre": "ENFERMERIA UNIDAD CUIDADOS PROGRESIVOS PEDIATRICOS",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5404,
+      "Nombre": "ENFERMERIA UNIDAD EMERGENCIAS PEDIATRICAS",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5579,
+      "Nombre": "ENFERMERIA UNIDAD GUARDIA PEDIATRICA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5580,
+      "Nombre": "ENFERMERIA UNIDAD ONCOLOGIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5581,
+      "Nombre": "ENFERMERIA UNIDAD SALA INTERNACION ABREVIADA PEDIATRICA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5582,
+      "Nombre": "ENFERMERIA UNIDAD SALA INTERNACION PEDIATRICA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5405,
+      "Nombre": "ENFERMERIA UNIDAD VACUNATORIO",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5316,
+      "Nombre": "ENFERMERIA UTI",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5317,
+      "Nombre": "ENFERMERIA UTIN 1",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5318,
+      "Nombre": "ENFERMERIA UTIN 2",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5715,
+      "Nombre": "estadisticas",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5729,
+      "Nombre": "ESTERILIZACION",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5714,
+      "Nombre": "FARMACIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5444,
+      "Nombre": "GERENCIA ADMINISTRATIVA HOSPITAL AVELLANEDA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5178,
+      "Nombre": "GERENCIA ADMINISTRATIVA HOSPITAL CENTRO DE SALUD",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5319,
+      "Nombre": "GERENCIA ADMINISTRATIVA HOSPITAL DEL NIÑO JESUS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5680,
+      "Nombre": "GERENCIA ADMINISTRATIVA INSTITUTO DE MATERNIDAD",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5406,
+      "Nombre": "GESTION CAMAS",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5583,
+      "Nombre": "GUARDIA DOMINGO",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5584,
+      "Nombre": "GUARDIA JUEVES",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5585,
+      "Nombre": "GUARDIA LUNES",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5586,
+      "Nombre": "GUARDIA MARTES",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5587,
+      "Nombre": "GUARDIA MIERCOLES",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5445,
+      "Nombre": "GUARDIA PEDIATRICA-EMERGENCIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5588,
+      "Nombre": "GUARDIA SABADO",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5589,
+      "Nombre": "GUARDIA VIERNES",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5728,
+      "Nombre": "HEMOTERAPIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5446,
+      "Nombre": "HOGAR DE MADRES",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5033,
+      "Nombre": "HOSPITAL ANGEL C PADILLA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5179,
+      "Nombre": "HOSPITAL CENTRO DE SALUD ZENON SANTILLAN",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5710,
+      "Nombre": "HOSPITAL DE DIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5320,
+      "Nombre": "HOSPITAL DEL NIÑO JESUS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5447,
+      "Nombre": "HOSPITAL NICOLAS AVELLANEDA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5407,
+      "Nombre": "IDENTIFICACION DEL RECIEN NACIDO",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5630,
+      "Nombre": "INSTITUTO DE MATERNIDAD",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5448,
+      "Nombre": "JEFE UNIDAD ESTERILIZACION",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5449,
+      "Nombre": "JEFE UNIDAD NEONATOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5450,
+      "Nombre": "JEFE UNIDAD QUIROFANO PERINATAL",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5590,
+      "Nombre": "KINESIOLOGIA - GUARDIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5034,
+      "Nombre": "KINESIOLOGIA - SERVICIO CERRADO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5180,
+      "Nombre": "KINESIOLOGIA - UTI UTIM - SERVICIO CERRADO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5721,
+      "Nombre": "LAB CENTRAL",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5700,
+      "Nombre": "LABORATORIO DE SCREENING NEONATAL",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5432,
+      "Nombre": "LACTANCIA MATERNA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5321,
+      "Nombre": "LAVANDERIA COSTURERO Y ROPERIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5708,
+      "Nombre": "MANTENIMIENTO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5451,
+      "Nombre": "MESA DE ENTRADA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5725,
+      "Nombre": "MICROBIOLOGIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5723,
+      "Nombre": "OBSTETRA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5452,
+      "Nombre": "ODONTOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5035,
+      "Nombre": "ODONTOLOGIA - SERVICIO CERRADO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5181,
+      "Nombre": "ODONTOLOGIA GUARDIA - SERVICIO CERRADO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5453,
+      "Nombre": "OFICINA INFORMATICA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5727,
+      "Nombre": "PERSONAL",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5701,
+      "Nombre": "QUIROFANO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5699,
+      "Nombre": "RADIO OPERADOR 107",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5722,
+      "Nombre": "RADIOPERADOR",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5408,
+      "Nombre": "RECEPCION CENTRAL, ANFITRIONES Y CENTRAL TELEFONICA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5690,
+      "Nombre": "RECUPERO DE COSTOS",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5591,
+      "Nombre": "REFERENTE INFORMATICA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5719,
+      "Nombre": "RESIDENCIA DE ENFERMERIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5713,
+      "Nombre": "RESIDENCIA DE OBSTETRICIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5322,
+      "Nombre": "RESIDENCIAS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5454,
+      "Nombre": "RESIDENCIAS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5182,
+      "Nombre": "RMED 1 AÑO ANATOMIA PATOLOGICA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5183,
+      "Nombre": "RMED 1 AÑO ANESTESIOLOGIA (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5323,
+      "Nombre": "RMED 1 AÑO ARTICULADA TERAPIA INTENSIVA INFANTIL (ALTA.1)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5036,
+      "Nombre": "RMED 1 AÑO BASICA GASTROENTEROLOGIA (MUY BAJA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5184,
+      "Nombre": "RMED 1 AÑO CARDIOLOGIA (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5185,
+      "Nombre": "RMED 1 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5037,
+      "Nombre": "RMED 1 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5455,
+      "Nombre": "RMED 1 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5324,
+      "Nombre": "RMED 1 AÑO CIRUGIA INFANTIL (ALTA.2)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5038,
+      "Nombre": "RMED 1 AÑO CLINICA MEDICA (ALTA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5456,
+      "Nombre": "RMED 1 AÑO DERMATOLOGIA CLINICA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5039,
+      "Nombre": "RMED 1 AÑO DIAGNOSTICO POR IMAGENES (INTERMEDIA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5186,
+      "Nombre": "RMED 1 AÑO ENDOCRINOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5457,
+      "Nombre": "RMED 1 AÑO FISIATRIA (BASICA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5187,
+      "Nombre": "RMED 1 AÑO GASTROENTEROLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5040,
+      "Nombre": "RMED 1 AÑO NEFROLOGIA (BAJA 2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5188,
+      "Nombre": "RMED 1 AÑO NEUMONOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5458,
+      "Nombre": "RMED 1 AÑO NEUMONOLOGIA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5041,
+      "Nombre": "RMED 1 AÑO NEUROCIRUGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5042,
+      "Nombre": "RMED 1 AÑO NEUROLOGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5043,
+      "Nombre": "RMED 1 AÑO OFTALMOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5189,
+      "Nombre": "RMED 1 AÑO ONCOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5044,
+      "Nombre": "RMED 1 AÑO ORTOPEDIA Y TRAUMATOLOGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5045,
+      "Nombre": "RMED 1 AÑO OTORRINOLARINGOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5325,
+      "Nombre": "RMED 1 AÑO PBA CARDIOLOGIA INFANTIL (ALTA.2)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5459,
+      "Nombre": "RMED 1 AÑO PBA DROGADEPENDENCIA (BASICA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5046,
+      "Nombre": "RMED 1 AÑO PBA GASTROENTEROLOGIA (MUY BAJA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5326,
+      "Nombre": "RMED 1 AÑO PBA INFECTOLOGIA PEDIATRICA (MUY BAJA)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5047,
+      "Nombre": "RMED 1 AÑO PBA REUMATOLOGIA (BASICA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5327,
+      "Nombre": "RMED 1 AÑO PEDIATRIA (ALTA.1)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5460,
+      "Nombre": "RMED 1 AÑO PEDIATRIA (ALTA.1)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5048,
+      "Nombre": "RMED 1 AÑO TERAPIA INTENSIVA ADULTOS (ALTA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5461,
+      "Nombre": "RMED 1 AÑO TOCOGINECOLOGIA (ALTA.1)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5632,
+      "Nombre": "RMED 1 AÑO TOCOGINECOLOGIA (ALTA.1)",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5190,
+      "Nombre": "RMED 1 AÑO UROLOGIA (INTERMEDIA.1)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5191,
+      "Nombre": "RMED 2 AÑO ANATOMIA PATOLOGICA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5192,
+      "Nombre": "RMED 2 AÑO ANESTESIOLOGIA (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5328,
+      "Nombre": "RMED 2 AÑO ARTICULADA TERAPIA INTENSIVA INFANTIL (ALTA.1)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5049,
+      "Nombre": "RMED 2 AÑO BASICA GASTROENTEROLOGIA (MUY BAJA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5193,
+      "Nombre": "RMED 2 AÑO CARDIOLOGIA (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5194,
+      "Nombre": "RMED 2 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5050,
+      "Nombre": "RMED 2 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5462,
+      "Nombre": "RMED 2 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5329,
+      "Nombre": "RMED 2 AÑO CIRUGIA INFANTIL (ALTA.2)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5051,
+      "Nombre": "RMED 2 AÑO CLINICA MEDICA (ALTA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5463,
+      "Nombre": "RMED 2 AÑO DERMATOLOGIA CLINICA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5052,
+      "Nombre": "RMED 2 AÑO DIAGNOSTICO POR IMAGENES (INTERMEDIA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5195,
+      "Nombre": "RMED 2 AÑO ENDOCRINOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5196,
+      "Nombre": "RMED 2 AÑO GASTROENTEROLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5053,
+      "Nombre": "RMED 2 AÑO NEFROLOGIA (BAJA 2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5054,
+      "Nombre": "RMED 2 AÑO NEUMONOLOGIA (MUY BAJA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5197,
+      "Nombre": "RMED 2 AÑO NEUMONOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5055,
+      "Nombre": "RMED 2 AÑO NEUROCIRUGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5056,
+      "Nombre": "RMED 2 AÑO NEUROLOGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5057,
+      "Nombre": "RMED 2 AÑO OFTALMOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5198,
+      "Nombre": "RMED 2 AÑO ONCOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5058,
+      "Nombre": "RMED 2 AÑO ORTOPEDIA Y TRAUMATOLOGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5059,
+      "Nombre": "RMED 2 AÑO OTORRINOLARINGOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5464,
+      "Nombre": "RMED 2 AÑO PBA DROGADEPENDENCIA (BASICA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5199,
+      "Nombre": "RMED 2 AÑO PBA GASTROENTEROLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5060,
+      "Nombre": "RMED 2 AÑO PBA REUMATOLOGIA (BASICA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5330,
+      "Nombre": "RMED 2 AÑO PEDIATRIA (ALTA.1)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5061,
+      "Nombre": "RMED 2 AÑO TERAPIA INTENSIVA ADULTOS (ALTA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5465,
+      "Nombre": "RMED 2 AÑO TOCOGINECOLOGIA (ALTA.1)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5200,
+      "Nombre": "RMED 2 AÑO UROLOGIA (INTERMEDIA.1)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5201,
+      "Nombre": "RMED 3 AÑO ANATOMIA PATOLOGICA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5062,
+      "Nombre": "RMED 3 AÑO ANATOMIA PATOLOGICA (MUY BAJA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5202,
+      "Nombre": "RMED 3 AÑO ANESTESIOLOGIA (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5331,
+      "Nombre": "RMED 3 AÑO ARTICULADA TERAPIA INTENSIVA INFANTIL (ALTA.1)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5203,
+      "Nombre": "RMED 3 AÑO CARDIOLOGIA (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5063,
+      "Nombre": "RMED 3 AÑO CIRUGIA DE TORAX (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5204,
+      "Nombre": "RMED 3 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5466,
+      "Nombre": "RMED 3 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5205,
+      "Nombre": "RMED 3 AÑO CLINICA MEDICA (ALTA.1)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5064,
+      "Nombre": "RMED 3 AÑO CLINICA MEDICA (ALTA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5467,
+      "Nombre": "RMED 3 AÑO DERMATOLOGIA CLINICA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5065,
+      "Nombre": "RMED 3 AÑO DIAGNOSTICO POR IMAGENES (INTERMEDIA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5206,
+      "Nombre": "RMED 3 AÑO ENDOCRINOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5207,
+      "Nombre": "RMED 3 AÑO GASTROENTEROLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5066,
+      "Nombre": "RMED 3 AÑO NEFROLOGIA (BAJA 2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5067,
+      "Nombre": "RMED 3 AÑO NEUROCIRUGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5068,
+      "Nombre": "RMED 3 AÑO NEUROLOGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5069,
+      "Nombre": "RMED 3 AÑO OFTALMOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5208,
+      "Nombre": "RMED 3 AÑO ONCOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5070,
+      "Nombre": "RMED 3 AÑO OTORRINOLARINGOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5209,
+      "Nombre": "RMED 3 AÑO PBA CIRUGIA DE CABEZA Y CUELLO (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5332,
+      "Nombre": "RMED 3 AÑO PEDIATRIA (ALTA.1)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5468,
+      "Nombre": "RMED 3 AÑO TOCOGINECOLOGIA (ALTA.1)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5210,
+      "Nombre": "RMED 4 AÑO ANATOMIA PATOLOGICA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5211,
+      "Nombre": "RMED 4 AÑO ANESTESIOLOGIA (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5071,
+      "Nombre": "RMED 4 AÑO BASICA GASTROENTEROLOGIA (MUY BAJA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5212,
+      "Nombre": "RMED 4 AÑO CARDIOLOGIA (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5213,
+      "Nombre": "RMED 4 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5072,
+      "Nombre": "RMED 4 AÑO CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5073,
+      "Nombre": "RMED 4 AÑO CLINICA MEDICA (ALTA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5074,
+      "Nombre": "RMED 4 AÑO DIAGNOSTICO POR IMAGENES (INTERMEDIA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5214,
+      "Nombre": "RMED 4 AÑO ENDOCRINOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5469,
+      "Nombre": "RMED 4 AÑO MEDICINA GENERAL (ALTA.1)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5075,
+      "Nombre": "RMED 4 AÑO NEUMONOLOGIA (MUY BAJA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5076,
+      "Nombre": "RMED 4 AÑO NEUROCIRUGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5077,
+      "Nombre": "RMED 4 AÑO NEUROLOGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5078,
+      "Nombre": "RMED 4 AÑO OFTALMOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5215,
+      "Nombre": "RMED 4 AÑO ONCOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5079,
+      "Nombre": "RMED 4 AÑO ORTOPEDIA Y TRAUMATOLOGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5080,
+      "Nombre": "RMED 4 AÑO OTORRINOLARINGOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5081,
+      "Nombre": "RMED ANATOMIA PATOLOGICA (MUY BAJA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5216,
+      "Nombre": "RMED ANATOMIA PATOLOGICA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5217,
+      "Nombre": "RMED ANESTESIOLOGIA (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5082,
+      "Nombre": "RMED CIRUGIA DE TORAX (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5083,
+      "Nombre": "RMED CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5218,
+      "Nombre": "RMED CIRUGIA GENERAL (ALTA.2)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5084,
+      "Nombre": "RMED CLINICA MEDICA (ALTA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5470,
+      "Nombre": "RMED DERMATOLOGIA CLINICA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5085,
+      "Nombre": "RMED DIAGNOSTICO POR IMAGENES (INTERMEDIA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5219,
+      "Nombre": "RMED ENDOCRINOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5086,
+      "Nombre": "RMED NEUMONOLOGIA (MUY BAJA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5087,
+      "Nombre": "RMED NEUROCIRUGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5088,
+      "Nombre": "RMED OFTALMOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5220,
+      "Nombre": "RMED ONCOLOGIA (MUY BAJA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5089,
+      "Nombre": "RMED ORTOPEDIA Y TRAUMATOLOGIA (ALTA.2)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5090,
+      "Nombre": "RMED OTORRINOLARINGOLOGIA (BAJA.1)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5333,
+      "Nombre": "RMED PBA CARDIOLOGIA INFANTIL (ALTA.2)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5471,
+      "Nombre": "RMED PBA DROGADEPENDENCIA (BASICA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5334,
+      "Nombre": "RMED PBA ENDOCRINOLOGIA INFANTIL (BASICA)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5335,
+      "Nombre": "RNOM 1 AÑO BIOQUIMICA CLINICA (INTERMEDIA)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5472,
+      "Nombre": "RNOM 1 AÑO DROGADEPENDENCIA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5221,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA DEL ADULTO Y ANCIANO (ALTA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5473,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA DEL ADULTO Y EL ANCIANO (ALTA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5222,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA EN CARDIOLOGIA (ALTA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5223,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA EN CUIDADOS CRITICOS DEL ADULTO (ALTA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5091,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA EN CUIDADOS INTENSIVOS DEL ADULTO (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5092,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA EN EMERGENTOLOGIA (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5474,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA EN SALUD PUBLICA (ALTA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5475,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA EN TERAPIA INTENSIVA INFANTIL (ALTA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5336,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA EN TERAPIA INTENSIVA INFANTIL (ALTA)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5337,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA PEDIATRICA (ALTA)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5093,
+      "Nombre": "RNOM 1 AÑO ENFERMERIA QUIRURGICA DEL ADULTO (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5476,
+      "Nombre": "RNOM 1 AÑO FONOAUDIOLOGIA (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5094,
+      "Nombre": "RNOM 1 AÑO KINESIOLOGIA GENERAL (INTERMEDIA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5637,
+      "Nombre": "RNOM 1 AÑO OBSTETRICIA (ALTA)",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5224,
+      "Nombre": "RNOM 1 AÑO ODONTOLOGIA GENERAL (INTERMEDIA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5477,
+      "Nombre": "RNOM 1 AÑO TERAPIA OCUPACIONAL (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5478,
+      "Nombre": "RNOM 1 AÑO TRABAJO SOCIAL EN SALUD (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5338,
+      "Nombre": "RNOM 2 AÑO BIOQUIMICA CLINICA (INTERMEDIA)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5479,
+      "Nombre": "RNOM 2 AÑO DROGADEPENDENCIA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5225,
+      "Nombre": "RNOM 2 AÑO ENFERMERIA DEL ADULTO Y ANCIANO (ALTA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5480,
+      "Nombre": "RNOM 2 AÑO ENFERMERIA DEL ADULTO Y EL ANCIANO (ALTA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5095,
+      "Nombre": "RNOM 2 AÑO ENFERMERIA EN CUIDADOS INTENSIVOS DEL ADULTO (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5096,
+      "Nombre": "RNOM 2 AÑO ENFERMERIA EN EMERGENTOLOGIA (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5481,
+      "Nombre": "RNOM 2 AÑO ENFERMERIA EN SALUD PUBLICA (ALTA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5097,
+      "Nombre": "RNOM 2 AÑO ENFERMERIA QUIRURGICA DEL ADULTO (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5482,
+      "Nombre": "RNOM 2 AÑO FONOAUDIOLOGIA (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5098,
+      "Nombre": "RNOM 2 AÑO KINESIOLOGIA GENERAL (INTERMEDIA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5226,
+      "Nombre": "RNOM 2 AÑO ODONTOLOGIA GENERAL (INTERMEDIA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5483,
+      "Nombre": "RNOM 2 AÑO PBA DROGADEPENDENCIA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5484,
+      "Nombre": "RNOM 2 AÑO TERAPIA OCUPACIONAL (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5485,
+      "Nombre": "RNOM 2 AÑO TRABAJO SOCIAL EN SALUD (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5339,
+      "Nombre": "RNOM 3 AÑO BIOQUIMICA CLINICA (INTERMEDIA)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5486,
+      "Nombre": "RNOM 3 AÑO DROGADEPENDENCIA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5227,
+      "Nombre": "RNOM 3 AÑO ENFERMERIA DEL ADULTO Y ANCIANO (ALTA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5228,
+      "Nombre": "RNOM 3 AÑO ENFERMERIA EN CARDIOLOGIA (ALTA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5099,
+      "Nombre": "RNOM 3 AÑO ENFERMERIA EN CUIDADOS INTENSIVOS DEL ADULTO (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5100,
+      "Nombre": "RNOM 3 AÑO ENFERMERIA EN EMERGENTOLOGIA (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5340,
+      "Nombre": "RNOM 3 AÑO ENFERMERIA EN TERAPIA INTENSIVA INFANTIL (ALTA)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5341,
+      "Nombre": "RNOM 3 AÑO ENFERMERIA PEDIATRICA (ALTA)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5101,
+      "Nombre": "RNOM 3 AÑO ENFERMERIA QUIRURGICA DEL ADULTO (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5102,
+      "Nombre": "RNOM 3 AÑO KINESIOLOGIA GENERAL (INTERMEDIA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5229,
+      "Nombre": "RNOM 3 AÑO ODONTOLOGIA GENERAL (INTERMEDIA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5487,
+      "Nombre": "RNOM 3 AÑO TERAPIA OCUPACIONAL (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5488,
+      "Nombre": "RNOM 3 AÑO TRABAJO SOCIAL EN SALUD (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5489,
+      "Nombre": "RNOM DROGADEPENDENCIA (MUY BAJA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5230,
+      "Nombre": "RNOM ENFERMERIA DEL ADULTO Y ANCIANO (ALTA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5103,
+      "Nombre": "RNOM ENFERMERIA EN CUIDADOS INTENSIVOS DEL ADULTO (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5104,
+      "Nombre": "RNOM ENFERMERIA EN EMERGENTOLOGIA (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5490,
+      "Nombre": "RNOM ENFERMERIA EN TERAPIA INTENSIVA INFANTIL (ALTA)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5105,
+      "Nombre": "RNOM ENFERMERIA QUIRURGICA DEL ADULTO (ALTA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5491,
+      "Nombre": "RNOM FONOAUDIOLOGIA (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5106,
+      "Nombre": "RNOM KINESIOLOGIA GENERAL (INTERMEDIA)",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5231,
+      "Nombre": "RNOM ODONTOLOGIA GENERAL (INTERMEDIA)",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5492,
+      "Nombre": "RNOM TRABAJO SOCIAL EN SALUD (BASICO)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5592,
+      "Nombre": "SALA 5 HOMBRES",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5696,
+      "Nombre": "SALUD MENTAL",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5493,
+      "Nombre": "SECCION ADMISION CONSULTORIOS Y ARCHIVOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5232,
+      "Nombre": "SECCION ADMISION DE GUARDIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5409,
+      "Nombre": "SECCION ADMISION GUARDIA, INTERNACION Y GESTION CAMAS",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5233,
+      "Nombre": "SECCION ADMISION Y DOC CLINICA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5494,
+      "Nombre": "SECCION AGENTES DE TRASLADO",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5342,
+      "Nombre": "SECCION BIOINGENIERIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5495,
+      "Nombre": "SECCION CERTIFICADOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5496,
+      "Nombre": "SECCION COMPRAS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5497,
+      "Nombre": "SECCION CONTABILIDAD",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5234,
+      "Nombre": "SECCION CONTROL DE ASISTENCIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5642,
+      "Nombre": "SECCION CONTROL DE SERVICIOS DE TERCEROS",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5107,
+      "Nombre": "SECCION CONTROL DEL PERSONAL",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5235,
+      "Nombre": "SECCION DEPOSITO MEDICAMENTOS Y DESCARTABLES",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5343,
+      "Nombre": "SECCION DRENDICION DE CUENTAS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5236,
+      "Nombre": "SECCION EPIDEMIOLOGIA Y ESTADISTICAS",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5498,
+      "Nombre": "SECCION ESTADISTICA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5237,
+      "Nombre": "SECCION FACTURACION Y RECUPERO DE COSTOS",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5593,
+      "Nombre": "SECCION IDENTIFICACION DEL RECIEN NACIDO",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5108,
+      "Nombre": "SECCION INGENIERIA BIOMEDICA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5238,
+      "Nombre": "SECCION LAVADERO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5643,
+      "Nombre": "SECCION LAVADERO (ROPERIA)",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5594,
+      "Nombre": "SECCION LAVADERO Y ROPERIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5344,
+      "Nombre": "SECCION LAVADERO Y ROPERIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5109,
+      "Nombre": "SECCION MANTENIMIENTO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5644,
+      "Nombre": "SECCION MANTENIMIENTO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5345,
+      "Nombre": "SECCION MANTENIMIENTO Y PRODUCCION",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5645,
+      "Nombre": "SECCION MESA DE ENTRADA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5239,
+      "Nombre": "SECCION MESA DE ENTRADAS Y DESPACHO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5346,
+      "Nombre": "SECCION PAGOS PROVEEDORES Y EMPLEADOS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5499,
+      "Nombre": "SECCION PATRIMONIO",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5347,
+      "Nombre": "SECCION RECUPERO DE COSTOS Y FACTURACION",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5110,
+      "Nombre": "SECCION RECUPERO DE COSTOS Y FACTURACIÓN",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5240,
+      "Nombre": "SECCION ROPERIA Y COSTURERO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5111,
+      "Nombre": "SECCION SECRETARIAS",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5348,
+      "Nombre": "SECCION SECRETARIAS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5500,
+      "Nombre": "SECCION SERVICIOS GENERALES",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5112,
+      "Nombre": "SECCION SERVICIOS GENERALES",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5241,
+      "Nombre": "SECCION SERVICIOS GENERALES",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5501,
+      "Nombre": "SECCION SUELDOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5242,
+      "Nombre": "SECCION SUMINISTRO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5113,
+      "Nombre": "SECCION SUMINISTROS",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5502,
+      "Nombre": "SECCION TESORERIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5114,
+      "Nombre": "SECRETARIA - SERVICIO CERRADO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5410,
+      "Nombre": "SECRETARIA DE UNIDADES INTERNACION",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5115,
+      "Nombre": "SERVICIO ALIMENTACION Y DIETOTERAPIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5349,
+      "Nombre": "SERVICIO ALIMENTACION Y LACTARIO",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5503,
+      "Nombre": "SERVICIO ANATOMIA PATOLOGICA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5116,
+      "Nombre": "SERVICIO ANATOMIA PATOLOGICA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5243,
+      "Nombre": "SERVICIO ANATOMIA PATOLOGICA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5595,
+      "Nombre": "SERVICIO ANATOMO PATOLOGICA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5596,
+      "Nombre": "SERVICIO ANESTESIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5350,
+      "Nombre": "SERVICIO ANESTESIOLOGIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5244,
+      "Nombre": "SERVICIO ANESTESIOLOGIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5646,
+      "Nombre": "SERVICIO CENTRO QUIRURGICO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5351,
+      "Nombre": "SERVICIO CIRUGIA CARDIOVASCULAR",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5352,
+      "Nombre": "SERVICIO CIRUGIA GENERAL",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5597,
+      "Nombre": "SERVICIO CIRUGIA GENERAL",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5245,
+      "Nombre": "SERVICIO CIRUGIA GENERAL",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5353,
+      "Nombre": "SERVICIO CONSULTORIOS CLINICOS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5354,
+      "Nombre": "SERVICIO CUIDADOS CRITICOS CARDIOVASCULARES (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5117,
+      "Nombre": "SERVICIO DE CARDIOLOGIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5118,
+      "Nombre": "SERVICIO DE CIRUGIA GENERAL",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5246,
+      "Nombre": "SERVICIO DE CUIDADOS INTENSIVOS 1 - UTI",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5247,
+      "Nombre": "SERVICIO DE CUIDADOS INTENSIVOS 2 - UTI",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5248,
+      "Nombre": "SERVICIO DE CUIDADOS INTENSIVOS 3 - UTI",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5119,
+      "Nombre": "SERVICIO DE EMERGENCIAS-EMERGENCIAS",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5120,
+      "Nombre": "SERVICIO DE ENDOCRINOLOGIA METABOLISMO Y NUTRICION",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5411,
+      "Nombre": "SERVICIO DE ENFERMERIA PEDIATRICA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5121,
+      "Nombre": "SERVICIO DE ESTERILIZACION",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5647,
+      "Nombre": "SERVICIO DE ESTERILIZACION",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5122,
+      "Nombre": "SERVICIO DE FARMACIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5249,
+      "Nombre": "SERVICIO DE GASTROENTEROLOGIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5504,
+      "Nombre": "SERVICIO DE GINECOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5648,
+      "Nombre": "SERVICIO DE INFORMATICA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5250,
+      "Nombre": "SERVICIO DE LABORATORIO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5123,
+      "Nombre": "SERVICIO DE NEUROCIRUGIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5124,
+      "Nombre": "SERVICIO DE NEUROLOGIA CLINICA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5125,
+      "Nombre": "SERVICIO DE ODONTOLOGIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5126,
+      "Nombre": "SERVICIO DE OFTALMOLOGIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5505,
+      "Nombre": "SERVICIO DE ORL",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5598,
+      "Nombre": "SERVICIO DE REHABILITACION",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5127,
+      "Nombre": "SERVICIO DE SALUD MENTAL",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5251,
+      "Nombre": "SERVICIO DE SALUD MENTAL",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5506,
+      "Nombre": "SERVICIO DE UROLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5507,
+      "Nombre": "SERVICIO DERMATOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5355,
+      "Nombre": "SERVICIO DERMATOLOGIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5356,
+      "Nombre": "SERVICIO DIAGNOSTICO POR IMAGENES",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5599,
+      "Nombre": "SERVICIO DIAGNOSTICO POR IMAGENES",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5412,
+      "Nombre": "SERVICIO DIAGNOSTICO POR IMAGENES",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5252,
+      "Nombre": "SERVICIO DIAGNOSTICO POR IMAGENES",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5413,
+      "Nombre": "SERVICIO DIETOTERAPIA Y ALIMENTACION",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5414,
+      "Nombre": "SERVICIO EMERGENCIAS",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5253,
+      "Nombre": "SERVICIO EMERGENCIAS-EMERGENCIAS",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5508,
+      "Nombre": "SERVICIO EMERGENTOLOGIA-EMERGENCIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5683,
+      "Nombre": "SERVICIO ENFERMERIA UTI ADULTOS",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5415,
+      "Nombre": "SERVICIO ESTERILIZACION",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5254,
+      "Nombre": "SERVICIO ESTERILIZACION",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5255,
+      "Nombre": "SERVICIO FARMACIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5357,
+      "Nombre": "SERVICIO FARMACIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5509,
+      "Nombre": "SERVICIO FARMACIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5600,
+      "Nombre": "SERVICIO FARMACIA Y ESTERILIZACION",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5510,
+      "Nombre": "SERVICIO FONOAUDIOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5416,
+      "Nombre": "SERVICIO GUARDIA ADULTOS",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5511,
+      "Nombre": "SERVICIO GUARDIA PEDIATRICA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5358,
+      "Nombre": "SERVICIO GUARDIA PEDIATRICA (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5359,
+      "Nombre": "SERVICIO HEMATOLOGIA Y ONCOLOGIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5360,
+      "Nombre": "SERVICIO HEMOTERAPIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5417,
+      "Nombre": "SERVICIO HEMOTERAPIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5128,
+      "Nombre": "SERVICIO HEMOTERAPIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5361,
+      "Nombre": "SERVICIO HOSPITAL DE DIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5362,
+      "Nombre": "SERVICIO INTERNACION ABREVIADA - SIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5649,
+      "Nombre": "SERVICIO INTERNACION ALTO RIESGO 3",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5512,
+      "Nombre": "SERVICIO KINESIOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5363,
+      "Nombre": "SERVICIO LABORATORIO",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5418,
+      "Nombre": "SERVICIO LABORATORIO",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5129,
+      "Nombre": "SERVICIO LABORATORIO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5513,
+      "Nombre": "SERVICIO LABORATORIO ANALISIS CLINICOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5364,
+      "Nombre": "SERVICIO MEDICINA FISICA Y REHABILITACION",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5419,
+      "Nombre": "SERVICIO MEDICO DE PEDIATRIA-EMERGENCIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5130,
+      "Nombre": "SERVICIO MICROBIOLOGIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5420,
+      "Nombre": "SERVICIO NEONATOLOGIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5601,
+      "Nombre": "SERVICIO NEONATOLOGIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5514,
+      "Nombre": "SERVICIO NEONATOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5421,
+      "Nombre": "SERVICIO NEONATOLOGIA-EMERGENCIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5650,
+      "Nombre": "SERVICIO NEONATOLOGIA-EMERGENCIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5365,
+      "Nombre": "SERVICIO NEUMONOLOGIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5515,
+      "Nombre": "SERVICIO NEUMONOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5516,
+      "Nombre": "SERVICIO NUTRICION",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5517,
+      "Nombre": "SERVICIO OBSTETRICIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5602,
+      "Nombre": "SERVICIO OBSTETRICIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5366,
+      "Nombre": "SERVICIO ODONTOLOGIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5256,
+      "Nombre": "SERVICIO ODONTOLOGIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5367,
+      "Nombre": "SERVICIO OFTALMOLOGIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5368,
+      "Nombre": "SERVICIO ORL",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5603,
+      "Nombre": "SERVICIO PEDIATRIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5518,
+      "Nombre": "SERVICIO PREVENCION Y ASISTENCIA ADICCIONES",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5131,
+      "Nombre": "SERVICIO RADIOLOGIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5519,
+      "Nombre": "SERVICIO REHABILITACION",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5132,
+      "Nombre": "SERVICIO RESONANCIA MAGNETICA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5369,
+      "Nombre": "SERVICIO SALA 12 ONCOLOGIA (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5370,
+      "Nombre": "SERVICIO SALA 2 CLINICA MEDICA (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5652,
+      "Nombre": "SERVICIO SALA PARTOS-EMERGENCIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5371,
+      "Nombre": "SERVICIO SALUD MENTAL",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5604,
+      "Nombre": "SERVICIO SALUD MENTAL",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5520,
+      "Nombre": "SERVICIO SALUD MENTAL",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5521,
+      "Nombre": "SERVICIO SOCIAL",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5372,
+      "Nombre": "SERVICIO SOCIAL",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5522,
+      "Nombre": "SERVICIO TERAPIA INTENSIVA PEDIATRICA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5422,
+      "Nombre": "SERVICIO TOCOGINECOLOGIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5133,
+      "Nombre": "SERVICIO TOMOGRAFIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5373,
+      "Nombre": "SERVICIO TRAUMATOLOGIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5653,
+      "Nombre": "SERVICIO UCIN - UTI",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5654,
+      "Nombre": "SERVICIO UTIM-UTIM",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5656,
+      "Nombre": "SERVICIO UTI-UTI",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5523,
+      "Nombre": "SERVICIOS DE DIAGNOSTICO POR IMAGENES",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5423,
+      "Nombre": "SERVICIOS GENERALES",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5605,
+      "Nombre": "SUB DIRECCION ADMINISTRATIVA CONTABLE HOSPITAL DE CONCEPCION",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5134,
+      "Nombre": "SUB DIRECCION ADMINISTRATIVA HOSPITAL ANGEL C PADILLA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5524,
+      "Nombre": "SUB DIRECCION MEDICA HOSPITAL AVELLANEDA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5257,
+      "Nombre": "SUB DIRECCION MEDICA HOSPITAL CENTRO DE SALUD",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5374,
+      "Nombre": "SUB DIRECCION MEDICA HOSPITAL DEL NIÑO JESUS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5525,
+      "Nombre": "SUB DIRECCION TECNICA HOSPITAL AVELLANEDA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5258,
+      "Nombre": "SUB DIRECCION TECNICA HOSPITAL CENTRO DE SALUD",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5606,
+      "Nombre": "SUB DIRECCION TECNICA HOSPITAL DE CONCEPCION",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5375,
+      "Nombre": "SUB DIRECCION TECNICA HOSPITAL DEL NIÑO JESUS",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5135,
+      "Nombre": "SUB DIRECCION TECNICA Y SERV DE APOYO DEL HOSPITAL ANGEL C PADILLA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5684,
+      "Nombre": "SUPERVISIÓN DE ENFERMERIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5259,
+      "Nombre": "SUPERVISOR 1",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5260,
+      "Nombre": "SUPERVISOR 2",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5261,
+      "Nombre": "SUPERVISOR 3",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5262,
+      "Nombre": "SUPERVISOR 4",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5263,
+      "Nombre": "SUPERVISOR 5",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5264,
+      "Nombre": "SUPERVISOR 6",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5712,
+      "Nombre": "TELEOBSTETRCIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5698,
+      "Nombre": "TELEOBSTETRICIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5691,
+      "Nombre": "TOMOGRAFIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5706,
+      "Nombre": "TRASLADO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5718,
+      "Nombre": "UCI",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5526,
+      "Nombre": "UNIDAD  SALA 1 PEDIATRIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5657,
+      "Nombre": "UNIDAD ADMISION",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5607,
+      "Nombre": "UNIDAD AGENTES DE TRASLADO",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5265,
+      "Nombre": "UNIDAD ATENCION AMBULATORIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5136,
+      "Nombre": "UNIDAD ATENCION AMBULATORIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5527,
+      "Nombre": "UNIDAD CARDIOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5137,
+      "Nombre": "UNIDAD CARDIOLOGIA NEUROLOGICA VASCULAR-UTI",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5138,
+      "Nombre": "UNIDAD CENTRO QUIRURGICO",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5266,
+      "Nombre": "UNIDAD CENTRO QUIRURGICO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5658,
+      "Nombre": "UNIDAD CENTRO QUIRURGICO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5608,
+      "Nombre": "UNIDAD CIRUGIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5267,
+      "Nombre": "UNIDAD CIRUGIA COLOPROCTOLOGICA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5659,
+      "Nombre": "UNIDAD CIRUGIA NEONATAL",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5139,
+      "Nombre": "UNIDAD CIRUGIA Y TRAUMATOLOGIA ORAL Y MAXILOFACIAL",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5268,
+      "Nombre": "UNIDAD CLINICA 1",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5609,
+      "Nombre": "UNIDAD CLINICA MEDICA - CONTROL DE INFECCIONES",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5660,
+      "Nombre": "UNIDAD CONSULTORIO EXTERNO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5528,
+      "Nombre": "UNIDAD CONSULTORIOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5529,
+      "Nombre": "UNIDAD CONSULTORIOS DE  PEDIATRIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5530,
+      "Nombre": "UNIDAD CONSULTORIOS EXTERNO ADULTOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5269,
+      "Nombre": "UNIDAD CORONARIA Y REHABILITACION POST QUIRURGICA-UTI",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5376,
+      "Nombre": "UNIDAD CUIDADOS CRITICOS (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5140,
+      "Nombre": "UNIDAD CUIDADOS CRITICOS 1-UTI",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5141,
+      "Nombre": "UNIDAD CUIDADOS CRITICOS 2",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5142,
+      "Nombre": "UNIDAD CUIDADOS CRITICOS 3",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5270,
+      "Nombre": "UNIDAD CUIDADOS INTENSIVOS 1 - UTI",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5271,
+      "Nombre": "UNIDAD CUIDADOS INTENSIVOS 2 - UTI",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5272,
+      "Nombre": "UNIDAD CUIDADOS INTENSIVOS 3 - UTI",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5661,
+      "Nombre": "UNIDAD CUIDADOS INTENSIVOS NEONATALES",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5531,
+      "Nombre": "UNIDAD CUIDADOS INTENSIVOS NEONATALES-UTI",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5273,
+      "Nombre": "UNIDAD CUIDADOS MIN QUEMADOS",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5274,
+      "Nombre": "UNIDAD CUIDADOS MIN TRAUMATOLOGICOS",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5275,
+      "Nombre": "UNIDAD CUIDADOS MINIMOS 1",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5276,
+      "Nombre": "UNIDAD CUIDADOS MINIMOS 3",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5277,
+      "Nombre": "UNIDAD CUIDADOS MINIMOS GINECOLOGICOS",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5278,
+      "Nombre": "UNIDAD CUIDADOS MINIMOS QUIRURGICOS 1",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5279,
+      "Nombre": "UNIDAD CUIDADOS MINIMOS QUIRURGICOS 2",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5280,
+      "Nombre": "UNIDAD CUIDADOS MINIMOS QUIRURGICOS 3",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5281,
+      "Nombre": "UNIDAD CUIDADOS ONCOLOGICOS",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5377,
+      "Nombre": "UNIDAD CUIDADOS PROGRESIVOS 1 (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5378,
+      "Nombre": "UNIDAD CUIDADOS PROGRESIVOS 2 (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5282,
+      "Nombre": "UNIDAD CUIDADOS SEMI CRITICOS - UTIM",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5283,
+      "Nombre": "UNIDAD DE CIRUGIA CARDIOVASCULAR",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5610,
+      "Nombre": "UNIDAD DE CUIDADOS CRITICOS 1",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5611,
+      "Nombre": "UNIDAD DE CUIDADOS CRITICOS 2",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5379,
+      "Nombre": "UNIDAD DE CUIDADOS CRITICOS CARDIOVASCULARES-UTI",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5284,
+      "Nombre": "UNIDAD DE HEMODINAMIA E INTERVENCIONISMO",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5143,
+      "Nombre": "UNIDAD DE KINESIOLOGIA",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5424,
+      "Nombre": "UNIDAD DE KINESIOLOGIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5687,
+      "Nombre": "UNIDAD DE LACTANCIA MATERNA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5612,
+      "Nombre": "UNIDAD DE QUIROFANO",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5532,
+      "Nombre": "UNIDAD DE RECUPERACION POSTANESTESICA ADULTOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5533,
+      "Nombre": "UNIDAD DE RECUPERACION POSTANESTESICA PEDIATRICA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5144,
+      "Nombre": "UNIDAD DE STROKE",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5145,
+      "Nombre": "UNIDAD DE TERAPIA INTENSIVA 1-UTI",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5146,
+      "Nombre": "UNIDAD DE TERAPIA INTENSIVA 2 COVID-UTI",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5380,
+      "Nombre": "UNIDAD DE TOMOGRAFIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5285,
+      "Nombre": "UNIDAD DIETOTERAPIA Y ALIMENTACION",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5147,
+      "Nombre": "UNIDAD EMERGENCIAS",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5286,
+      "Nombre": "UNIDAD EMERGENCIAS-EMERGENCIAS",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5534,
+      "Nombre": "UNIDAD EMERGENTOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5535,
+      "Nombre": "UNIDAD ENDOSCOPIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5536,
+      "Nombre": "UNIDAD ENFERMEDADES RESPIRATORIAS NEONATALES-UTI",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5537,
+      "Nombre": "UNIDAD ESPECIALIDADES Y CONSULTORIOS EXTERNOS (M)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5613,
+      "Nombre": "UNIDAD ESTERILIZACION",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5662,
+      "Nombre": "UNIDAD FARMACIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5381,
+      "Nombre": "UNIDAD GUARDIA 2 (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5382,
+      "Nombre": "UNIDAD GUARDIA 4 (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5383,
+      "Nombre": "UNIDAD GUARDIA 5 (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5384,
+      "Nombre": "UNIDAD GUARDIA 6 (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5385,
+      "Nombre": "UNIDAD GUARDIA 7 (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5425,
+      "Nombre": "UNIDAD GUARDIA ADULTOS",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5614,
+      "Nombre": "UNIDAD GUARDIA MAYOR",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5538,
+      "Nombre": "UNIDAD GUARDIA MAYOR",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5539,
+      "Nombre": "UNIDAD HEMOTERAPIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5615,
+      "Nombre": "UNIDAD HEMOTERAPIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5287,
+      "Nombre": "UNIDAD HEMOTERAPIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5663,
+      "Nombre": "UNIDAD HEMOTERAPIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5681,
+      "Nombre": "UNIDAD HOSPITAL DE DIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5540,
+      "Nombre": "UNIDAD HOSPITAL DE DIA PEDIATRICO (M)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5664,
+      "Nombre": "UNIDAD IDENTIFICACION DE RN",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5541,
+      "Nombre": "UNIDAD IDENTIFICACION RECIEN NACIDO",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5386,
+      "Nombre": "UNIDAD INSUFICIENCIA INTESTINAL Y COLOPROCTOLOGIA (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5665,
+      "Nombre": "UNIDAD INTERNACION ALTO RIESGO 1",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5666,
+      "Nombre": "UNIDAD INTERNACION ALTO RIESGO 2",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5667,
+      "Nombre": "UNIDAD INTERNACION ALTO RIESGO 3",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5542,
+      "Nombre": "UNIDAD INTERNACION CONJUNTA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5387,
+      "Nombre": "UNIDAD INTERVENCIONISMO Y HEMODINAMIA (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5543,
+      "Nombre": "UNIDAD LABORATORIO BACTERIOLOGICO",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5616,
+      "Nombre": "UNIDAD LABORATORIO CENTRAL",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5668,
+      "Nombre": "UNIDAD LABORATORIO CENTRAL",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5617,
+      "Nombre": "UNIDAD LABORATORIO GUARDIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5388,
+      "Nombre": "UNIDAD LABORATORIO MICROBIOLOGIA",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5669,
+      "Nombre": "UNIDAD LABORATORIO MICROBIOLOGIA",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5544,
+      "Nombre": "UNIDAD LACTARIO",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5545,
+      "Nombre": "UNIDAD MANTENIMIENTO",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5670,
+      "Nombre": "UNIDAD MEDICACION Y DEPOSITO",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5426,
+      "Nombre": "UNIDAD MICROBIOLOGIA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5618,
+      "Nombre": "UNIDAD NEONATOLOGIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5148,
+      "Nombre": "UNIDAD NEUROCARDIOVASULAR",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5389,
+      "Nombre": "UNIDAD NEUROLOGIA (MED)",
+      "HospitalId": 1048
+    },
+    {
+      "Id": 5631,
+      "Nombre": "UNIDAD OBSTETRICAS-EMERGENCIAS",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5619,
+      "Nombre": "UNIDAD OBSTETRICIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5546,
+      "Nombre": "UNIDAD ODONTOLOGIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5547,
+      "Nombre": "UNIDAD PACIENTES CRONICOS P (M)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5548,
+      "Nombre": "UNIDAD PEDIATRIA Y GUARDIA PEDIATRICA-EMERGENCIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5671,
+      "Nombre": "UNIDAD PREMATUROS",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5149,
+      "Nombre": "UNIDAD PROCURACION",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5427,
+      "Nombre": "UNIDAD QUIROFANO",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5549,
+      "Nombre": "UNIDAD QUIROFANO CENTRAL",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5550,
+      "Nombre": "UNIDAD QUIROFANO PERINATAL",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5620,
+      "Nombre": "UNIDAD RADIOLOGICA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5288,
+      "Nombre": "UNIDAD RADIOLOGICA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5672,
+      "Nombre": "UNIDAD RAYOS X",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5674,
+      "Nombre": "UNIDAD RN LM IC",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5150,
+      "Nombre": "UNIDAD SALA 10",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5151,
+      "Nombre": "UNIDAD SALA 11",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5152,
+      "Nombre": "UNIDAD SALA 12A",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5153,
+      "Nombre": "UNIDAD SALA 12B",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5154,
+      "Nombre": "UNIDAD SALA 2",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5155,
+      "Nombre": "UNIDAD SALA 3",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5551,
+      "Nombre": "UNIDAD SALA 3 PEDIATRIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5552,
+      "Nombre": "UNIDAD SALA 4 PEDIATRIA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5156,
+      "Nombre": "UNIDAD SALA 5",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5157,
+      "Nombre": "UNIDAD SALA 7",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5158,
+      "Nombre": "UNIDAD SALA 8-UTI",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5159,
+      "Nombre": "UNIDAD SALA 9",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5553,
+      "Nombre": "UNIDAD SALA CLINICA MEDICA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5554,
+      "Nombre": "UNIDAD SALA DE CIRUGIA DE ADULTO",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5555,
+      "Nombre": "UNIDAD SALA DE PARTOS",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5556,
+      "Nombre": "UNIDAD SALA INTERNACION PEDIATRICA (M)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5557,
+      "Nombre": "UNIDAD SALA NEUMONOLOGIA MUJERES",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5558,
+      "Nombre": "UNIDAD SALA NEUMONOLOGIA VARONES",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5675,
+      "Nombre": "UNIDAD SALA PARTOS",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5160,
+      "Nombre": "UNIDAD SALUD MENTAL",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5161,
+      "Nombre": "UNIDAD SHOCK ROOM",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5428,
+      "Nombre": "UNIDAD TERAPIA INTENSIVA PEDIATRICA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5676,
+      "Nombre": "UNIDAD TERAPIA INTERMEDIA NEONATAL",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5559,
+      "Nombre": "UNIDAD TERAPIA INTERMEDIA NEONATAL-UTIM",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5429,
+      "Nombre": "UNIDAD TERAPIA INTERMEDIA PEDIATRICA",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5560,
+      "Nombre": "UNIDAD TERAPIA PEDIATRICA",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5289,
+      "Nombre": "UNIDAD TOMOGRAFIA",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5162,
+      "Nombre": "UNIDAD TRANSPLANTE RENAL",
+      "HospitalId": 1046
+    },
+    {
+      "Id": 5621,
+      "Nombre": "UNIDAD TRAUMATOLOGIA",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5677,
+      "Nombre": "UNIDAD UCIM",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5290,
+      "Nombre": "UNIDAD UCO Y HD-UTI",
+      "HospitalId": 1047
+    },
+    {
+      "Id": 5561,
+      "Nombre": "UNIDAD UTI ADULTO (2DO PISO)-UTI",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5562,
+      "Nombre": "UNIDAD UTI ADULTOS (3ER PISO)-UTI",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5678,
+      "Nombre": "UNIDAD UTIM",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5563,
+      "Nombre": "UNIDAD VACUNATORIO",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5724,
+      "Nombre": "UTI",
+      "HospitalId": 1052
+    },
+    {
+      "Id": 5564,
+      "Nombre": "UTI ADULTO COVID (SALA 4)-UTI",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5565,
+      "Nombre": "UTI ADULTOS COVID-UTI",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5430,
+      "Nombre": "UTIM 1 COVID-UTIM",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5431,
+      "Nombre": "UTIM 2 COVID-UTIM",
+      "HospitalId": 1049
+    },
+    {
+      "Id": 5566,
+      "Nombre": "UTIM ADULTO COVID (SALA 4)",
+      "HospitalId": 1050
+    },
+    {
+      "Id": 5622,
+      "Nombre": "UTIM COVID-UTIM",
+      "HospitalId": 1051
+    },
+    {
+      "Id": 5291,
+      "Nombre": "UTIM SEGUNDO PISO-UTIM",
+      "HospitalId": 1047
+    }
+  ]
+};
+
+    let agents = [];
+
+    window.addEventListener('DOMContentLoaded', () => {
+      initCatalogCombos();
+    });
+
+    function initCatalogCombos() {
+      const efectorSelect = document.getElementById('efectorSelect');
+      efectorSelect.innerHTML = CATALOG_DATA.hospitales.map(h => 
+        '<option value="' + h.Id + '">' + escapeHtml(h.Nombre) + '</option>'
+      ).join('');
+
+      onEfectorChange();
+    }
+
+    function onEfectorChange() {
+      const efectorSelect = document.getElementById('efectorSelect');
+      const servicioSelect = document.getElementById('servicioSelect');
+      const selectedHospId = parseInt(efectorSelect.value, 10);
+
+      const serviciosFiltrados = CATALOG_DATA.servicios.filter(s => s.HospitalId === selectedHospId);
+
+      if (serviciosFiltrados.length > 0) {
+        servicioSelect.innerHTML = serviciosFiltrados.map(s => 
+          '<option value="' + escapeHtml(s.Nombre) + '">' + escapeHtml(s.Nombre) + '</option>'
+        ).join('');
+      } else {
+        servicioSelect.innerHTML = '<option value="SERVICIO GENERAL">SERVICIO GENERAL</option>';
+      }
+    }
+
+    function getSelectedEfectorNombre() {
+      const efectorSelect = document.getElementById('efectorSelect');
+      const selectedHospId = parseInt(efectorSelect.value, 10);
+      const hObj = CATALOG_DATA.hospitales.find(h => h.Id === selectedHospId);
+      return hObj ? hObj.Nombre : 'EFECTOR GENERAL';
+    }
+
+    function getSelectedServicioNombre() {
+      const servicioSelect = document.getElementById('servicioSelect');
+      return servicioSelect.value.trim() || 'SERVICIO GENERAL';
+    }
+
+    function addAgent(e) {
+      if (e) e.preventDefault();
+
+      const dniInput = document.getElementById('dniInput');
+      const nombreInput = document.getElementById('nombreInput');
+      const racionSelect = document.getElementById('racionSelect');
+
+      const rawDni = dniInput.value.trim();
+      const cleanDni = rawDni.replace(/[^0-9]/g, '');
+      const nombre = nombreInput.value.trim().toUpperCase();
+      const racionCount = parseInt(racionSelect.value, 10);
+
+      if (!cleanDni) {
+        alert('Por favor ingrese un número de DNI válido.');
+        dniInput.focus();
+        return;
+      }
+
+      if (!nombre) {
+        alert('Por favor ingrese el Apellido y Nombre.');
+        nombreInput.focus();
+        return;
+      }
+
+      const existsIndex = agents.findIndex(a => a.dni === cleanDni);
+      if (existsIndex !== -1) {
+        if (confirm('El DNI ' + cleanDni + ' ya está en la lista (' + agents[existsIndex].nombre + '). ¿Desea actualizar sus datos?')) {
+          agents[existsIndex].nombre = nombre;
+          agents[existsIndex].racion = racionCount;
+        }
+      } else {
+        agents.push({
+          dni: cleanDni,
+          nombre: nombre,
+          racion: racionCount
+        });
+      }
+
+      dniInput.value = '';
+      nombreInput.value = '';
+      dniInput.focus();
+
+      renderTable();
+    }
+
+    function removeAgent(index) {
+      agents.splice(index, 1);
+      renderTable();
+    }
+
+    function clearAllAgents() {
+      if (confirm('¿Está seguro de borrar todos los agentes cargados en la lista?')) {
+        agents = [];
+        renderTable();
+      }
+    }
+
+    function renderTable() {
+      const tbody = document.getElementById('agentTableBody');
+      const totalCount = document.getElementById('totalCount');
+      const btnExport = document.getElementById('btnExport');
+      const btnClearAll = document.getElementById('btnClearAll');
+
+      totalCount.textContent = agents.length;
+      document.getElementById('statTotal').textContent = agents.length;
+
+      let countG12 = 0;
+      let countG24 = 0;
+      let countDisabled = 0;
+
+      agents.forEach(a => {
+        if (a.racion === 1) countG12++;
+        else if (a.racion === 2) countG24++;
+        else countDisabled++;
+      });
+
+      document.getElementById('statG12').textContent = countG12;
+      document.getElementById('statG24').textContent = countG24;
+      document.getElementById('statDisabled').textContent = countDisabled;
+
+      btnExport.disabled = agents.length === 0;
+      btnClearAll.style.display = agents.length > 0 ? 'inline-flex' : 'none';
+
+      if (agents.length === 0) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 30px;">
+              No hay agentes agregados aún. Ingrese datos arriba o utilice el botón "Pegar desde Excel".
+            </td>
+          </tr>
+        `;
+        return;
+      }
+
+      tbody.innerHTML = agents.map((a, idx) => {
+        let badgeClass = 'badge-0';
+        let racionLabel = '0 (Inhabilitado)';
+        let csvValues = 'con_vianda: 0 | esguardia12: 0 | esguardia24: 0';
+
+        if (a.racion === 1) {
+          badgeClass = 'badge-1';
+          racionLabel = '1 (Guardia 12h)';
+          csvValues = 'con_vianda: 1 | esguardia12: 1 | esguardia24: 0';
+        } else if (a.racion === 2) {
+          badgeClass = 'badge-2';
+          racionLabel = '2 (Guardia 24h)';
+          csvValues = 'con_vianda: 1 | esguardia12: 0 | esguardia24: 1';
+        }
+
+        return '<tr>' +
+          '<td style="font-weight: 700; color: var(--text-muted);">' + (idx + 1) + '</td>' +
+          '<td style="font-weight: 700; font-family: monospace; font-size: 0.95rem;">' + a.dni + '</td>' +
+          '<td style="font-weight: 600;">' + escapeHtml(a.nombre) + '</td>' +
+          '<td><span class="badge ' + badgeClass + '">' + racionLabel + '</span></td>' +
+          '<td style="font-size: 0.8rem; color: var(--text-muted); font-family: monospace;">' + csvValues + '</td>' +
+          '<td style="text-align: right;">' +
+            '<button class="btn btn-danger" style="padding: 6px 10px; font-size: 0.75rem;" onclick="removeAgent(' + idx + ')">🗑️ Borrar</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('');
+    }
+
+    function openExcelModal() {
+      document.getElementById('excelPasteTextarea').value = '';
+      document.getElementById('excelModal').classList.add('active');
+    }
+
+    function closeExcelModal() {
+      document.getElementById('excelModal').classList.remove('active');
+    }
+
+    function processExcelPaste() {
+      const text = document.getElementById('excelPasteTextarea').value.trim();
+      const defaultRacion = parseInt(document.getElementById('excelDefaultRacion').value, 10);
+
+      if (!text) {
+        alert('Por favor pegue el contenido de las filas copiadas de Excel.');
+        return;
+      }
+
+      const lines = text.split(/\r?\n/);
+      let addedCount = 0;
+
+      lines.forEach(line => {
+        if (!line.trim()) return;
+
+        const parts = line.split(/[\t,;]+/).map(p => p.trim());
+        let dni = '';
+        let nombre = '';
+
+        if (parts.length >= 2) {
+          if (parts[0].replace(/[^0-9]/g, '').length >= 6) {
+            dni = parts[0].replace(/[^0-9]/g, '');
+            nombre = parts.slice(1).join(' ').trim();
+          } else if (parts[parts.length - 1].replace(/[^0-9]/g, '').length >= 6) {
+            dni = parts[parts.length - 1].replace(/[^0-9]/g, '');
+            nombre = parts.slice(0, -1).join(' ').trim();
+          }
+        } else if (parts.length === 1) {
+          const match = line.match(/^(\d{6,8})\s+(.+)$/);
+          if (match) {
+            dni = match[1];
+            nombre = match[2].trim();
+          }
+        }
+
+        if (dni && nombre) {
+          const existsIndex = agents.findIndex(a => a.dni === dni);
+          if (existsIndex !== -1) {
+            agents[existsIndex].nombre = nombre.toUpperCase();
+            agents[existsIndex].racion = defaultRacion;
+          } else {
+            agents.push({
+              dni: dni,
+              nombre: nombre.toUpperCase(),
+              racion: defaultRacion
+            });
+          }
+          addedCount++;
+        }
+      });
+
+      closeExcelModal();
+      renderTable();
+      alert('Se procesaron y agregaron ' + addedCount + ' agentes correctamente desde la lista.');
+    }
+
+    function exportCSV() {
+      if (agents.length === 0) return;
+
+      const efector = getSelectedEfectorNombre();
+      const servicio = getSelectedServicioNombre();
+
+      // ENCABEZADO EXACTO SOLICITADO: efector;servicio;idpuesto;idagente;documento;agente;tipofuncion;tipoplanta;con_vianda;esguardia12;esguardia24
+      let csvContent = 'efector;servicio;idpuesto;idagente;documento;agente;tipofuncion;tipoplanta;con_vianda;esguardia12;esguardia24\n';
+
+      agents.forEach(a => {
+        let conVianda = 0;
+        let esguardia12 = 0;
+        let esguardia24 = 0;
+
+        if (a.racion === 1) {
+          conVianda = 1;
+          esguardia12 = 1;
+          esguardia24 = 0;
+        } else if (a.racion === 2) {
+          conVianda = 1;
+          esguardia12 = 0;
+          esguardia24 = 1;
+        } else {
+          conVianda = 0;
+          esguardia12 = 0;
+          esguardia24 = 0;
+        }
+
+        const idpuesto = '';
+        const idagente = '';
+        const tipofuncion = '';
+        const tipoplanta = '';
+        const cleanNombre = a.nombre.replace(/;/g, '');
+
+        csvContent += efector + ';' + servicio + ';' + idpuesto + ';' + idagente + ';' + a.dni + ';' + cleanNombre + ';' + tipofuncion + ';' + tipoplanta + ';' + conVianda + ';' + esguardia12 + ';' + esguardia24 + '\n';
+      });
+
+      // UTF-8 BOM Prefix para compatibilidad total con Excel en español y separador ;
+      const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement("a");
+      const url = URL.createObjectURL(blob);
+      
+      const cleanServicioName = servicio.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+      const dateStr = new Date().toISOString().split('T')[0];
+
+      link.setAttribute("href", url);
+      link.setAttribute("download", 'Plantel_' + cleanServicioName + '_' + dateStr + '.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return str
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  </script>
+</body>
+</html>

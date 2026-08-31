@@ -9,6 +9,8 @@ async function main() {
     { Id: 1, Nombre: 'ADMIN' },
     { Id: 2, Nombre: 'GERENTE' },
     { Id: 3, Nombre: 'JEFE_SERVICIO' },
+    { Id: 4, Nombre: 'RRHH' },
+    { Id: 5, Nombre: 'NUTRICION' }
   ];
 
   for (const role of roles) {

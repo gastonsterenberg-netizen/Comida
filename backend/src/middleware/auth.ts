@@ -25,13 +25,13 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
   const token = authHeader && authHeader.split(' ')[1];
   
   if (token == null) {
-    res.sendStatus(401);
+    res.status(401).json({ error: 'Token de autenticación no provisto. Por favor, inicie sesión.' });
     return;
   }
   
-  jwt.verify(token, JWT_SECRET, async (err, decodedUser: any) => {
+  jwt.verify(token, JWT_SECRET, async (err: any, decodedUser: any) => {
     if (err || !decodedUser) {
-      res.sendStatus(403);
+      res.status(403).json({ error: 'Sesión expirada o token inválido. Por favor, vuelva a iniciar sesión.' });
       return;
     }
     
@@ -70,5 +70,14 @@ export const isJefeServicio = (req: Request, res: Response, next: NextFunction):
     next();
   } else {
     res.status(403).json({ error: 'Acceso denegado: Requiere rol de JEFE_SERVICIO' });
+  }
+};
+
+export const isNutricion = (req: Request, res: Response, next: NextFunction): void => {
+  // roleId 5: NUTRICION, roleId 2: GERENTE, roleId 1: ADMIN/RRHH
+  if (req.user && (req.user.roleId === 5 || req.user.roleId === 2 || req.user.roleId === 1)) {
+    next();
+  } else {
+    res.status(403).json({ error: 'Acceso denegado: Requiere rol de NUTRICIÓN' });
   }
 };

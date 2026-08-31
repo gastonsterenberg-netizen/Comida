@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isJefeServicio = exports.isGerente = exports.authenticateToken = void 0;
+exports.isNutricion = exports.isJefeServicio = exports.isGerente = exports.authenticateToken = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 const client_1 = require("@prisma/client");
@@ -21,12 +21,12 @@ const authenticateToken = (req, res, next) => __awaiter(void 0, void 0, void 0, 
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
     if (token == null) {
-        res.sendStatus(401);
+        res.status(401).json({ error: 'Token de autenticación no provisto. Por favor, inicie sesión.' });
         return;
     }
     jsonwebtoken_1.default.verify(token, JWT_SECRET, (err, decodedUser) => __awaiter(void 0, void 0, void 0, function* () {
         if (err || !decodedUser) {
-            res.sendStatus(403);
+            res.status(403).json({ error: 'Sesión expirada o token inválido. Por favor, vuelva a iniciar sesión.' });
             return;
         }
         try {
@@ -68,3 +68,13 @@ const isJefeServicio = (req, res, next) => {
     }
 };
 exports.isJefeServicio = isJefeServicio;
+const isNutricion = (req, res, next) => {
+    // roleId 5: NUTRICION, roleId 2: GERENTE, roleId 1: ADMIN/RRHH
+    if (req.user && (req.user.roleId === 5 || req.user.roleId === 2 || req.user.roleId === 1)) {
+        next();
+    }
+    else {
+        res.status(403).json({ error: 'Acceso denegado: Requiere rol de NUTRICIÓN' });
+    }
+};
+exports.isNutricion = isNutricion;

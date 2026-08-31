@@ -10,7 +10,7 @@ import multer from 'multer';
 import csv from 'csv-parser';
 import fs from 'fs';
 import * as xlsx from 'xlsx';
-import { authenticateToken, isGerente, isJefeServicio } from './middleware/auth';
+import { authenticateToken, isGerente, isJefeServicio, isNutricion } from './middleware/auth';
 import { logAudit } from './utils/audit';
 import { extractDniFromScan } from './utils/scan';
 
@@ -1478,15 +1478,15 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
       where: {
         FechaPedido: targetDate,
         PersonalId: { in: personalIds },
-        ...(tipoComida ? { TipoComida: tipoComida } : {})
+        ...(tipoComida && tipoComida !== 'Ambos' ? { TipoComida: tipoComida } : {})
       }
     });
 
     // Creamos los nuevos pedidos para targetDate
     const newOrders = [];
     for (const o of orders) {
-      const isAlmuerzo = tipoComida ? tipoComida === 'Almuerzo' : true;
-      const isCena = tipoComida ? tipoComida === 'Cena' : true;
+      const isAlmuerzo = tipoComida && tipoComida !== 'Ambos' ? tipoComida === 'Almuerzo' : true;
+      const isCena = tipoComida && tipoComida !== 'Ambos' ? tipoComida === 'Cena' : true;
       
       const mealsRequested = (isAlmuerzo && o.almuerzoDieta ? 1 : 0) + (isCena && o.cenaDieta ? 1 : 0);
       if (mealsRequested === 0) continue;
@@ -1494,9 +1494,14 @@ app.post('/api/orders/bulk', authenticateToken, async (req: Request, res: Respon
       const personal = await prisma.personal.findUnique({ where: { Id: o.personalId } });
       if (!personal) continue;
       
-      if (!personal.Horario.includes('24h')) {
+      const isGuardia24h = Boolean(personal.EsGuardia24) || 
+        (personal.Horario || '').toLowerCase().includes('24') || 
+        (personal.Horario || '').toLowerCase().includes('y cena') ||
+        (personal.Horario || '').toLowerCase().includes('2 racion');
+
+      if (!isGuardia24h) {
         if (mealsRequested > 1) {
-          throw new Error(`El agente ${personal.NombreCompleto} (Guardia 12h) solo puede solicitar 1 comida por día.`);
+          throw new Error(`El agente ${personal.NombreCompleto} (1 Ración) solo puede solicitar 1 comida por día.`);
         }
         if (isAlmuerzo && o.almuerzoDieta) {
           const cenaExistentePlanilla = await prisma.pedidosComida.findFirst({
@@ -1689,6 +1694,13 @@ app.post('/api/emergencies', authenticateToken, async (req: Request, res: Respon
     if (!targetServicioNombre && reemplazaId) {
       const pTitular = await prisma.personal.findUnique({ where: { Id: Number(reemplazaId) }, include: { Servicio: true } });
       if (pTitular?.Servicio?.Nombre) targetServicioNombre = pTitular.Servicio.Nombre;
+    }
+    if (!targetServicioNombre && effectiveUserId) {
+      const reqUser = await prisma.usuarios.findUnique({ where: { Id: Number(effectiveUserId) } });
+      if (reqUser?.ServicioId) {
+        const sObj = await prisma.servicios.findUnique({ where: { Id: reqUser.ServicioId } });
+        if (sObj) targetServicioNombre = sObj.Nombre;
+      }
     }
 
     // Construir justificación con la marca especial si es cargado por Nutrición / Gerencia y el tag de servicio
@@ -2037,7 +2049,12 @@ app.get('/api/emergencies/history', authenticateToken, async (req: Request, res:
     const history = await prisma.pedidosComida.findMany({
       where: whereCondition,
       orderBy: { Id: 'desc' },
-      include: { PersonalReemplazado: true, Personal: true, EvaluadoPor: true, SolicitadoPor: true }
+      include: { 
+        PersonalReemplazado: { include: { Servicio: true, Hospital: true } }, 
+        Personal: { include: { Servicio: true, Hospital: true } }, 
+        EvaluadoPor: true, 
+        SolicitadoPor: { include: { Servicio: true, Hospital: true } } 
+      }
     });
 
     const enriched = await enrichEmergencyList(history);
@@ -2405,6 +2422,19 @@ app.get('/api/admin/auditoria', authenticateToken, async (req: Request, res: Res
     res.status(500).json({ error: 'Error al obtener registros de auditoría' });
   }
 });
+// --------------------------------------------------
+// CACHE SILENCIOSO ETAG Y VERSIÓN POR HOSPITAL
+// --------------------------------------------------
+const hospitalVersionMap: Record<number, number> = {};
+const getHospitalVersion = (hId?: number | null) => {
+  if (!hId) return 1;
+  return hospitalVersionMap[hId] || 1;
+};
+const bumpHospitalVersion = (hId?: number | null) => {
+  if (!hId) return;
+  hospitalVersionMap[hId] = (hospitalVersionMap[hId] || 1) + 1;
+};
+
 // 8. Configuración de Horarios
 app.get('/api/hospital/config', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
@@ -2418,6 +2448,13 @@ app.get('/api/hospital/config', authenticateToken, async (req: Request, res: Res
     });
     return;
   }
+  
+  const currentEtag = `W/"hosp_${hospitalId}_ver_${getHospitalVersion(hospitalId)}"`;
+  if (req.headers['if-none-match'] === currentEtag) {
+    res.status(304).end();
+    return;
+  }
+  res.setHeader('ETag', currentEtag);
   
   try {
     const hospital = await prisma.hospitales.findUnique({
@@ -2821,17 +2858,382 @@ app.post('/api/personal/bulk', authenticateToken, async (req: Request, res: Resp
   }
 });
 
-// 6. ENTREGAS DE VIANDAS MEDIANTE ESCANEO DNI / QR
-app.get('/api/deliveries/scan-check', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+// 5.b VERIFICACIÓN DE DNI EN TIEMPO REAL
+app.get('/api/staff/check-dni', authenticateToken, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
-  const { code, fecha, tipoComida } = req.query;
+  const rawDni = String(req.query.dni || '').trim();
+  const dni = rawDni.replace(/\D/g, '');
+
+  if (!dni) {
+    res.status(400).json({ error: 'DNI inválido' });
+    return;
+  }
+
+  try {
+    let existing: any = await prisma.personal.findFirst({
+      where: { DNI: dni, HospitalId: Number(hospitalId) },
+      include: { Servicio: true }
+    });
+    if (!existing) {
+      existing = await prisma.padronHabilitados.findFirst({
+        where: { DNI: dni, HospitalId: Number(hospitalId) },
+        include: { Servicio: true }
+      });
+    }
+
+    if (existing) {
+      res.json({
+        exists: true,
+        agente: {
+          NombreCompleto: existing.NombreCompleto,
+          Servicio: existing.Servicio?.Nombre || 'Servicio General'
+        }
+      });
+    } else {
+      res.json({ exists: false });
+    }
+  } catch (error) {
+    console.error('Error checking DNI:', error);
+    res.status(500).json({ error: 'Error al verificar DNI' });
+  }
+});
+
+// 5.c.1 ASIGNACIÓN DIRECTA DE PLANTEL (para agentes que ya existen en la BD y no cambian cantidad de raciones)
+app.post('/api/staff/plantel-directo', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  const userServicioId = req.user?.servicioId;
+  const { agendados, servicioId } = req.body;
 
   if (!hospitalId) {
     res.status(403).json({ error: 'Usuario sin hospital asignado' });
     return;
   }
 
-  const rawCode = String(code || '').trim();
+  const targetServicioId = servicioId ? Number(servicioId) : userServicioId;
+  if (!targetServicioId) {
+    res.status(400).json({ error: 'Servicio no especificado' });
+    return;
+  }
+
+  if (!agendados || !Array.isArray(agendados)) {
+    res.status(400).json({ error: 'Datos inválidos' });
+    return;
+  }
+
+  try {
+    for (const item of agendados) {
+      if (!item.DNI) continue;
+      const cleanDni = String(item.DNI).replace(/\D/g, '');
+      if (!cleanDni) continue;
+
+      const padronItem = await prisma.padronHabilitados.findFirst({
+        where: { DNI: cleanDni, HospitalId: Number(hospitalId) }
+      });
+
+      const nombreCompleto = item.NombreCompleto || padronItem?.NombreCompleto || 'AGENTE HOSPITAL';
+
+      const isGuardia24 = (item.Horario || '').toLowerCase().includes('24') || (item.Horario || '').toLowerCase().includes('y cena');
+      const isGuardia12 = (item.Horario || '').toLowerCase().includes('12') || (item.Horario || '').toLowerCase().includes('o cena');
+      const conVianda = item.ConVianda !== false;
+
+      await prisma.personal.upsert({
+        where: { DNI: cleanDni },
+        update: {
+          HospitalId: Number(hospitalId),
+          ServicioId: Number(targetServicioId),
+          ConVianda: conVianda,
+          EsGuardia12: isGuardia12,
+          EsGuardia24: isGuardia24,
+          Horario: item.Horario || (isGuardia24 ? 'Guardia 24h (Almuerzo y Cena)' : 'Almuerzo o Cena'),
+          Activo: true
+        },
+        create: {
+          DNI: cleanDni,
+          NombreCompleto: nombreCompleto,
+          HospitalId: Number(hospitalId),
+          ServicioId: Number(targetServicioId),
+          Horario: item.Horario || (isGuardia24 ? 'Guardia 24h (Almuerzo y Cena)' : 'Almuerzo o Cena'),
+          PeriodoInicio: new Date(2020, 0, 1),
+          PeriodoFin: new Date(2035, 11, 31),
+          ConVianda: conVianda,
+          EsGuardia12: isGuardia12,
+          EsGuardia24: isGuardia24,
+          Activo: true
+        }
+      });
+    }
+
+    bumpHospitalVersion(hospitalId);
+    await logAudit(req, 'ACTUALIZACION_PLANTEL_DIRECTO', `Plantel actualizado directamente para servicio ID ${targetServicioId} con ${agendados.length} agentes.`);
+    res.json({ message: 'Plantel actualizado correctamente.' });
+  } catch (error: any) {
+    console.error('Error actualizando plantel directo:', error);
+    res.status(500).json({ error: 'Error al actualizar plantel: ' + (error?.message || error?.toString() || 'Error interno') });
+  }
+});
+
+// 5.c GESTIÓN DE SOLICITUDES DE CAMBIOS DE PLANTEL (JEFE -> GERENCIA)
+app.post('/api/staff/plantel-solicitud', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  const userServicioId = req.user?.servicioId;
+  const { plantel, servicioId } = req.body;
+
+  if (!hospitalId) {
+    res.status(403).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+
+  const targetServicioId = servicioId ? Number(servicioId) : userServicioId;
+  if (!targetServicioId) {
+    res.status(400).json({ error: 'Servicio no especificado' });
+    return;
+  }
+
+  if (!plantel || !Array.isArray(plantel)) {
+    res.status(400).json({ error: 'No se incluyeron agentes en la solicitud' });
+    return;
+  }
+
+  try {
+    // Buscar si ya existe una solicitud en estado 'Pendiente' para este servicio
+    const existente = await prisma.solicitudesPlantel.findFirst({
+      where: {
+        HospitalId: Number(hospitalId),
+        ServicioId: Number(targetServicioId),
+        Estado: 'Pendiente'
+      }
+    });
+
+    if (plantel.length === 0) {
+      if (existente) {
+        await prisma.solicitudesPlantel.delete({ where: { Id: existente.Id } });
+        bumpHospitalVersion(hospitalId);
+        await logAudit(req, 'SOLICITUD_PLANTEL_CANCELADA', `Solicitud de modificación de plantel cancelada/eliminada para servicio ID ${targetServicioId}.`);
+      }
+      res.json({ message: 'Solicitudes pendientes canceladas correctamente.', id: existente?.Id || null });
+      return;
+    }
+
+    let solicitud;
+    if (existente) {
+      // Si ya existe una solicitud pendiente, la actualizamos con la información más reciente
+      solicitud = await prisma.solicitudesPlantel.update({
+        where: { Id: existente.Id },
+        data: {
+          SolicitadoPorId: Number(req.user!.userId),
+          DatosJson: JSON.stringify(plantel),
+          FechaSolicitud: new Date()
+        }
+      });
+    } else {
+      // Si no existe solicitud pendiente, creamos un nuevo registro
+      solicitud = await prisma.solicitudesPlantel.create({
+        data: {
+          HospitalId: Number(hospitalId),
+          ServicioId: Number(targetServicioId),
+          SolicitadoPorId: Number(req.user!.userId),
+          Estado: 'Pendiente',
+          DatosJson: JSON.stringify(plantel)
+        }
+      });
+    }
+
+    bumpHospitalVersion(hospitalId);
+    await logAudit(req, 'SOLICITUD_PLANTEL', `Solicitud de modificación de plantel ${existente ? 'actualizada' : 'enviada'} para servicio ID ${targetServicioId} con ${plantel.length} novedades.`);
+
+    res.json({
+      message: 'Solicitud de actualización enviada correctamente a Gerencia para su aprobación.',
+      id: solicitud.Id
+    });
+  } catch (error: any) {
+    console.error('Error registrando solicitud de plantel:', error);
+    res.status(500).json({ error: 'Error al registrar solicitud de plantel: ' + (error?.message || error?.toString() || 'Error interno') });
+  }
+});
+
+app.get('/api/staff/plantel-solicitudes', authenticateToken, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  if (!hospitalId) {
+    res.json([]);
+    return;
+  }
+
+  const currentEtag = `W/"hosp_${hospitalId}_ver_${getHospitalVersion(hospitalId)}"`;
+  if (req.headers['if-none-match'] === currentEtag) {
+    res.status(304).end();
+    return;
+  }
+  res.setHeader('ETag', currentEtag);
+
+  try {
+    const solicitudes = await prisma.solicitudesPlantel.findMany({
+      where: { HospitalId: Number(hospitalId) },
+      include: {
+        Servicio: true,
+        SolicitadoPor: { select: { Id: true, NombreCompleto: true, NombreUsuario: true } }
+      },
+      orderBy: { Id: 'desc' },
+      take: 50
+    });
+
+    res.json(solicitudes);
+  } catch (error) {
+    console.error('Error fetching solicitudes de plantel:', error);
+    res.status(500).json({ error: 'Error al consultar solicitudes de plantel' });
+  }
+});
+
+app.post('/api/staff/plantel-solicitudes/:id/aprobar', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  const solicitudId = Number(req.params.id);
+
+  if (!hospitalId) {
+    res.status(403).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+
+  try {
+    const solicitud = await prisma.solicitudesPlantel.findFirst({
+      where: { Id: solicitudId, HospitalId: Number(hospitalId) }
+    });
+
+    if (!solicitud) {
+      res.status(404).json({ error: 'Solicitud no encontrada' });
+      return;
+    }
+
+    if (solicitud.Estado !== 'Pendiente') {
+      res.status(400).json({ error: `La solicitud ya fue procesada anteriormente (${solicitud.Estado}).` });
+      return;
+    }
+
+    const items = JSON.parse(solicitud.DatosJson || '[]');
+
+    for (const item of items) {
+      const cleanDni = String(item.DNI || item.dni || '').replace(/\D/g, '');
+      const nombreCompleto = String(item.NombreCompleto || item.nombre || '').trim().toUpperCase();
+      if (!cleanDni || !nombreCompleto) continue;
+
+      const horario = item.Horario || (item.racion === 2 ? 'Guardia 24h (Almuerzo y Cena)' : '08:00 a 16:00');
+      const isGuardia24 = Boolean(item.EsGuardia24 || item.racion === 2 || (horario.toLowerCase().includes('24') || horario.toLowerCase().includes('y cena')));
+      const isGuardia12 = Boolean(item.EsGuardia12 || item.racion === 1 || (horario.toLowerCase().includes('12') && !isGuardia24));
+      const conVianda = item.ConVianda !== undefined ? Boolean(item.ConVianda) : (item.racion !== 0);
+
+      await prisma.personal.upsert({
+        where: { DNI: cleanDni },
+        update: {
+          NombreCompleto: nombreCompleto,
+          HospitalId: Number(solicitud.HospitalId),
+          ServicioId: Number(solicitud.ServicioId),
+          Horario: horario,
+          ConVianda: conVianda,
+          EsGuardia12: isGuardia12,
+          EsGuardia24: isGuardia24,
+          Activo: conVianda
+        },
+        create: {
+          DNI: cleanDni,
+          NombreCompleto: nombreCompleto,
+          HospitalId: Number(solicitud.HospitalId),
+          ServicioId: Number(solicitud.ServicioId),
+          Horario: horario,
+          PeriodoInicio: new Date(2020, 0, 1),
+          PeriodoFin: new Date(2035, 11, 31),
+          ConVianda: conVianda,
+          EsGuardia12: isGuardia12,
+          EsGuardia24: isGuardia24,
+          Activo: conVianda
+        }
+      });
+
+      await prisma.padronHabilitados.upsert({
+        where: { DNI: cleanDni },
+        update: {
+          NombreCompleto: nombreCompleto,
+          HospitalId: Number(solicitud.HospitalId),
+          ServicioId: Number(solicitud.ServicioId),
+          EsGuardia24h: isGuardia24,
+          Activo: conVianda
+        },
+        create: {
+          DNI: cleanDni,
+          NombreCompleto: nombreCompleto,
+          HospitalId: Number(solicitud.HospitalId),
+          ServicioId: Number(solicitud.ServicioId),
+          EsGuardia24h: isGuardia24,
+          Activo: conVianda
+        }
+      });
+    }
+
+    await prisma.solicitudesPlantel.update({
+      where: { Id: solicitudId },
+      data: {
+        Estado: 'Aprobado',
+        FechaRespuesta: new Date(),
+        RespuestaPorId: req.user!.userId
+      }
+    });
+
+    bumpHospitalVersion(hospitalId);
+    await logAudit(req, 'APROBACION_PLANTEL', `Solicitud de plantel ID ${solicitudId} aprobada correctamente.`);
+
+    res.json({ message: 'Solicitud aprobada y plantel actualizado correctamente en la base de datos.' });
+  } catch (error) {
+    console.error('Error aprobando solicitud de plantel:', error);
+    res.status(500).json({ error: 'Error al aprobar solicitud de plantel' });
+  }
+});
+
+app.post('/api/staff/plantel-solicitudes/:id/rechazar', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  const solicitudId = Number(req.params.id);
+
+  if (!hospitalId) {
+    res.status(403).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+
+  try {
+    const solicitud = await prisma.solicitudesPlantel.findFirst({
+      where: { Id: solicitudId, HospitalId: Number(hospitalId) }
+    });
+
+    if (!solicitud) {
+      res.status(404).json({ error: 'Solicitud no encontrada' });
+      return;
+    }
+
+    await prisma.solicitudesPlantel.update({
+      where: { Id: solicitudId },
+      data: {
+        Estado: 'Rechazado',
+        FechaRespuesta: new Date(),
+        RespuestaPorId: req.user!.userId
+      }
+    });
+
+    bumpHospitalVersion(hospitalId);
+    await logAudit(req, 'RECHAZO_PLANTEL', `Solicitud de plantel ID ${solicitudId} rechazada.`);
+
+    res.json({ message: 'Solicitud rechazada.' });
+  } catch (error) {
+    console.error('Error rechazando solicitud de plantel:', error);
+    res.status(500).json({ error: 'Error al rechazar solicitud de plantel' });
+  }
+});
+
+// 6. ENTREGAS DE VIANDAS MEDIANTE ESCANEO DNI / QR
+app.get(['/api/deliveries/scan-check', '/api/deliveries/check'], authenticateToken, isNutricion, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  const { code, query, fecha, tipoComida } = req.query;
+
+  if (!hospitalId) {
+    res.status(403).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+
+  const rawCode = String(code || query || '').trim();
   if (!rawCode) {
     res.status(400).json({ error: 'Código o DNI no proporcionado' });
     return;
@@ -2990,7 +3392,7 @@ app.get('/api/deliveries/scan-check', authenticateToken, isGerente, async (req: 
   }
 });
 
-app.post('/api/deliveries/confirm-delivery', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+app.post('/api/deliveries/confirm-delivery', authenticateToken, isNutricion, async (req: Request, res: Response): Promise<void> => {
   const { pedidoIds } = req.body;
   const userId = req.user?.userId || (req.user as any)?.id;
 
@@ -3033,7 +3435,7 @@ app.post('/api/deliveries/confirm-delivery', authenticateToken, isGerente, async
 });
 
 // Obtener resumen de entregas (progreso e historial descendente) para un hospital, fecha y tipoComida
-app.get('/api/deliveries/summary', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+app.get('/api/deliveries/summary', authenticateToken, isNutricion, async (req: Request, res: Response): Promise<void> => {
   const hospitalId = req.user?.hospitalId;
   const { fecha, tipoComida } = req.query;
 
@@ -3120,7 +3522,264 @@ app.get('/api/deliveries/summary', authenticateToken, isGerente, async (req: Req
   }
 });
 
+// --- GESTIÓN DE USUARIOS ROL NUTRICIÓN POR GERENTE ---
+app.get('/api/gerente/nutricion', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  if (!hospitalId) {
+    res.status(403).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+
+  try {
+    const usuarios = await prisma.usuarios.findMany({
+      where: { HospitalId: hospitalId, RolId: 5 },
+      select: {
+        Id: true,
+        NombreUsuario: true,
+        NombreCompleto: true,
+        Activo: true,
+        DebeCambiarContrasena: true,
+        HospitalId: true,
+      },
+      orderBy: { Id: 'desc' }
+    });
+    res.json(usuarios);
+  } catch (error: any) {
+    console.error('Error fetching usuarios nutricion:', error);
+    res.status(500).json({ error: 'Error al obtener usuarios de Nutrición' });
+  }
+});
+
+app.post('/api/gerente/nutricion', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  if (!hospitalId) {
+    res.status(403).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+
+  const { username, nombreCompleto, password } = req.body;
+  if (!username) {
+    res.status(400).json({ error: 'Nombre de usuario requerido' });
+    return;
+  }
+
+  const rawPassword = password || "123456";
+
+  try {
+    const existing = await prisma.usuarios.findUnique({ where: { NombreUsuario: username } });
+    if (existing) {
+      res.status(400).json({ error: 'El nombre de usuario ya existe' });
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
+    const nuevoUsuario = await prisma.usuarios.create({
+      data: {
+        NombreUsuario: username,
+        NombreCompleto: nombreCompleto || username,
+        ContrasenaHash: hashedPassword,
+        RolId: 5, // NUTRICIÓN
+        HospitalId: hospitalId,
+        Activo: true,
+        DebeCambiarContrasena: true
+      }
+    });
+
+    await logAudit(req, 'CREAR_USUARIO_NUTRICION', `Creado usuario Nutrición: ${username} (Hospital ${hospitalId})`, req.user?.userId);
+    res.json({ message: 'Usuario de Nutrición creado exitosamente con clave 123456', userId: nuevoUsuario.Id });
+  } catch (error: any) {
+    console.error('Error creating usuario nutricion:', error);
+    res.status(500).json({ error: 'Error al crear usuario de Nutrición: ' + (error?.message || String(error)) });
+  }
+});
+
+app.put('/api/gerente/nutricion/:id/toggle', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  const targetId = Number(req.params.id);
+
+  try {
+    const user = await prisma.usuarios.findFirst({
+      where: { Id: targetId, HospitalId: hospitalId, RolId: 5 }
+    });
+
+    if (!user) {
+      res.status(404).json({ error: 'Usuario de Nutrición no encontrado en su hospital' });
+      return;
+    }
+
+    const updated = await prisma.usuarios.update({
+      where: { Id: targetId },
+      data: { Activo: !user.Activo }
+    });
+
+    await logAudit(req, 'TOGGLE_ESTADO_NUTRICION', `Usuario ${user.NombreUsuario} ahora ${updated.Activo ? 'ACTIVO' : 'INACTIVO'}`, req.user?.userId);
+    res.json({ message: `Estado cambiado a ${updated.Activo ? 'Activo' : 'Inactivo'}`, activo: updated.Activo });
+  } catch (error: any) {
+    console.error('Error toggling usuario nutricion:', error);
+    res.status(500).json({ error: 'Error al cambiar estado' });
+  }
+});
+
+app.post('/api/gerente/nutricion/:id/reset-password', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  const targetId = Number(req.params.id);
+  const rawPassword = req.body?.newPassword || "123456";
+
+  try {
+    const user = await prisma.usuarios.findFirst({
+      where: { Id: targetId, HospitalId: hospitalId, RolId: 5 }
+    });
+
+    if (!user) {
+      res.status(404).json({ error: 'Usuario de Nutrición no encontrado en su hospital' });
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(rawPassword, 10);
+    await prisma.usuarios.update({
+      where: { Id: targetId },
+      data: { ContrasenaHash: hashedPassword, DebeCambiarContrasena: true }
+    });
+
+    await logAudit(req, 'RESET_PASSWORD_NUTRICION', `Contraseña reseteada para ${user.NombreUsuario}`, req.user?.userId);
+    res.json({ message: "Contraseña reseteada a '123456'" });
+  } catch (error: any) {
+    console.error('Error resetting password nutricion:', error);
+    res.status(500).json({ error: 'Error al resetear contraseña' });
+  }
+});
+
+// --- REPORTE GERENCIAL AVANZADO DE RACIONES ENTREGADAS VS SIN ENTREGAR ---
+app.get('/api/gerente/reports/entregas-detallado', authenticateToken, isGerente, async (req: Request, res: Response): Promise<void> => {
+  const hospitalId = req.user?.hospitalId;
+  if (!hospitalId) {
+    res.status(403).json({ error: 'Usuario sin hospital asignado' });
+    return;
+  }
+
+  const { fechaDesde, fechaHasta, servicioId, tipoComida } = req.query;
+  const fDesdeStr = (fechaDesde as string) || new Date().toISOString().split('T')[0];
+  const fHastaStr = (fechaHasta as string) || fDesdeStr;
+
+  try {
+    const dateStart = new Date(`${fDesdeStr}T00:00:00.000Z`);
+    const dateEnd = new Date(`${fHastaStr}T23:59:59.999Z`);
+
+    const whereCondition: any = {
+      FechaPedido: { gte: dateStart, lte: dateEnd },
+      Estado: 'Aprobado',
+      SolicitadoPor: { HospitalId: Number(hospitalId) }
+    };
+
+    if (servicioId && servicioId !== 'Todos') {
+      whereCondition.SolicitadoPor.ServicioId = Number(servicioId);
+    }
+    if (tipoComida && tipoComida !== 'Todos') {
+      whereCondition.TipoComida = tipoComida as string;
+    }
+
+    const pedidos = await prisma.pedidosComida.findMany({
+      where: whereCondition,
+      include: {
+        Personal: { include: { Servicio: true } },
+        PersonalReemplazado: { include: { Servicio: true } },
+        SolicitadoPor: { include: { Servicio: true } },
+        EntregadoPor: true
+      },
+      orderBy: { FechaPedido: 'desc' }
+    });
+
+    let entregadosCount = 0;
+    let sinEntregarCount = 0;
+
+    const listadoEntregados: any[] = [];
+    const listadoSinEntregar: any[] = [];
+
+    pedidos.forEach((p: any) => {
+      const sNombre = p.Servicio?.Nombre || p.Personal?.Servicio?.Nombre || p.PersonalReemplazado?.Servicio?.Nombre || p.SolicitadoPor?.Servicio?.Nombre || 'Servicio General';
+      const aNombre = p.EmergenciaNombreCompleto || p.Personal?.NombreCompleto || p.PersonalReemplazado?.NombreCompleto || 'Agente';
+      const aDni = p.EmergenciaDNI || p.Personal?.DNI || p.PersonalReemplazado?.DNI || '-';
+      const fPedidoStr = new Date(p.FechaPedido).toISOString().split('T')[0];
+
+      const itemData = {
+        Id: p.Id,
+        FechaPedido: fPedidoStr,
+        AgenteNombre: aNombre,
+        AgenteDNI: aDni,
+        ServicioNombre: sNombre,
+        TipoComida: p.TipoComida,
+        TipoDieta: p.TipoDieta,
+        EsExcepcional: p.EsExcepcional,
+        Justificacion: p.JustificacionSolicitud || '-'
+      };
+
+      if (p.FechaEntregado) {
+        entregadosCount++;
+        listadoEntregados.push({
+          ...itemData,
+          FechaEntregado: new Date(p.FechaEntregado).toISOString(),
+          EntregadoPor: p.EntregadoPor?.NombreCompleto || p.EntregadoPor?.NombreUsuario || 'Nutrición'
+        });
+      } else {
+        sinEntregarCount++;
+        listadoSinEntregar.push({
+          ...itemData,
+          EstadoEntrega: 'Sin Entregar / No Reclamada'
+        });
+      }
+    });
+
+    const totalPedidos = pedidos.length;
+    const porcentajeCumplimiento = totalPedidos > 0 ? Math.round((entregadosCount / totalPedidos) * 100) : 0;
+    const porcentajeAusentismo = totalPedidos > 0 ? Math.round((sinEntregarCount / totalPedidos) * 100) : 0;
+
+    res.json({
+      rangoFechas: { desde: fDesdeStr, hasta: fHastaStr },
+      totalPedidos,
+      entregadosCount,
+      sinEntregarCount,
+      porcentajeCumplimiento,
+      porcentajeAusentismo,
+      totales: {
+        solicitadas: totalPedidos,
+        entregadas: entregadosCount,
+        sinEntregar: sinEntregarCount,
+        pctEntregado: porcentajeCumplimiento,
+        pctSinEntregar: porcentajeAusentismo
+      },
+      listadoEntregados,
+      listadoSinEntregar
+    });
+  } catch (error: any) {
+    console.error('Error generating gerente delivery report:', error);
+    res.status(500).json({ error: 'Error al generar el reporte de entregas: ' + (error?.message || String(error)) });
+  }
+});
+
+async function ensureRoles() {
+  try {
+    const rolesToUpsert = [
+      { Id: 1, Nombre: 'Admin' },
+      { Id: 2, Nombre: 'Gerente' },
+      { Id: 3, Nombre: 'Jefe' },
+      { Id: 4, Nombre: 'RRHH' },
+      { Id: 5, Nombre: 'Nutricion' }
+    ];
+    for (const r of rolesToUpsert) {
+      await prisma.roles.upsert({
+        where: { Id: r.Id },
+        update: { Nombre: r.Nombre },
+        create: { Id: r.Id, Nombre: r.Nombre }
+      });
+    }
+    console.log('✅ Roles en base de datos verificados correctamente.');
+  } catch (e) {
+    console.error('⚠️ Error al verificar roles en base de datos:', e);
+  }
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  await ensureRoles();
   console.log(`Server running on port ${PORT}`);
 });

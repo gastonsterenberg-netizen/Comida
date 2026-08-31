@@ -21,6 +21,7 @@ model Hospitales {
   Usuarios          Usuarios[]
   Padron            PadronHabilitados[]
   FechasAnticipadas FechasAnticipadasHabilitadas[]
+  SolicitudesPlantel SolicitudesPlantel[]
 }
 
 model Servicios {
@@ -32,6 +33,7 @@ model Servicios {
   Personal          Personal[]
   Usuarios          Usuarios[]
   Padron            PadronHabilitados[]
+  SolicitudesPlantel SolicitudesPlantel[]
 
   @@unique([HospitalId, Nombre])
 }
@@ -60,6 +62,8 @@ model Personal {
   Servicio                  Servicios       @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   PedidosComida             PedidosComida[] @relation("PedidosPersonales")
   EmergenciasReemplazadas   PedidosComida[] @relation("Reemplazos")
+
+  @@index([HospitalId, DNI])
 }
 
 model Roles {
@@ -87,6 +91,7 @@ model Usuarios {
   PedidosEvaluados    PedidosComida[] @relation("PedidosEvaluados")
   PedidosEntregados   PedidosComida[] @relation("PedidosEntregados")
   Auditorias          Auditoria[]
+  PlantelSolicitados  SolicitudesPlantel[] @relation("PlantelSolicitadoPor")
 }
 
 model PedidosComida {
@@ -114,6 +119,8 @@ model PedidosComida {
   SolicitadoPor           Usuarios   @relation("PedidosSolicitados", fields: [SolicitadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   EvaluadoPor             Usuarios?  @relation("PedidosEvaluados", fields: [EvaluadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   EntregadoPor            Usuarios?  @relation("PedidosEntregados", fields: [EntregadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([FechaPedido, Estado, SolicitadoPorUsuarioId])
 }
 
 model PadronHabilitados {
@@ -127,6 +134,26 @@ model PadronHabilitados {
   ServicioId     Int?
   Hospital       Hospitales? @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   Servicio       Servicios?  @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([HospitalId, DNI])
+}
+
+model SolicitudesPlantel {
+  Id              Int        @id @default(autoincrement())
+  HospitalId      Int
+  ServicioId      Int
+  SolicitadoPorId Int
+  Estado          String     @default("Pendiente") @db.NVarChar(20)
+  DatosJson       String     @db.NVarChar(Max)
+  FechaSolicitud  DateTime   @default(now())
+  FechaRespuesta  DateTime?
+  RespuestaPorId  Int?
+
+  Hospital        Hospitales @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Servicio        Servicios  @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  SolicitadoPor   Usuarios   @relation("PlantelSolicitadoPor", fields: [SolicitadoPorId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([HospitalId, Estado])
 }
 
 model Auditoria {

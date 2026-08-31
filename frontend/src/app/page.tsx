@@ -7,23 +7,23 @@ import { useTheme } from "next-themes";
 import Swal from 'sweetalert2';
 import { 
   LogOut, Sun, Moon, AlertTriangle, FileText, Settings, 
-  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, ChevronUp, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2, Shield, RefreshCw, RotateCcw, PlusCircle, Zap, Eye, EyeOff, QrCode, Scan, Edit3, ArrowRightLeft
+  User, Printer, Check, X, Building, Download, Users, Lock, ChevronDown, ChevronUp, CheckCircle, Search, Save, Utensils, History, Upload, Plus, UserPlus, Trash2, Shield, RefreshCw, RotateCcw, PlusCircle, Zap, Eye, EyeOff, QrCode, Scan, Edit3, ArrowRightLeft, Activity
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-type Role = "Jefe" | "Gerente" | "RRHH" | "Admin";
+type Role = "Jefe" | "Gerente" | "RRHH" | "Admin" | "Nutricion";
 
 const DIETAS_DISPONIBLES = ["Normal", "Gastrica", "Diabetica", "Hepatico", "Vegetariano", "Celiaca"];
 
 const getRacionLabel = (horario: string) => {
-  if (!horario) return "Almuerzo o Cena";
+  if (!horario) return "1 Ración";
   const h = horario.toLowerCase();
-  if (h.includes("24") || h.includes("y cena") || h === "almuerzo y cena") {
-    return "Almuerzo y Cena";
+  if (h.includes("24") || h.includes("y cena") || h === "almuerzo y cena" || h.includes("2 racion")) {
+    return "2 Raciones";
   }
-  return "Almuerzo o Cena";
+  return "1 Ración";
 };
 
 const getTodayStr = () => {
@@ -96,9 +96,10 @@ export default function Home() {
     setHospitalName(hospName);
     setServicioName(servName);
     setUsername(userLoginName);
-    if (userRole === 1) setRole("RRHH");
+    if (userRole === 1 || userRole === 4) setRole("Admin");
     else if (userRole === 2) setRole("Gerente");
     else if (userRole === 3) setRole("Jefe");
+    else if (userRole === 5) setRole("Nutricion");
   };
 
   const handleLogout = () => {
@@ -143,7 +144,7 @@ export default function Home() {
           </div>
           
           <div className="flex items-center space-x-4">
-            {role !== "RRHH" && role !== "Admin" && (
+            {role !== "Admin" && role !== "Nutricion" && (
               <div className={`hidden md:flex flex-col text-xs border-l-4 ${isPastAlmuerzo && isPastCena ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'} px-3 py-1.5 rounded-r-lg`}>
                 <div className="font-bold mb-0.5">Límites Pedido</div>
                 <div>Alm: {limiteAlmuerzo} {isPastAlmuerzo && <span className="font-bold text-red-600 dark:text-red-400">(!)</span>}</div>
@@ -165,7 +166,7 @@ export default function Home() {
               </div>
               <User className="w-4 h-4 text-gray-500 dark:text-gray-400 ml-2" />
               <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                {username ? `${username} (${role === "RRHH" ? "Admin" : role})` : (role === "RRHH" ? "Admin" : role)}
+                {username ? `${username} (${role})` : role}
               </span>
               
               <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-2"></div>
@@ -193,7 +194,7 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-        {(isPastAlmuerzo || isPastCena) && (
+        {(isPastAlmuerzo || isPastCena) && role !== "Nutricion" && (
           <div className="mb-6 bg-red-50 dark:bg-red-900/10 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm flex items-start">
             <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
             <div>
@@ -219,7 +220,8 @@ export default function Home() {
             }} 
           />
         )}
-        {role === "RRHH" && <RRHHPanel token={token} />}
+        {role === "Admin" && <RRHHPanel token={token} />}
+        {role === "Nutricion" && <NutricionPanel token={token} hospitalName={hospitalName} username={username} dietasHabilitadasProp={dietasHabilitadas} />}
       </main>
     </div>
   );
@@ -763,6 +765,34 @@ function JefePanel({
   const [fechaPlanilla, setFechaPlanilla] = useState<string>(getTodayStr());
   const [fechasAnticipadasActivas, setFechasAnticipadasActivas] = useState<any[]>([]);
 
+  const parseJsonResponse = async (res: Response) => {
+    try {
+      const text = await res.text();
+      if (!text) return null;
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        return { error: text };
+      }
+    } catch (e) {
+      return null;
+    }
+  };
+
+  const handleSessionExpired = (message?: string) => {
+    Swal.fire({
+      title: "Sesión Expirada 🔒",
+      text: message || "Su sesión de usuario ha caducado. Por favor, vuelva a ingresar con su usuario y clave.",
+      icon: "warning",
+      confirmButtonText: "Iniciar Sesión",
+      confirmButtonColor: "#3b82f6",
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000'
+    }).then(() => {
+      window.location.reload();
+    });
+  };
+
   const fetchAdvanceDates = async () => {
     try {
       const res = await fetch(`${API_URL}/api/advance-dates`, {
@@ -777,20 +807,81 @@ function JefePanel({
   const fetchStaff = async (targetFecha?: string) => {
     try {
       const fechaQuery = targetFecha || fechaPlanilla;
-      const res = await fetch(`${API_URL}/api/staff/active?fecha=${fechaQuery}`, {
+      const resStaff = await fetch(`${API_URL}/api/staff/active?fecha=${fechaQuery}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.ok) {
-        const data = await res.json();
-        const activeData = data.filter((p: any) => !p.bajaDefinitivaHoy);
+
+      let activeData: any[] = [];
+      if (resStaff.ok) {
+        const data = await resStaff.json();
+        activeData = data.filter((p: any) => !p.bajaDefinitivaHoy);
         setStaff(activeData);
-        // Pre-fill right side list with current active staff
-        setPlantelDraft(activeData.map((p: any) => ({
+      }
+
+      // Fetch pending solicitudes de plantel from DB to preserve pending new agents & pending ration changes
+      let pendingItems: any[] = [];
+      try {
+        const resSol = await fetch(`${API_URL}/api/staff/plantel-solicitudes`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        if (resSol.ok) {
+          const solicitudes = await resSol.json();
+          const miSolicitudPendiente = solicitudes.find((s: any) => 
+            s.Estado === 'Pendiente' && (!servicioName || s.Servicio?.Nombre === servicioName)
+          );
+          if (miSolicitudPendiente && miSolicitudPendiente.DatosJson) {
+            try {
+              pendingItems = JSON.parse(miSolicitudPendiente.DatosJson);
+            } catch (e) {
+              console.error("Error parsing pending DatosJson:", e);
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Error fetching solicitudes de plantel:", e);
+      }
+
+      // Merge active staff with pending solicitudes
+      const staffMap = new Map<string, any>();
+      activeData.forEach((p: any) => {
+        staffMap.set(p.DNI, {
           DNI: p.DNI,
           NombreCompleto: p.NombreCompleto,
-          Horario: getRacionLabel(p.Horario)
-        })));
+          Horario: getRacionLabel(p.Horario),
+          ConVianda: p.ConVianda !== false,
+          isNuevo: false,
+          isPendiente: false
+        });
+      });
+
+      if (Array.isArray(pendingItems)) {
+        pendingItems.forEach((item: any) => {
+          const existing = staffMap.get(item.DNI);
+          if (existing) {
+            staffMap.set(item.DNI, {
+              ...existing,
+              Horario: item.Horario || existing.Horario,
+              ConVianda: item.ConVianda !== false,
+              isPendiente: true
+            });
+          } else {
+            // New agent pending Gerencia approval!
+            staffMap.set(item.DNI, {
+              DNI: item.DNI,
+              NombreCompleto: item.NombreCompleto,
+              Horario: item.Horario || "Almuerzo o Cena",
+              ConVianda: item.ConVianda !== false,
+              isNuevo: true,
+              isPendiente: true
+            });
+          }
+        });
       }
+
+      const pDnis = Array.isArray(pendingItems) ? pendingItems.map((item: any) => item.DNI) : [];
+      setPendingDnisInDB(pDnis);
+
+      setPlantelDraft(Array.from(staffMap.values()));
     } catch (e) {
       console.error("Error fetching staff:", e);
     }
@@ -889,14 +980,17 @@ function JefePanel({
   const addAgent = (p: any, horario: string) => {
     const existing = plantelDraft.find(x => x.DNI === p.DNI);
     if (existing) {
-      if (existing.Horario !== horario) {
-        setPlantelDraft(plantelDraft.map(x => x.DNI === p.DNI ? { ...x, Horario: horario } : x));
+      if (existing.Horario !== horario || existing.ConVianda === false) {
+        setPlantelDraft(prev => prev.map(x => x.DNI === p.DNI ? { ...x, Horario: horario, ConVianda: true, isModificado: true } : x));
       }
     } else {
-      setPlantelDraft([...plantelDraft, { 
+      setPlantelDraft(prev => [...prev, { 
         DNI: p.DNI, 
         NombreCompleto: p.NombreCompleto, 
-        Horario: horario 
+        Horario: horario,
+        ConVianda: true,
+        isNuevo: true,
+        isModificado: true
       }]);
     }
   };
@@ -905,24 +999,296 @@ function JefePanel({
     setPlantelDraft(plantelDraft.filter(x => x.DNI !== dni));
   };
 
-  const handleGuardarPlantel = async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/staff/plantel`, {
-         method: "POST",
-         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-         body: JSON.stringify({ plantel: plantelDraft })
+  const [showNewAgentModal, setShowNewAgentModal] = useState(false);
+  const [newAgentDni, setNewAgentDni] = useState("");
+  const [newAgentNombre, setNewAgentNombre] = useState("");
+  const [newAgentHorario, setNewAgentHorario] = useState("Almuerzo o Cena");
+  const [dniCheckStatus, setDniCheckStatus] = useState<{ loading: boolean, exists: boolean, message: string | null }>({ loading: false, exists: false, message: null });
+  const [pendingDnisInDB, setPendingDnisInDB] = useState<string[]>([]);
+  const newAgentDniRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (showNewAgentModal) {
+      const timer = setTimeout(() => {
+        newAgentDniRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [showNewAgentModal]);
+
+  useEffect(() => {
+    const clean = newAgentDni.replace(/\D/g, '');
+    if (clean.length >= 7) {
+      setDniCheckStatus({ loading: true, exists: false, message: null });
+      const timer = setTimeout(() => {
+        fetch(`${API_URL}/api/staff/check-dni?dni=${clean}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        .then(r => r.json())
+        .then(data => {
+          if (data.exists) {
+            setDniCheckStatus({
+              loading: false,
+              exists: true,
+              message: `⚠️ El DNI ${clean} ya se encuentra registrado en el hospital para ${data.agente?.NombreCompleto || 'otro agente'} (${data.agente?.Servicio || 'Servicio'}). No se puede duplicar.`
+            });
+          } else {
+            setDniCheckStatus({
+              loading: false,
+              exists: false,
+              message: `✓ DNI disponible para registrar nuevo agente.`
+            });
+          }
+        })
+        .catch(() => {
+          setDniCheckStatus({ loading: false, exists: false, message: null });
+        });
+      }, 300);
+      return () => clearTimeout(timer);
+    } else {
+      setDniCheckStatus({ loading: false, exists: false, message: null });
+    }
+  }, [newAgentDni, token]);
+
+  const handleAddNewAgentSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = newAgentDni.replace(/\D/g, '');
+    const nombre = newAgentNombre.trim().toUpperCase();
+
+    if (!clean || clean.length < 7) {
+      Swal.fire({ title: "DNI Inválido", text: "El DNI debe contener entre 7 y 8 dígitos numéricos.", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    if (dniCheckStatus.exists) {
+      Swal.fire({ title: "DNI Existente", text: dniCheckStatus.message || "El DNI ya existe en el hospital.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    if (!nombre) {
+      Swal.fire({ title: "Nombre Requerido", text: "Por favor ingrese el Apellido y Nombre completo del agente.", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const existingInDraft = plantelDraft.find(x => x.DNI === clean);
+    if (existingInDraft && existingInDraft.isPendiente) {
+      Swal.fire({
+        title: "Solicitud Ya Enviada ⏳",
+        text: `El agente ${existingInDraft.NombreCompleto} (DNI ${clean}) ya tiene una solicitud enviada a Gerencia pendiente de autorización.`,
+        icon: "warning",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
       });
-      if (!res.ok) {
-         const data = await res.json();
-         Swal.fire({ title: "Error", text: data.error || "No se pudo guardar el plantel", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-         fetchStaff();
-         return;
+      return;
+    }
+
+    const isGuardia24 = newAgentHorario === "Almuerzo y Cena";
+    const isGuardia12 = newAgentHorario === "Almuerzo o Cena";
+
+    const newEntry = {
+      DNI: clean,
+      NombreCompleto: nombre,
+      Horario: newAgentHorario,
+      EsGuardia12: isGuardia12,
+      EsGuardia24: isGuardia24,
+      ConVianda: true,
+      isNuevo: true
+    };
+
+    setPlantelDraft(prev => {
+      const idx = prev.findIndex(x => x.DNI === clean);
+      if (idx !== -1) {
+        const next = [...prev];
+        next[idx] = newEntry;
+        return next;
+      }
+      return [...prev, newEntry];
+    });
+
+    setNewAgentDni("");
+    setNewAgentNombre("");
+    setNewAgentHorario("Almuerzo o Cena");
+    setShowNewAgentModal(false);
+
+    Swal.fire({
+      title: "Agente Incorporado al Borrador",
+      text: `${nombre} fue agregado a la lista del plantel. Haga clic en 'Guardar Plantel' para enviar la solicitud a Gerencia.`,
+      icon: "success",
+      timer: 2500,
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000'
+    });
+  };
+
+  const handleGuardarPlantel = async (): Promise<boolean> => {
+    const novedadesParaGerencia: any[] = [];
+    const directosParaBD: any[] = [];
+
+    plantelDraft.forEach(p => {
+      if (p.isPendiente) return;
+
+      const originalInStaff = staff.find(s => s.DNI === p.DNI);
+      const existsInPadron = padron.find(pad => pad.DNI === p.DNI);
+
+      const getRacionNum = (h: string, conV?: boolean, active?: boolean) => {
+        if (conV === false || active === false || !h || h === "Sin Ración") return 0;
+        const hLower = h.toLowerCase();
+        if (hLower.includes("24") || hLower.includes("y cena") || hLower.includes("2 racion")) return 2;
+        return 1;
+      };
+
+      const requestedRacion = getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
+      const esNuevoSinDB = !existsInPadron && !originalInStaff;
+
+      if (originalInStaff) {
+        // Agente que ya pertenece al plantel del servicio
+        const originalRacion = getRacionNum(originalInStaff.Horario, originalInStaff.ConVianda !== false, originalInStaff.Activo !== false);
+        const cambioDeRaciones = originalRacion !== requestedRacion;
+
+        if (cambioDeRaciones) {
+          // Cambio en la cantidad de raciones (ej. 1 a 2 o viceversa): Requiere autorización de Gerencia
+          novedadesParaGerencia.push({
+            DNI: p.DNI,
+            NombreCompleto: p.NombreCompleto,
+            Horario: p.Horario,
+            ConVianda: p.ConVianda !== false && requestedRacion > 0,
+            EsGuardia12: p.EsGuardia12,
+            EsGuardia24: p.EsGuardia24,
+            isNuevo: false,
+            racionAnterior: originalRacion,
+            racionNueva: requestedRacion
+          });
+        } else if (p.isModificado) {
+          // Misma cantidad de raciones con ajuste menor (ej. vianda): Directo a la BD
+          directosParaBD.push({
+            DNI: p.DNI,
+            NombreCompleto: p.NombreCompleto,
+            Horario: p.Horario,
+            ConVianda: p.ConVianda !== false && requestedRacion > 0
+          });
+        }
+      } else if (esNuevoSinDB) {
+        // Agente totalmente nuevo fuera del padrón hospitalario: Requiere autorización de Gerencia
+        novedadesParaGerencia.push({
+          DNI: p.DNI,
+          NombreCompleto: p.NombreCompleto,
+          Horario: p.Horario,
+          ConVianda: p.ConVianda !== false && requestedRacion > 0,
+          EsGuardia12: p.EsGuardia12,
+          EsGuardia24: p.EsGuardia24,
+          isNuevo: true,
+          racionAnterior: 0,
+          racionNueva: requestedRacion
+        });
+      } else {
+        // Agente existente en el padrón hospitalario pero nuevo en este servicio: Incorporación DIRECTA
+        directosParaBD.push({
+          DNI: p.DNI,
+          NombreCompleto: p.NombreCompleto,
+          Horario: p.Horario,
+          ConVianda: p.ConVianda !== false && requestedRacion > 0
+        });
+      }
+    });
+
+    staff.forEach(s => {
+      const inDraft = plantelDraft.find(p => p.DNI === s.DNI);
+      if (!inDraft) {
+        const getRacionNum = (h: string, conV?: boolean, active?: boolean) => {
+          if (conV === false || active === false || !h || h === "Sin Ración") return 0;
+          const hLower = h.toLowerCase();
+          if (hLower.includes("24") || hLower.includes("y cena") || hLower.includes("2 racion")) return 2;
+          return 1;
+        };
+
+        const originalRacion = getRacionNum(s.Horario, s.ConVianda !== false, s.Activo !== false);
+        if (originalRacion > 0) {
+          // Sacar del plantel es potestad exclusiva del Jefe de Servicio: se aplica directamente a la BD sin enviar a Gerencia
+          directosParaBD.push({
+            DNI: s.DNI,
+            NombreCompleto: s.NombreCompleto,
+            Horario: "Sin Ración",
+            ConVianda: false
+          });
+        }
+      }
+    });
+
+    const pendingDnisRemoved = pendingDnisInDB.some(dni => !plantelDraft.some(p => p.DNI === dni));
+
+    if (novedadesParaGerencia.length === 0 && directosParaBD.length === 0 && !pendingDnisRemoved) {
+      Swal.fire({
+        title: "Sin Novedades Pendientes",
+        text: "No hay modificaciones pendientes en el plantel respecto a lo guardado.",
+        icon: "info",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+      return false;
+    }
+
+    try {
+      let msgResultado = "";
+
+      if (directosParaBD.length > 0) {
+        const resDirect = await fetch(`${API_URL}/api/staff/plantel-directo`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ agendados: directosParaBD })
+        });
+        if (!resDirect.ok) {
+          const data = await parseJsonResponse(resDirect);
+          if (resDirect.status === 401 || resDirect.status === 403) {
+            handleSessionExpired(data?.error);
+            return false;
+          }
+          Swal.fire({ title: "Error", text: data?.error || "No se pudieron actualizar los agentes en la BD", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          return false;
+        }
+        msgResultado += `✓ ${directosParaBD.length} agente(s) del padrón hospitalario asignados/actualizados en el servicio. `;
       }
 
-      Swal.fire({ title: "Éxito", text: "Plantel guardado correctamente", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-      fetchStaff();
+      if (novedadesParaGerencia.length > 0 || pendingDnisRemoved) {
+        const resGer = await fetch(`${API_URL}/api/staff/plantel-solicitud`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ plantel: novedadesParaGerencia })
+        });
+        if (!resGer.ok) {
+          const data = await parseJsonResponse(resGer);
+          if (resGer.status === 401 || resGer.status === 403) {
+            handleSessionExpired(data?.error);
+            return false;
+          }
+          Swal.fire({ title: "Error", text: data?.error || "No se pudo enviar la solicitud a Gerencia", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          return false;
+        }
+        const gerDnis = new Set(novedadesParaGerencia.map(n => n.DNI));
+        setPlantelDraft(prev => prev.map(item => gerDnis.has(item.DNI) ? { ...item, isPendiente: true, isNuevo: false, isModificado: false } : { ...item, isModificado: false }));
+        if (novedadesParaGerencia.length > 0) {
+          msgResultado += `🚀 ${novedadesParaGerencia.length} novedad(es) enviadas a Gerencia. `;
+        }
+        if (pendingDnisRemoved) {
+          msgResultado += `✓ Solicitud pendiente cancelada/actualizada. `;
+        }
+      }
+
+      await fetchStaff(fechaPlanilla);
+
+      Swal.fire({
+        title: "Plantel Actualizado 🚀",
+        text: msgResultado.trim(),
+        icon: "success",
+        timer: 3500,
+        confirmButtonColor: '#3b82f6',
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+
+      return true;
     } catch (e) {
-      Swal.fire({ title: "Error", text: "Error de conexión al actualizar", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      Swal.fire({ title: "Error", text: "Error de conexión al guardar el plantel", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return false;
     }
   };
 
@@ -993,7 +1359,7 @@ function JefePanel({
     if (isDeadline) return;
 
     const p = staff.find(s => s.Id === personalId);
-    const is1Racion = p ? (getRacionLabel(p.Horario) === "Almuerzo o Cena") : false;
+    const is1Racion = p ? (getRacionLabel(p.Horario) === "1 Ración") : false;
 
     const current = selections[personalId] || { almuerzo: null, cena: null };
     const isSame = current[tipoComida] === tipoDieta;
@@ -1007,8 +1373,8 @@ function JefePanel({
       if (otherValue) {
         if (otherDeadline) {
           Swal.fire({
-            title: "Almuerzo o Cena (1 ración)",
-            text: `El agente (Almuerzo o Cena) ya posee ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} registrado cuyo horario de pedido ya cerró. Solo se permite 1 ración por día.`,
+            title: "Agente de 1 Ración",
+            text: `El agente ya posee ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} registrado cuyo horario de pedido ya cerró. Solo se permite 1 ración por día.`,
             icon: "warning",
             timer: 5000,
             timerProgressBar: true,
@@ -1019,8 +1385,8 @@ function JefePanel({
           return;
         } else {
           Swal.fire({
-            title: "Guardia 12h",
-            text: `Agente con Guardia 12h: se reemplazó la selección de ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} por ${tipoComida === "almuerzo" ? "Almuerzo" : "Cena"}.`,
+            title: "Agente de 1 Ración",
+            text: `Agente habilitado para 1 Ración: se reemplazó la selección de ${otherMeal === "almuerzo" ? "Almuerzo" : "Cena"} por ${tipoComida === "almuerzo" ? "Almuerzo" : "Cena"}.`,
             icon: "info",
             timer: 5000,
             timerProgressBar: true,
@@ -1071,54 +1437,17 @@ function JefePanel({
     }
   };
 
-  const handleGuardarPedidos = async () => {
-    const agentesSinDieta = staff.filter(p => {
-      if (p.bajaProvisoriaHoy) return false;
-      
-      const tieneAlmuerzo = !!selections[p.Id]?.almuerzo;
-      const tieneCena = !!selections[p.Id]?.cena;
-      const tieneSeleccionActual = !!selections[p.Id]?.[planillaTab];
-      
-      if (tieneSeleccionActual) return false;
+  const handleGuardarPedidos = async (): Promise<boolean> => {
+    const allPersonalIds = Array.from(new Set([
+      ...Object.keys(selections).map(Number),
+      ...Object.keys(savedSelections).map(Number)
+    ]));
 
-      const isGuardia24h = Boolean(p.EsGuardia24h);
-      if (!isGuardia24h) {
-        const tieneSeleccionEnOtraComida = planillaTab === 'almuerzo' ? tieneCena : tieneAlmuerzo;
-        if (tieneSeleccionEnOtraComida) return false;
-      }
-
-      return true;
-    });
-
-    if (agentesSinDieta.length > 0) {
-      const nombres = agentesSinDieta.map(p => p.NombreCompleto || `${p.Nombre || ''} ${p.Apellido || ''}`).join(", ");
-      const confirm = await Swal.fire({
-        title: "¿Guardar con agentes sin dieta?",
-        text: `Hay ${agentesSinDieta.length} agente(s) activo(s) sin dieta asignada para ${planillaTab === 'almuerzo' ? 'el almuerzo' : 'la cena'}: ${nombres.substring(0, 150)}${nombres.length > 150 ? '...' : ''}. ¿Deseas guardar de todas formas?`,
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonColor: '#3b82f6',
-        cancelButtonColor: '#ef4444',
-        confirmButtonText: 'Sí, guardar de todas formas',
-        cancelButtonText: 'Cancelar y revisar',
-        background: theme === 'dark' ? '#1f2937' : '#fff',
-        color: theme === 'dark' ? '#fff' : '#000'
-      });
-      if (!confirm.isConfirmed) {
-        return;
-      }
-    }
-
-    const ordersToSave = Object.keys(selections).map(id => ({
-      personalId: Number(id),
-      almuerzoDieta: planillaTab === "almuerzo" ? selections[Number(id)].almuerzo : undefined,
-      cenaDieta: planillaTab === "cena" ? selections[Number(id)].cena : undefined
-    })).filter(o => (planillaTab === "almuerzo" && o.almuerzoDieta !== undefined) || (planillaTab === "cena" && o.cenaDieta !== undefined));
-
-    if (ordersToSave.length === 0) {
-      Swal.fire({ title: "Aviso", text: "No hay ningún pedido seleccionado para guardar.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
-      return;
-    }
+    const ordersToSave = allPersonalIds.map(id => ({
+      personalId: id,
+      almuerzoDieta: selections[id]?.almuerzo || undefined,
+      cenaDieta: selections[id]?.cena || undefined
+    }));
 
     try {
       const res = await fetch(`${API_URL}/api/orders/bulk`, {
@@ -1130,19 +1459,26 @@ function JefePanel({
         body: JSON.stringify({
           orders: ordersToSave,
           solicitadoPorUsuarioId: userId,
-          tipoComida: planillaTab === "almuerzo" ? "Almuerzo" : "Cena",
+          tipoComida: "Ambos",
           fecha: fechaPlanilla
         })
       });
       if (res.ok) {
-        Swal.fire({ title: "Guardado", text: "Todos los pedidos se guardaron exitosamente.", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        Swal.fire({ title: "Guardado", text: "Todos los pedidos de la planilla se guardaron exitosamente.", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         loadOrdersForDate(fechaPlanilla);
+        return true;
       } else {
-        const data = await res.json();
-        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        const data = await parseJsonResponse(res);
+        if (res.status === 401 || res.status === 403) {
+          handleSessionExpired(data?.error);
+          return false;
+        }
+        Swal.fire({ title: "Error", text: data?.error || "Error al guardar los pedidos", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        return false;
       }
     } catch (e) {
       Swal.fire({ title: "Error", text: "Error al guardar los pedidos", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return false;
     }
   };
 
@@ -1338,9 +1674,15 @@ function JefePanel({
       const res = await fetch(`${API_URL}/api/reports?fechaInicio=${repDesde}&fechaFin=${repHasta}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      if (res.ok) {
-        const data = await res.json();
+      const data = await parseJsonResponse(res);
+      if (res.ok && Array.isArray(data)) {
         setReportes(data);
+      } else {
+        if (res.status === 401 || res.status === 403) {
+          handleSessionExpired(data?.error);
+        } else {
+          Swal.fire({ title: "Error", text: data?.error || "Error al generar reporte", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
       }
     } catch (e) {
       Swal.fire({ title: "Error", text: "Error al generar reporte", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
@@ -1661,15 +2003,180 @@ function JefePanel({
     }
   });
 
+  const hasUnsavedPlantel = (() => {
+    if (pendingDnisInDB.some(dni => !plantelDraft.some(p => p.DNI === dni))) return true;
+
+    const nonPendingDraft = plantelDraft.filter(p => !p.isPendiente);
+    if (nonPendingDraft.length !== staff.length) return true;
+    if (nonPendingDraft.some(p => p.isModificado || p.isNuevo)) return true;
+
+    const getRacionNum = (h: string, conV?: boolean, active?: boolean) => {
+      if (conV === false || active === false || !h || h === "Sin Ración") return 0;
+      const hLower = h.toLowerCase();
+      if (hLower.includes("24") || hLower.includes("y cena") || hLower.includes("2 racion")) return 2;
+      return 1;
+    };
+
+    return nonPendingDraft.some(p => {
+      const originalInStaff = staff.find(s => s.DNI === p.DNI);
+      if (!originalInStaff) return true;
+
+      const origR = getRacionNum(originalInStaff.Horario, originalInStaff.ConVianda !== false, originalInStaff.Activo !== false);
+      const reqR = getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
+      return origR !== reqR;
+    });
+  })();
+
+  const tieneCambiosPlantelParaGerente = (() => {
+    return plantelDraft.some(p => {
+      if (p.isPendiente) return false;
+      const originalInStaff = staff.find(s => s.DNI === p.DNI);
+      const existsInPadron = padron.find(pad => pad.DNI === p.DNI);
+
+      const getRacionNum = (h: string, conV?: boolean, active?: boolean) => {
+        if (conV === false || active === false || !h || h === "Sin Ración") return 0;
+        const hLower = h.toLowerCase();
+        if (hLower.includes("24") || hLower.includes("y cena") || hLower.includes("2 racion")) return 2;
+        return 1;
+      };
+
+      const requestedRacion = getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
+
+      if (originalInStaff) {
+        const originalRacion = getRacionNum(originalInStaff.Horario, originalInStaff.ConVianda !== false, originalInStaff.Activo !== false);
+        return originalRacion !== requestedRacion;
+      }
+
+      const esNuevoSinDB = !existsInPadron && !originalInStaff;
+      return esNuevoSinDB;
+    });
+  })();
+
+  // Guard de Advertencia antes de cerrar/recargar la pestaña del navegador
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if ((activeTab === "Planilla" && hasUnsavedChanges) || (activeTab === "Plantel" && hasUnsavedPlantel)) {
+        e.preventDefault();
+        e.returnValue = "Tienes modificaciones sin guardar en la planilla. ¿Seguro que deseas salir?";
+        return e.returnValue;
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [activeTab, hasUnsavedChanges, hasUnsavedPlantel]);
+
+  // Navegación protegida con advertencia de guardado al cambiar de solapa
+  const handleTabClick = (targetTab: string) => {
+    if (targetTab === activeTab) return;
+
+    if (activeTab === "Planilla" && hasUnsavedChanges) {
+      Swal.fire({
+        title: "⚠️ Cambios sin guardar en Planilla",
+        text: "Tienes modificaciones en la planilla de comida que no has grabado. ¿Qué deseas hacer?",
+        icon: "warning",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "💾 Guardar y Cambiar",
+        denyButtonText: "🗑️ Descartar Cambios",
+        cancelButtonText: "❌ Permanecer Aquí",
+        confirmButtonColor: "#2563eb",
+        denyButtonColor: "#dc2626",
+        cancelButtonColor: "#6b7280",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          const ok = await handleGuardarPedidos();
+          if (ok) setActiveTab(targetTab);
+        } else if (result.isDenied) {
+          setSelections(JSON.parse(JSON.stringify(savedSelections)));
+          setActiveTab(targetTab);
+        }
+      });
+      return;
+    }
+
+    if (activeTab === "Plantel" && hasUnsavedPlantel) {
+      Swal.fire({
+        title: "⚠️ Cambios en Plantel Sin Guardar",
+        text: "Tienes novedades en el plantel que no has guardado. ¿Qué deseas hacer?",
+        icon: "warning",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "💾 Guardar y Cambiar",
+        denyButtonText: "🗑️ Descartar Cambios",
+        cancelButtonText: "❌ Permanecer Aquí",
+        confirmButtonColor: "#2563eb",
+        denyButtonColor: "#dc2626",
+        cancelButtonColor: "#6b7280",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          const ok = await handleGuardarPlantel();
+          if (ok) setActiveTab(targetTab);
+        } else if (result.isDenied) {
+          setPlantelDraft(staff.map((p: any) => ({
+            DNI: p.DNI,
+            NombreCompleto: p.NombreCompleto,
+            Horario: getRacionLabel(p.Horario),
+            ConVianda: p.ConVianda !== false,
+            isNuevo: false,
+            isPendiente: false
+          })));
+          await fetchStaff(fechaPlanilla);
+          setActiveTab(targetTab);
+        }
+      });
+      return;
+    }
+
+    setActiveTab(targetTab);
+  };
+
+  // Navegación protegida con advertencia de guardado al cambiar de fecha
+  const handleFechaChange = (newFecha: string) => {
+    if (newFecha === fechaPlanilla) return;
+
+    if (hasUnsavedChanges) {
+      Swal.fire({
+        title: "⚠️ Cambios sin guardar en la fecha actual",
+        text: `Tienes modificaciones en la planilla del ${fechaPlanilla.split('-').reverse().join('/')} que no has grabado. ¿Deseas guardarlas antes de cambiar de fecha?`,
+        icon: "warning",
+        showCancelButton: true,
+        showDenyButton: true,
+        confirmButtonText: "💾 Guardar y Cambiar Fecha",
+        denyButtonText: "🗑️ Descartar Cambios",
+        cancelButtonText: "❌ Permanecer en Fecha Actual",
+        confirmButtonColor: "#2563eb",
+        denyButtonColor: "#dc2626",
+        cancelButtonColor: "#6b7280",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      }).then(async (result) => {
+        if (result.isConfirmed) {
+          const ok = await handleGuardarPedidos();
+          if (ok) setFechaPlanilla(newFecha);
+        } else if (result.isDenied) {
+          setSelections(JSON.parse(JSON.stringify(savedSelections)));
+          setFechaPlanilla(newFecha);
+        }
+      });
+      return;
+    }
+
+    setFechaPlanilla(newFecha);
+  };
+
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className={`space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 ${(activeTab === "Planilla" && hasUnsavedChanges) || (activeTab === "Plantel" && hasUnsavedPlantel) ? 'pb-24' : ''}`}>
       
       {/* TABS NAVIGATION */}
       <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-1.5 flex flex-wrap gap-1">
         {tabs.map(tab => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => handleTabClick(tab.id)}
             className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
               activeTab === tab.id 
                 ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm' 
@@ -1685,6 +2192,8 @@ function JefePanel({
       {/* SECCION: PLANILLA PERSONAL */}
       {activeTab === "Planilla" && (
         <div className={`rounded-2xl shadow-sm border overflow-hidden transition-all animate-in fade-in zoom-in-95 duration-300 p-1 ${
+          hasUnsavedChanges ? 'pb-28' : ''
+        } ${
           fechaPlanilla !== getTodayStr() 
             ? 'bg-amber-50/80 dark:bg-amber-950/40 border-2 border-amber-400 dark:border-amber-600 shadow-xl' 
             : 'bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800'
@@ -1727,7 +2236,7 @@ function JefePanel({
                 <label className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Fecha:</label>
                 <select
                   value={fechaPlanilla}
-                  onChange={e => setFechaPlanilla(e.target.value)}
+                  onChange={e => handleFechaChange(e.target.value)}
                   className="text-xs font-bold bg-transparent border-none focus:outline-none text-gray-900 dark:text-gray-100 cursor-pointer"
                 >
                   <option value={getTodayStr()} className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">📍 Hoy ({getTodayStr().split('-').reverse().join('/')})</option>
@@ -1742,13 +2251,6 @@ function JefePanel({
               <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-xs font-bold px-3 py-1.5 rounded-full border border-blue-200 dark:border-blue-800">
                 Activos: {staff.length}
               </span>
-              <button 
-                onClick={handleGuardarPedidos} 
-                disabled={(fechaPlanilla === getTodayStr() && (planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena)) || !hasUnsavedChanges} 
-                className="bg-blue-600 hover:bg-blue-700 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all transform hover:scale-[1.02] active:scale-95 flex items-center cursor-pointer"
-              >
-                <Save className="w-4 h-4 mr-2" /> Guardar {planillaTab === 'almuerzo' ? 'Almuerzo' : 'Cena'}
-              </button>
             </div>
           </div>
           
@@ -2298,17 +2800,113 @@ function JefePanel({
       {/* SECCION: ARCHIVO (AHORA DUAL LIST) */}
       {activeTab === "Plantel" && (
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-300">
-          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex flex-wrap justify-between items-center gap-3">
             <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
               <Users className="w-5 h-5 mr-2 text-blue-500" /> Configuración de Plantel
             </h2>
-            <button 
-              onClick={handleGuardarPlantel}
-              className="bg-blue-600 hover:bg-blue-700 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all transform hover:scale-[1.02] active:scale-95 flex items-center cursor-pointer"
-            >
-              <Save className="w-4 h-4 mr-2" /> Guardar Plantel
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowNewAgentModal(true)}
+                className="bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-3.5 py-2 rounded-lg text-sm font-bold shadow-sm transition-all flex items-center cursor-pointer"
+              >
+                <UserPlus className="w-4 h-4 mr-2 text-indigo-600 dark:text-indigo-400" /> Solicitar Autorización Nuevo Agente
+              </button>
+            </div>
           </div>
+
+          {/* MODAL SOLICITAR AUTORIZACIÓN NUEVO AGENTE */}
+          {showNewAgentModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+              <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 w-full max-w-lg overflow-hidden flex flex-col">
+                <div className="px-6 py-4 bg-indigo-600 text-white flex justify-between items-center">
+                  <h3 className="font-bold text-base flex items-center">
+                    <UserPlus className="w-5 h-5 mr-2" /> Solicitar Autorización de Nuevo Agente
+                  </h3>
+                  <button
+                    onClick={() => setShowNewAgentModal(false)}
+                    className="text-indigo-200 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleAddNewAgentSubmit} className="p-6 space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1">
+                      DNI del Agente <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      ref={newAgentDniRef}
+                      type="text"
+                      autoFocus
+                      value={newAgentDni}
+                      onChange={e => setNewAgentDni(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                      placeholder="Ej. 35123456 (7 u 8 dígitos)"
+                      required
+                      maxLength={8}
+                      className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                    />
+                    {dniCheckStatus.loading && (
+                      <p className="text-xs text-indigo-500 mt-1 font-semibold flex items-center">
+                        <RefreshCw className="w-3 h-3 mr-1 animate-spin" /> Verificando DNI en el hospital...
+                      </p>
+                    )}
+                    {dniCheckStatus.message && (
+                      <p className={`text-xs mt-1.5 font-bold ${dniCheckStatus.exists ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                        {dniCheckStatus.message}
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1">
+                      Apellido y Nombres Completos <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newAgentNombre}
+                      onChange={e => setNewAgentNombre(e.target.value)}
+                      placeholder="Ej. GONZALEZ JUAN CARLOS"
+                      required
+                      className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 uppercase"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1">
+                      Ración Solicitada <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={newAgentHorario}
+                      onChange={e => setNewAgentHorario(e.target.value)}
+                      className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                    >
+                      <option value="Almuerzo o Cena">Almuerzo o Cena (12h - 1 ración)</option>
+                      <option value="Almuerzo y Cena">Almuerzo y Cena (24h - 2 raciones)</option>
+                    </select>
+                  </div>
+
+                  <div className="pt-3 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowNewAgentModal(false)}
+                      className="px-4 py-2 text-xs font-bold rounded-xl border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={dniCheckStatus.exists || !newAgentDni || !newAgentNombre}
+                      className="px-5 py-2 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white shadow-md transition-all flex items-center cursor-pointer"
+                    >
+                      <UserPlus className="w-4 h-4 mr-1.5" /> Grabar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
           
           <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6 min-h-[500px]">
             {/* IZQUIERDA: Padrón General */}
@@ -2341,7 +2939,8 @@ function JefePanel({
                 {(() => {
                   const renderAgentRow = (p: any, showServicioBadge = false) => {
                     const draftEntry = plantelDraft.find(draft => draft.DNI === p.DNI);
-                    const isSelected = !!draftEntry;
+                    const isDraftActive = Boolean(draftEntry && draftEntry.ConVianda !== false && draftEntry.Horario !== "Sin Ración");
+                    const isSelected = isDraftActive;
                     const dbAssigned = staff.find(s => s.DNI === p.DNI);
                     
                     const getRacionesCount = (h: string) => (h && (h.toLowerCase().includes("24") || h.toLowerCase().includes("y cena"))) ? 2 : 1;
@@ -2353,11 +2952,11 @@ function JefePanel({
                     const isGuardia24h = Boolean(p.EsGuardia24h);
                     const maxAllowedRaciones = isGuardia24h ? 2 : 1;
 
-                    const disable12h = totalExternalRaciones >= maxAllowedRaciones;
-                    const disable24h = !isGuardia24h || totalExternalRaciones >= 1;
+                    const disable12h = totalExternalRaciones >= maxAllowedRaciones || isDraftActive;
+                    const disable24h = !isGuardia24h || totalExternalRaciones >= 1 || isDraftActive;
 
-                    const isDraft12h = draftEntry?.Horario === "Almuerzo o Cena";
-                    const isDraft24h = draftEntry?.Horario === "Almuerzo y Cena";
+                    const isDraft12h = draftEntry?.Horario === "Almuerzo o Cena" && draftEntry?.ConVianda !== false;
+                    const isDraft24h = draftEntry?.Horario === "Almuerzo y Cena" && draftEntry?.ConVianda !== false;
 
                     let containerClass = "p-3 text-sm flex justify-between items-center transition-colors group ";
                     if (isSelected) {
@@ -2397,18 +2996,18 @@ function JefePanel({
                           <button
                             onClick={() => addAgent(p, "Almuerzo o Cena")}
                             disabled={disable12h || isDraft12h}
-                            className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable12h || isDraft12h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300'}`}
-                            title="Asignar Almuerzo o Cena (1 ración)"
+                            className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable12h || isDraft12h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300'}`}
+                            title="Asignar 1 Ración (Almuerzo o Cena)"
                           >
-                            {isDraft12h ? '✓ Alm. o Cena' : 'Alm. o Cena'}
+                            {isDraft12h ? '✓ 1 Ración' : '1 Ración'}
                           </button>
                           <button
                             onClick={() => addAgent(p, "Almuerzo y Cena")}
                             disabled={disable24h || isDraft24h}
-                            className={`px-2 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable24h || isDraft24h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300'}`}
-                            title="Asignar Almuerzo y Cena (2 raciones)"
+                            className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable24h || isDraft24h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300'}`}
+                            title="Asignar 2 Raciones (Almuerzo y Cena)"
                           >
-                            {isDraft24h ? '✓ Alm. y Cena' : 'Alm. y Cena'}
+                            {isDraft24h ? '✓ 2 Raciones' : '2 Raciones'}
                           </button>
                         </div>
                       </div>
@@ -2494,26 +3093,118 @@ function JefePanel({
                     <p>Agrega agentes desde el padrón izquierdo</p>
                   </div>
                 ) : (
-                  [...plantelDraft].sort((a, b) => a.NombreCompleto.localeCompare(b.NombreCompleto)).map(p => (
-                    <div key={p.DNI} className="flex flex-col sm:flex-row justify-between sm:items-center p-3 border border-indigo-100 dark:border-indigo-800 rounded-lg bg-indigo-50/30 dark:bg-indigo-900/20 gap-3 hover:border-indigo-300 transition-colors">
-                      <div className="flex-1">
-                        <p className="font-bold text-sm text-gray-900 dark:text-gray-100 truncate">{p.NombreCompleto}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">DNI: {p.DNI}</p>
+                  [...plantelDraft].sort((a, b) => a.NombreCompleto.localeCompare(b.NombreCompleto)).map(p => {
+                    const original = staff.find(s => s.DNI === p.DNI);
+                    const getRacionNum = (h: string, conV?: boolean, active?: boolean) => {
+                      if (conV === false || active === false || !h || h === "Sin Ración") return 0;
+                      const hLower = h.toLowerCase();
+                      if (hLower.includes("24") || hLower.includes("y cena") || hLower.includes("2 racion")) return 2;
+                      return 1;
+                    };
+
+                    const origRacion = original ? getRacionNum(original.Horario, original.ConVianda !== false, original.Activo !== false) : 0;
+                    const currentRacion = getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
+
+                    const is12h = currentRacion === 1;
+                    const is24h = currentRacion === 2;
+                    const isSinRacion = currentRacion === 0;
+
+                    const isNewAgent = !original || Boolean(p.isNuevo);
+                    const isRacionChanged = origRacion !== currentRacion;
+                    const isPending = isNewAgent || isRacionChanged || Boolean(p.isPendiente);
+
+                    let actionText = "⏳ Cambio de Ración";
+                    if (!original || p.isNuevo) {
+                      actionText = `🌟 Alta Nuevo (${currentRacion === 2 ? '2 Raciones' : currentRacion === 1 ? '1 Ración' : 'Sin Ración'})`;
+                    } else if (origRacion === 1 && currentRacion === 2) {
+                      actionText = "🔄 Cambio 1 a 2 Raciones";
+                    } else if (origRacion === 2 && currentRacion === 1) {
+                      actionText = "🔄 Cambio 2 a 1 Ración";
+                    } else if (origRacion === 0 && currentRacion === 1) {
+                      actionText = "🔄 Habilitar 1 Ración";
+                    } else if (origRacion === 0 && currentRacion === 2) {
+                      actionText = "🔄 Habilitar 2 Raciones";
+                    } else if (currentRacion === 0) {
+                      actionText = "🚫 Inhabilitar Ración";
+                    }
+
+                    const changeRacion = (horarioStr: string, conV: boolean) => {
+                      setPlantelDraft(prev => prev.map(item => {
+                        if (item.DNI !== p.DNI) return item;
+                        const nextRacion = getRacionNum(horarioStr, conV, true);
+                        const changed = origRacion !== nextRacion;
+                        return {
+                          ...item,
+                          Horario: horarioStr,
+                          ConVianda: conV,
+                          EsGuardia12: nextRacion === 1,
+                          EsGuardia24: nextRacion === 2,
+                          isModificado: changed
+                        };
+                      }));
+                    };
+
+                    return (
+                      <div key={p.DNI} className={`p-3 border rounded-xl flex flex-col gap-2 transition-all ${isSinRacion ? 'bg-red-50/40 dark:bg-red-950/20 border-red-200 dark:border-red-900/40' : 'bg-indigo-50/30 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800/60 shadow-xs'}`}>
+                        {/* LINEA 1: NOMBRE A LA IZQUIERDA, DNI Y CESTO DE BASURA A LA DERECHA */}
+                        <div className="flex items-center justify-between gap-2">
+                          <p className={`font-bold text-sm truncate ${isSinRacion ? 'text-red-700 dark:text-red-300 line-through opacity-80' : 'text-gray-900 dark:text-gray-100'}`}>{p.NombreCompleto}</p>
+                          <div className="flex items-center space-x-2 shrink-0">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">DNI: {p.DNI}</span>
+                            <button 
+                              type="button"
+                              onClick={() => removeAgent(p.DNI)}
+                              className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/40 rounded-lg transition-colors cursor-pointer border border-transparent"
+                              title="Quitar / Eliminar del plantel"
+                            >
+                              <Trash2 className="w-4 h-4 text-red-500" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* LINEA 2: BADGE DE PENDIENTE A LA IZQUIERDA Y BOTONES DE RACIONES A LA DERECHA */}
+                        <div className="flex items-center justify-between gap-2 pt-1 border-t border-indigo-100/60 dark:border-gray-800 flex-wrap sm:flex-nowrap">
+                          <div className="flex-1 min-w-0 flex items-center">
+                            {isPending && (
+                              <div className="inline-flex flex-col justify-center items-center bg-amber-50 text-amber-900 dark:bg-amber-950/80 dark:text-amber-200 border border-amber-300 dark:border-amber-700 px-2 rounded shadow-xs animate-pulse text-center h-[26px] shrink-0">
+                                <span className="text-[9px] font-extrabold uppercase leading-none">{actionText}</span>
+                                <span className={`text-[7.5px] font-black uppercase tracking-tight leading-none mt-[1px] ${p.isPendiente ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
+                                  {p.isPendiente ? "ENVIADO A GERENCIA (AGUARDANDO APROBACIÓN)" : "PENDIENTE DE GRABACIÓN"}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="flex items-center space-x-1.5 shrink-0 ml-auto">
+                            <button
+                              type="button"
+                              onClick={() => changeRacion("1 Ración", true)}
+                              className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors cursor-pointer ${is12h ? 'bg-blue-600 hover:bg-blue-700 text-white font-extrabold border border-blue-700 shadow-md' : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 border border-transparent'}`}
+                              title="Asignar 1 Ración"
+                            >
+                              {is12h ? '✓ 1 Ración' : '1 Ración'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => changeRacion("2 Raciones", true)}
+                              className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors cursor-pointer ${is24h ? 'bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold border border-indigo-700 shadow-md' : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 border border-transparent'}`}
+                              title="Asignar 2 Raciones"
+                            >
+                              {is24h ? '✓ 2 Raciones' : '2 Raciones'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => changeRacion("Sin Ración", false)}
+                              className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors cursor-pointer ${isSinRacion ? 'bg-red-600 hover:bg-red-700 text-white font-extrabold border border-red-700 shadow-md' : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-400 border border-transparent'}`}
+                              title="Sin Ración (Inhabilitar)"
+                            >
+                              {isSinRacion ? '✓ Sin Ración' : 'Sin Ración'}
+                            </button>
+                          </div>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-3">
-                        <span className="text-xs font-bold px-2.5 py-1 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 rounded-md">
-                          {getRacionLabel(p.Horario)}
-                        </span>
-                        <button 
-                          onClick={() => removeAgent(p.DNI)}
-                          className="text-red-400 hover:text-red-600 dark:hover:text-red-300 p-1.5 rounded-md hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors bg-white dark:bg-gray-800 shadow-sm"
-                          title="Quitar del plantel"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -2635,6 +3326,44 @@ function JefePanel({
           )}
         </div>
       </div>
+      )}
+
+      {/* BADGE FLOTANTE DE ADVERTENCIA PARA CAMBIOS SIN GUARDAR EN PLANILLA */}
+      {activeTab === "Planilla" && hasUnsavedChanges && (
+        <div className="fixed bottom-6 right-6 z-50 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-700 text-white px-5 py-3.5 rounded-2xl shadow-2xl border-2 border-amber-300 flex items-center gap-4 animate-bounce">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-yellow-200" />
+            <span className="text-xs font-black uppercase tracking-wide">
+              ⚠️ TIENES CAMBIOS SIN GUARDAR EN LA PLANILLA
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleGuardarPedidos}
+            className="px-4 py-2 bg-white text-orange-700 hover:bg-orange-50 font-black text-xs rounded-xl shadow-md transition-all cursor-pointer transform hover:scale-105"
+          >
+            💾 GUARDAR AHORA
+          </button>
+        </div>
+      )}
+
+      {/* BADGE FLOTANTE DE ADVERTENCIA PARA NOVEDADES DE PLANTEL */}
+      {activeTab === "Plantel" && hasUnsavedPlantel && (
+        <div className="fixed bottom-6 right-6 z-50 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white px-5 py-3.5 rounded-2xl shadow-2xl border-2 border-indigo-300 flex items-center gap-4 animate-bounce">
+          <div className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-indigo-200" />
+            <span className="text-xs font-black uppercase tracking-wide">
+              ⚠️ CAMBIOS EN PLANTEL SIN GUARDAR
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={handleGuardarPlantel}
+            className="px-4 py-2 bg-white text-indigo-700 hover:bg-indigo-50 font-black text-xs rounded-xl shadow-md transition-all cursor-pointer transform hover:scale-105"
+          >
+            💾 GUARDAR PLANTEL
+          </button>
+        </div>
       )}
     </div>
   );
@@ -2766,6 +3495,63 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
   const [emgSubTab, setEmgSubTab] = useState<"pendientes" | "aprobadas" | "rechazadas">("pendientes");
   const [resolucionTxt, setResolucionTxt] = useState<{ [id: number]: string }>({});
   const [activeTab, setActiveTab] = useState("Bandeja");
+  const [solicitudesPlantel, setSolicitudesPlantel] = useState<any[]>([]);
+
+  const fetchSolicitudesPlantel = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/staff/plantel-solicitudes`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok && res.status !== 304) {
+        const data = await res.json();
+        if (Array.isArray(data)) setSolicitudesPlantel(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    fetchSolicitudesPlantel();
+    const interval = setInterval(() => {
+      fetchSolicitudesPlantel();
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [token]);
+
+  const handleAprobarSolicitudPlantel = async (id: number) => {
+    try {
+      const res = await fetch(`${API_URL}/api/staff/plantel-solicitudes/${id}/aprobar`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        Swal.fire({ title: "Error", text: data.error || "No se pudo aprobar la solicitud", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        return;
+      }
+      Swal.fire({ title: "Solicitud Aprobada 🚀", text: "La solicitud fue aprobada y los agentes del plantel fueron actualizados en la base de datos.", icon: "success", timer: 2500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      fetchSolicitudesPlantel();
+      if (typeof fetchServicios === 'function') fetchServicios();
+    } catch (e) {
+      Swal.fire({ title: "Error", text: "Error de conexión al aprobar la solicitud.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
+
+  const handleRechazarSolicitudPlantel = async (id: number) => {
+    try {
+      const res = await fetch(`${API_URL}/api/staff/plantel-solicitudes/${id}/rechazar`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        Swal.fire({ title: "Solicitud Rechazada", text: "La solicitud de plantel fue rechazada.", icon: "info", timer: 2000, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        fetchSolicitudesPlantel();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchEmergenciasAprobadas = async () => {
     try {
@@ -2856,6 +3642,192 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
   } | null>(null);
   const [cargandoSummary, setCargandoSummary] = useState(false);
   const [filtroHistorialEntregas, setFiltroHistorialEntregas] = useState("");
+
+  // Estados y Funciones para Gestión de Usuarios Nutrición en GerentePanel
+  const [usuariosNutricion, setUsuariosNutricion] = useState<any[]>([]);
+  const [cargandoNutricion, setCargandoNutricion] = useState(false);
+
+  const fetchUsuariosNutricion = () => {
+    if (!token) return;
+    setCargandoNutricion(true);
+    fetch(`${API_URL}/api/gerente/nutricion`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(data => {
+        setCargandoNutricion(false);
+        if (Array.isArray(data)) setUsuariosNutricion(data);
+      })
+      .catch(() => setCargandoNutricion(false));
+  };
+
+  const crearUsuarioNutricionModal = async () => {
+    const { value: formValues } = await Swal.fire({
+      title: 'Registrar Usuario de Nutrición',
+      html:
+        '<div class="text-left text-xs text-gray-500 mb-3">La contraseña inicial será <strong>123456</strong> y se requerirá el cambio en el primer inicio de sesión.</div>' +
+        '<input id="swal-name" class="swal2-input" placeholder="Apellido y Nombre">' +
+        '<input id="swal-user" class="swal2-input" placeholder="Nombre de Usuario (login)">',
+      showCancelButton: true,
+      confirmButtonText: 'Crear Usuario',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000',
+      preConfirm: () => {
+        const n = (document.getElementById('swal-name') as HTMLInputElement).value;
+        const u = (document.getElementById('swal-user') as HTMLInputElement).value;
+        if (!u || !n) {
+          Swal.showValidationMessage('Apellido y Nombre, y Nombre de Usuario son obligatorios');
+          return false;
+        }
+        return { username: u, nombreCompleto: n, password: "123456" };
+      }
+    });
+
+    if (formValues) {
+      try {
+        const res = await fetch(`${API_URL}/api/gerente/nutricion`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify(formValues)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          Swal.fire({ title: "Éxito", text: "Usuario de Nutrición creado exitosamente con contraseña '123456'", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          fetchUsuariosNutricion();
+        } else {
+          Swal.fire({ title: "Error", text: data.error || "Error al crear", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const toggleStatusNutricion = async (id: number, uName: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/gerente/nutricion/${id}/toggle`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        Swal.fire({ title: "Éxito", text: "Estado actualizado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        fetchUsuariosNutricion();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const resetPasswordNutricionModal = async (id: number, uName: string) => {
+    Swal.fire({
+      title: '¿Resetear contraseña?',
+      text: `¿Deseas resetear la contraseña del usuario "${uName}" a "123456"?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, resetear',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`${API_URL}/api/gerente/nutricion/${id}/reset-password`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ newPassword: "123456" })
+          });
+          if (res.ok) {
+            Swal.fire({ title: "Éxito", text: `Contraseña de ${uName} reseteada a '123456'`, icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          } else {
+            const data = await res.json();
+            Swal.fire({ title: "Error", text: data.error || "No se pudo resetear", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          }
+        } catch (e) {
+          Swal.fire({ title: "Error", text: "Error de red", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      }
+    });
+  };
+
+  // Estados y Funciones para Reporte Avanzado de Entregas vs Sin Entregar
+  const [repEntregasDesde, setRepEntregasDesde] = useState(getTodayStr());
+  const [repEntregasHasta, setRepEntregasHasta] = useState(getTodayStr());
+  const [repEntregasServicioId, setRepEntregasServicioId] = useState("Todos");
+  const [repEntregasTipoComida, setRepEntregasTipoComida] = useState("Todos");
+  const [dataReporteEntregas, setDataReporteEntregas] = useState<any>(null);
+  const [cargandoReporteEntregas, setCargandoReporteEntregas] = useState(false);
+  const [subTabReporte, setSubTabReporte] = useState<"Entregados" | "SinEntregar">("Entregados");
+
+  const fetchReporteEntregas = () => {
+    if (!token) return;
+    setCargandoReporteEntregas(true);
+    fetch(`${API_URL}/api/gerente/reports/entregas-detallado?fechaDesde=${repEntregasDesde}&fechaHasta=${repEntregasHasta}&servicioId=${repEntregasServicioId}&tipoComida=${repEntregasTipoComida}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => {
+        setCargandoReporteEntregas(false);
+        if (d && !d.error) setDataReporteEntregas(d);
+      })
+      .catch(() => setCargandoReporteEntregas(false));
+  };
+
+  const exportReporteEntregasExcel = () => {
+    if (!dataReporteEntregas) return;
+    const listado = subTabReporte === "Entregados" ? dataReporteEntregas.listadoEntregados : dataReporteEntregas.listadoSinEntregar;
+    if (!listado || listado.length === 0) return;
+
+    const dataToExport = listado.map((item: any) => ({
+      Fecha: item.FechaPedido,
+      DNI: item.AgenteDNI,
+      Agente: item.AgenteNombre,
+      Servicio: item.ServicioNombre,
+      Comida: item.TipoComida,
+      Dieta: item.TipoDieta,
+      EstadoEntrega: item.FechaEntregado ? `Entregado el ${new Date(item.FechaEntregado).toLocaleString('es-AR')} por ${item.EntregadoPor}` : 'Sin Entregar / No Reclamada'
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, subTabReporte);
+    XLSX.writeFile(workbook, `Reporte_Entregas_${subTabReporte}_${repEntregasDesde}_al_${repEntregasHasta}.xlsx`);
+  };
+
+  const exportReporteEntregasPDF = () => {
+    if (!dataReporteEntregas) return;
+    const listado = subTabReporte === "Entregados" ? dataReporteEntregas.listadoEntregados : dataReporteEntregas.listadoSinEntregar;
+    if (!listado || listado.length === 0) return;
+
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(`Reporte Gerencial: Raciones ${subTabReporte === "Entregados" ? "Entregadas" : "Sin Entregar"} (${repEntregasDesde.split('-').reverse().join('/')} al ${repEntregasHasta.split('-').reverse().join('/')})`, 14, 15);
+
+    const tableData = listado.map((item: any) => [
+      item.FechaPedido.split('-').reverse().join('/'),
+      item.AgenteDNI,
+      item.AgenteNombre,
+      item.ServicioNombre,
+      item.TipoComida,
+      item.TipoDieta,
+      item.FechaEntregado ? new Date(item.FechaEntregado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' hs' : 'Sin Entregar'
+    ]);
+
+    autoTable(doc, {
+      head: [['Fecha', 'DNI', 'Nombre', 'Servicio', 'Comida', 'Dieta', 'Hora Entrega / Estado']],
+      body: tableData,
+      startY: 22,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: subTabReporte === "Entregados" ? [16, 185, 129] : [239, 68, 68] }
+    });
+
+    doc.save(`Reporte_Entregas_${subTabReporte}_${repEntregasDesde}_al_${repEntregasHasta}.pdf`);
+  };
+
+  useEffect(() => {
+    if (activeTab === "Configuracion") fetchUsuariosNutricion();
+    if (activeTab === "ReporteEntregas") fetchReporteEntregas();
+  }, [activeTab, token]);
 
   const fetchDeliverySummary = async () => {
     setCargandoSummary(true);
@@ -4467,14 +5439,16 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
     doc.save(`Reporte_SisAR_${repDesde}_al_${repHasta}.pdf`);
   };
 
+  const pendingPlantelCount = solicitudesPlantel.filter(s => s.Estado === 'Pendiente').length;
+
   const tabs = [
     { id: "Bandeja", label: "Emergencias", icon: <AlertTriangle className="w-4 h-4 mr-2" /> },
-    { id: "CrearEmergencia", label: "Pedido de Emergencia", icon: <PlusCircle className="w-4 h-4 mr-2" /> },
+    { id: "SolicitudesPlantel", label: "Solicitudes Plantel", icon: <Users className="w-4 h-4 mr-2 text-indigo-500" /> },
     { id: "Hospital", label: "Servicios", icon: <Building className="w-4 h-4 mr-2" /> },
-    { id: "Reportes", label: "Reportes", icon: <FileText className="w-4 h-4 mr-2" /> },
+    { id: "ReporteEntregas", label: "Reporte de Entregas", icon: <Utensils className="w-4 h-4 mr-2 text-amber-500" /> },
+    { id: "Reportes", label: "Reportes Generales", icon: <FileText className="w-4 h-4 mr-2" /> },
     { id: "Auditoria", label: "Auditoría", icon: <Shield className="w-4 h-4 mr-2" /> },
-    { id: "Configuracion", label: "Configuración", icon: <Settings className="w-4 h-4 mr-2" /> },
-    { id: "Entregas", label: "Entrega", icon: <QrCode className="w-4 h-4 mr-2 text-indigo-500" /> }
+    { id: "Configuracion", label: "Configuración", icon: <Settings className="w-4 h-4 mr-2" /> }
   ];
 
   return (
@@ -4497,449 +5471,317 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
             {tab.id === "Bandeja" && emergencias.length > 0 && (
               <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">{emergencias.length}</span>
             )}
+            {tab.id === "SolicitudesPlantel" && pendingPlantelCount > 0 && (
+              <span className="ml-2 bg-indigo-600 text-white text-xs font-black px-2 py-0.5 rounded-full animate-pulse">{pendingPlantelCount}</span>
+            )}
           </button>
         ))}
       </div>
 
-      {/* PUNTO DE ENTREGA (ESCÁNER DNI / QR) */}
-      {activeTab === "Entregas" && (
-        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
-          
-          {/* BARRA DE PROGRESO DE ENTREGAS */}
-          <div className="bg-gradient-to-br from-blue-50/80 via-white to-indigo-50/60 dark:from-gray-900 dark:via-gray-900 dark:to-gray-950 rounded-2xl shadow-sm border border-blue-150 dark:border-gray-800 p-6">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-indigo-950/60 px-3 py-1 rounded-full border border-indigo-200 dark:border-indigo-800">
-                  📊 Indicador de Avance de Entregas
-                </span>
-                <h3 className="text-xl font-black text-gray-900 dark:text-gray-100 mt-2 flex items-center">
-                  <Utensils className="w-5 h-5 mr-2 text-indigo-500" />
-                  Progreso del Turno ({scanTipoComida} - {scanFecha.split('-').reverse().join('/')})
-                </h3>
-              </div>
-
-              {/* KPI BADGES */}
-              <div className="flex flex-wrap gap-2 text-xs font-extrabold">
-                <div className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-3.5 py-1.5 rounded-xl flex items-center shadow-xs">
-                  <CheckCircle className="w-4 h-4 mr-1.5 text-emerald-500" />
-                  Entregadas: <strong className="ml-1 text-sm">{summaryData?.totalDelivered ?? 0}</strong>
-                </div>
-                <div className="bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 px-3.5 py-1.5 rounded-xl flex items-center shadow-xs">
-                  <AlertTriangle className="w-4 h-4 mr-1.5 text-amber-500" />
-                  Faltan Entregar: <strong className="ml-1 text-sm">{summaryData?.totalPending ?? 0}</strong>
-                </div>
-                <div className="bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 px-3.5 py-1.5 rounded-xl flex items-center shadow-xs">
-                  <Users className="w-4 h-4 mr-1.5 text-blue-500" />
-                  Total Aprobadas: <strong className="ml-1 text-sm">{summaryData?.totalApproved ?? 0}</strong>
-                </div>
-              </div>
+      {/* PESTAÑA: REPORTE DE ENTREGAS Y AUSENTISMO */}
+      {activeTab === "ReporteEntregas" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 animate-in fade-in duration-300 space-y-6">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-4 border-b border-gray-200 dark:border-gray-800">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                <Utensils className="w-6 h-6 mr-2 text-amber-500" />
+                Reporte Gerencial de Raciones Entregadas y Sin Entregar
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Monitoree el porcentaje de entrega de comidas y el ausentismo/raciones no reclamadas por rango de fecha.
+              </p>
             </div>
 
-            {/* BARRA DE PROGRESO */}
-            <div className="space-y-1.5">
-              <div className="flex justify-between text-xs font-bold text-gray-600 dark:text-gray-400">
-                <span>Completado: {summaryData?.totalDelivered ?? 0} de {summaryData?.totalApproved ?? 0} raciones ({summaryData?.percentage ?? 0}%)</span>
-                <span>Faltan: {summaryData?.totalPending ?? 0} raciones</span>
-              </div>
-              <div className="w-full bg-gray-200 dark:bg-gray-800 h-6 rounded-2xl overflow-hidden shadow-inner p-1 border border-gray-300/70 dark:border-gray-700 relative">
-                <div 
-                  className="bg-gradient-to-r from-blue-500 via-indigo-500 to-emerald-500 h-full rounded-xl transition-all duration-700 ease-out flex items-center justify-end pr-3 text-[11px] font-black text-white shadow-sm"
-                  style={{ width: `${Math.max(summaryData?.percentage ?? 0, 2)}%` }}
-                >
-                  {(summaryData?.percentage ?? 0) >= 8 && `${summaryData?.percentage}%`}
-                </div>
-              </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={exportReporteEntregasExcel}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center cursor-pointer"
+              >
+                <Download className="w-4 h-4 mr-1.5" />
+                Exportar Excel
+              </button>
+              <button
+                onClick={exportReporteEntregasPDF}
+                className="px-3.5 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center cursor-pointer"
+              >
+                <FileText className="w-4 h-4 mr-1.5" />
+                Exportar PDF
+              </button>
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
-            
-            {/* HEADER CON INDICADOR DE ESTADO */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 pb-6 border-b border-gray-200 dark:border-gray-800">
-              <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                  <QrCode className="w-6 h-6 mr-2 text-blue-600 dark:text-blue-400" /> 
-                  Estación de Entrega de Viandas (DNI / QR)
-                </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Escanee el DNI físico del agente o el código QR del voucher para validar y registrar la entrega en tiempo real.
-                </p>
-              </div>
+          {/* FILTROS */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 bg-gray-50 dark:bg-gray-800/40 p-4 rounded-xl border border-gray-200 dark:border-gray-800">
+            <div>
+              <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">Fecha Desde</label>
+              <input
+                type="date"
+                value={repEntregasDesde}
+                onChange={e => setRepEntregasDesde(e.target.value)}
+                className="w-full px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-xs font-bold text-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">Fecha Hasta</label>
+              <input
+                type="date"
+                value={repEntregasHasta}
+                onChange={e => setRepEntregasHasta(e.target.value)}
+                className="w-full px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-xs font-bold text-gray-900 dark:text-gray-100"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">Servicio</label>
+              <select
+                value={repEntregasServicioId}
+                onChange={e => setRepEntregasServicioId(e.target.value)}
+                className="w-full px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-xs font-bold text-gray-900 dark:text-gray-100"
+              >
+                <option value="Todos">Todos los Servicios</option>
+                {servicios.map(s => <option key={s.Id} value={s.Id}>{s.Nombre}</option>)}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={fetchReporteEntregas}
+                className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl transition-all shadow-sm flex items-center justify-center cursor-pointer"
+              >
+                {cargandoReporteEntregas ? <RefreshCw className="w-4 h-4 animate-spin mr-1" /> : <Search className="w-4 h-4 mr-1" />}
+                Consultar Reporte
+              </button>
+            </div>
+          </div>
 
-              <div className="flex flex-wrap items-center gap-3">
-                {/* Fecha */}
-                <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700">
-                  <span className="text-xs font-bold text-gray-500">Fecha:</span>
-                  <input 
-                    type="date" 
-                    value={scanFecha} 
-                    onChange={e => setScanFecha(e.target.value)}
-                    className="bg-transparent text-xs font-bold text-gray-900 dark:text-gray-100 focus:outline-none"
-                  />
+          {/* TARJETAS DE INDICADORES / KPI */}
+          {dataReporteEntregas && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-4 rounded-xl">
+                <div className="text-xs font-bold text-blue-700 dark:text-blue-400">Total Raciones Solicitadas</div>
+                <div className="text-2xl font-black text-blue-900 dark:text-blue-200 mt-1">
+                  {dataReporteEntregas.totales?.solicitadas ?? dataReporteEntregas.totalPedidos ?? 0}
                 </div>
-
-                {/* Tipo Comida */}
-                <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl gap-1">
-                  <button
-                    onClick={() => setScanTipoComida("Almuerzo")}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                      scanTipoComida === "Almuerzo"
-                        ? 'bg-amber-500 text-white shadow-sm'
-                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
-                    }`}
-                  >
-                    ☀️ Almuerzo
-                  </button>
-                  <button
-                    onClick={() => setScanTipoComida("Cena")}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                      scanTipoComida === "Cena"
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900'
-                    }`}
-                  >
-                    🌙 Cena
-                  </button>
+              </div>
+              <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 rounded-xl">
+                <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400">Total Entregadas (% Cumplimiento)</div>
+                <div className="text-2xl font-black text-emerald-900 dark:text-emerald-200 mt-1">
+                  {dataReporteEntregas.totales?.entregadas ?? dataReporteEntregas.entregadosCount ?? 0}{' '}
+                  <span className="text-sm font-semibold">
+                    ({dataReporteEntregas.totales?.pctEntregado ?? dataReporteEntregas.porcentajeCumplimiento ?? 0}%)
+                  </span>
+                </div>
+              </div>
+              <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 rounded-xl">
+                <div className="text-xs font-bold text-red-700 dark:text-red-400">Total Sin Entregar (% Ausentismo)</div>
+                <div className="text-2xl font-black text-red-900 dark:text-red-200 mt-1">
+                  {dataReporteEntregas.totales?.sinEntregar ?? dataReporteEntregas.sinEntregarCount ?? 0}{' '}
+                  <span className="text-sm font-semibold">
+                    ({dataReporteEntregas.totales?.pctSinEntregar ?? dataReporteEntregas.porcentajeAusentismo ?? 0}%)
+                  </span>
                 </div>
               </div>
             </div>
+          )}
 
-            {/* CAJA DE ESCANEO ACTIVA (AUTOFOCUS) */}
-            <form 
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (scanInput.trim()) {
-                  handleScanCheck(scanInput.trim());
-                }
-              }}
-              className="mb-8"
+          {/* SUBTABS ENTREGADOS vs SIN ENTREGAR */}
+          <div className="flex border-b border-gray-200 dark:border-gray-800 gap-4">
+            <button
+              onClick={() => setSubTabReporte("Entregados")}
+              className={`pb-2 text-xs font-bold border-b-2 transition-all ${
+                subTabReporte === "Entregados" ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400' : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
             >
-              <div className="relative flex items-center">
-                <Scan className="w-6 h-6 absolute left-4 text-blue-500 animate-pulse" />
-                <input
-                  ref={scanInputRef}
-                  type="text"
-                  value={scanInput}
-                  onChange={(e) => setScanInput(e.target.value)}
-                  placeholder="📲 LECTOR ACTIVO: Escanee el DNI o QR aquí (o ingrese DNI y presione Enter)..."
-                  className="w-full pl-12 pr-28 py-4 bg-blue-50/50 dark:bg-gray-800/60 border-2 border-blue-400 dark:border-blue-600 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40 rounded-2xl font-bold text-gray-900 dark:text-gray-100 text-base placeholder-gray-400 transition-all"
-                  autoFocus
-                />
-                <button
-                  type="submit"
-                  disabled={cargandoScan || !scanInput.trim()}
-                  className="absolute right-3 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl transition-all shadow-sm flex items-center"
-                >
-                  {cargandoScan ? <RefreshCw className="w-4 h-4 animate-spin mr-1" /> : <Search className="w-4 h-4 mr-1" />}
-                  Buscar
-                </button>
-              </div>
-            </form>
+              🟢 Raciones Entregadas ({dataReporteEntregas?.listadoEntregados?.length || 0})
+            </button>
+            <button
+              onClick={() => setSubTabReporte("SinEntregar")}
+              className={`pb-2 text-xs font-bold border-b-2 transition-all ${
+                subTabReporte === "SinEntregar" ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-900'
+              }`}
+            >
+              🔴 Raciones Sin Entregar / No Reclamadas ({dataReporteEntregas?.listadoSinEntregar?.length || 0})
+            </button>
+          </div>
 
-            {/* RESULTADO DEL ESCANEO */}
-            {cargandoScan && (
-              <div className="p-12 text-center flex flex-col items-center">
-                <RefreshCw className="w-10 h-10 text-blue-500 animate-spin mb-3" />
-                <p className="text-sm font-bold text-gray-600 dark:text-gray-400">Verificando raciones registradas...</p>
-              </div>
-            )}
-
-            {!cargandoScan && !scanResult && (
-              <div className="p-12 text-center flex flex-col items-center bg-gray-50/50 dark:bg-gray-800/20 rounded-2xl border border-dashed border-gray-300 dark:border-gray-700">
-                <QrCode className="w-16 h-16 text-gray-300 dark:text-gray-600 mb-4" />
-                <h3 className="text-base font-bold text-gray-700 dark:text-gray-300">Estación Lista para Escanear</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md">
-                  Aproxime el código de barras PDF417 del DNI físico del agente o el código QR del voucher al lector de cocina.
-                </p>
-              </div>
-            )}
-
-            {!cargandoScan && scanResult && (
-              <div className="space-y-6">
-                {scanResult.pedidos.length === 0 ? (
-                  <div className="p-6 bg-red-50 dark:bg-red-950/30 border-2 border-red-300 dark:border-red-800 rounded-2xl text-center">
-                    <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-2" />
-                    <h3 className="text-lg font-extrabold text-red-700 dark:text-red-400">
-                      ❌ SIN RACIÓN SOLICITADA PARA HOY
-                    </h3>
-                    <p className="text-sm text-red-600 dark:text-red-300 mt-1 font-medium">
-                      No se encontró ninguna solicitud autorizada para {scanResult.dniScanned ? `el DNI ${scanResult.dniScanned}` : 'el código escaneado'} en la fecha {scanFecha.split('-').reverse().join('/')}.
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    {/* ENCABEZADO DE SERVICIO / AGENTE */}
-                    <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white p-6 rounded-2xl shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                      <div>
-                        <div className="flex items-center space-x-2">
-                          <span className="bg-white/20 text-white text-xs font-extrabold px-3 py-1 rounded-full uppercase tracking-wider">
-                            {scanResult.mode === 'servicio' ? '🏢 Servicio Consolidado' : '👤 Entrega Individual'}
+          {/* TABLA DE RESULTADOS DETALLADOS */}
+          {cargandoReporteEntregas ? (
+            <div className="py-12 text-center text-gray-400">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2 text-blue-500" />
+              Generando reporte...
+            </div>
+          ) : !dataReporteEntregas ? null : (
+            <div className="overflow-x-auto border border-gray-200 dark:border-gray-800 rounded-xl">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800/50 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Fecha</th>
+                    <th className="px-4 py-3 text-left">DNI</th>
+                    <th className="px-4 py-3 text-left">Agente</th>
+                    <th className="px-4 py-3 text-left">Servicio</th>
+                    <th className="px-4 py-3 text-left">Comida / Dieta</th>
+                    <th className="px-4 py-3 text-left">{subTabReporte === "Entregados" ? "Hora Entrega / Entregado Por" : "Estado / Ausentismo"}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-xs">
+                  {(subTabReporte === "Entregados" ? dataReporteEntregas.listadoEntregados : dataReporteEntregas.listadoSinEntregar).map((item: any) => (
+                    <tr key={item.Id} className="hover:bg-gray-50 dark:hover:bg-gray-800/40">
+                      <td className="px-4 py-3 font-mono font-bold text-gray-900 dark:text-gray-100">{item.FechaPedido.split('-').reverse().join('/')}</td>
+                      <td className="px-4 py-3 font-mono text-gray-500">{item.AgenteDNI}</td>
+                      <td className="px-4 py-3 font-bold text-gray-900 dark:text-gray-100">{item.AgenteNombre}</td>
+                      <td className="px-4 py-3 font-semibold text-gray-700 dark:text-gray-300">{item.ServicioNombre}</td>
+                      <td className="px-4 py-3">
+                        <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-bold px-2 py-0.5 rounded-md mr-1">
+                          {item.TipoComida}
+                        </span>
+                        <span className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold px-2 py-0.5 rounded-md">
+                          {item.TipoDieta}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        {item.FechaEntregado ? (
+                          <div className="text-emerald-700 dark:text-emerald-400 font-bold">
+                            Entregado {new Date(item.FechaEntregado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })} hs
+                            <div className="text-[10px] text-gray-400 font-normal">Por: {item.EntregadoPor}</div>
+                          </div>
+                        ) : (
+                          <span className="bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 font-bold px-2 py-0.5 rounded-md">
+                            Sin Entregar / No Reclamada
                           </span>
-                          <span className="bg-amber-400 text-gray-900 text-xs font-black px-3 py-1 rounded-full uppercase">
-                            {scanTipoComida}
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SOLICITUDES DE PLANTEL (VISTA GERENTE DE APROBACIÓN 1-CLIC) */}
+      {activeTab === "SolicitudesPlantel" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex justify-between items-center">
+            <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+              <Users className="w-5 h-5 mr-2 text-indigo-500" /> Solicitudes de Modificación de Plantel
+            </h2>
+            <button
+              onClick={fetchSolicitudesPlantel}
+              className="bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors flex items-center cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Actualizar
+            </button>
+          </div>
+
+          <div className="p-6 space-y-6">
+            {solicitudesPlantel.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                <Users className="w-12 h-12 mx-auto mb-3 opacity-40 text-indigo-400" />
+                <p className="font-semibold text-base">No hay solicitudes de modificación de plantel pendientes.</p>
+                <p className="text-xs text-gray-400 mt-1">Las solicitudes enviadas por los Jefes de Servicio figurarán en esta sección para su aprobación en 1-clic.</p>
+              </div>
+            ) : (
+              solicitudesPlantel.map((s: any) => {
+                const isPendiente = s.Estado === 'Pendiente';
+                let items: any[] = [];
+                try { items = JSON.parse(s.DatosJson || '[]'); } catch (e) { items = []; }
+                const fechaStr = new Date(s.FechaSolicitud).toLocaleString('es-AR');
+
+                return (
+                  <div key={s.Id} className={`border rounded-2xl p-5 transition-all ${isPendiente ? 'border-indigo-200 dark:border-indigo-800/80 bg-indigo-50/30 dark:bg-indigo-900/10 shadow-sm' : 'border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900'}`}>
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-4 border-b border-gray-200 dark:border-gray-800">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-black text-base text-gray-900 dark:text-gray-100">{s.Servicio?.Nombre || 'Servicio'}</span>
+                          <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border ${s.Estado === 'Aprobado' ? 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/30 dark:text-green-300' : s.Estado === 'Rechazado' ? 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/30 dark:text-red-300' : 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
+                            {s.Estado}
                           </span>
                         </div>
-                        <h3 className="text-2xl font-black mt-2">
-                          {scanResult.servicio ? scanResult.servicio.Nombre : (scanResult.agenteScanned?.NombreCompleto || scanResult.pedidos[0]?.ServicioNombre || 'Servicio')}
-                        </h3>
-                        <p className="text-xs text-blue-100 mt-0.5">
-                          Total Raciones Registradas: <strong className="text-white text-sm">{scanResult.pedidos.length}</strong> | Entregadas: <strong className="text-green-300 text-sm">{scanResult.pedidos.filter((p: any) => p.Entregado).length}</strong> | Pendientes: <strong className="text-yellow-300 text-sm">{scanResult.pedidos.filter((p: any) => !p.Entregado).length}</strong>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          Solicitado por: <strong className="text-gray-700 dark:text-gray-300">{s.SolicitadoPor?.NombreCompleto || s.SolicitadoPor?.NombreUsuario || 'Jefe de Servicio'}</strong> • {fechaStr}
                         </p>
                       </div>
 
-                      {/* ACCIONES RÁPIDAS DE ENTREGA */}
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          onClick={() => handleConfirmDelivery(scanResult.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id))}
-                          disabled={scanResult.pedidos.filter((p: any) => !p.Entregado).length === 0}
-                          className="px-4 py-2.5 bg-green-500 hover:bg-green-600 disabled:opacity-40 text-white text-xs font-black rounded-xl transition-all shadow-sm flex items-center cursor-pointer"
-                        >
-                          <CheckCircle className="w-4 h-4 mr-1.5" />
-                          Entregar TODAS las Pendientes ({scanResult.pedidos.filter((p: any) => !p.Entregado).length})
-                        </button>
-
-                        <button
-                          onClick={() => handleConfirmDelivery(selectedPedidoIds)}
-                          disabled={selectedPedidoIds.length === 0}
-                          className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white text-xs font-black rounded-xl transition-all shadow-sm flex items-center cursor-pointer"
-                        >
-                          <Utensils className="w-4 h-4 mr-1.5" />
-                          Entregar Seleccionadas ({selectedPedidoIds.length})
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* GRILLA DE RACIONES DEL SERVICIO / AGENTE */}
-                    <div className="bg-white dark:bg-gray-900 rounded-2xl border border-gray-200 dark:border-gray-800 overflow-hidden shadow-sm">
-                      <div className="px-6 py-4 bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center">
-                        <h4 className="text-sm font-extrabold text-gray-900 dark:text-gray-100 flex items-center">
-                          <Users className="w-4 h-4 mr-2 text-indigo-500" />
-                          Integrantes y Raciones del Servicio
-                        </h4>
-
-                        <div className="flex items-center space-x-2 text-xs">
+                      {isPendiente && (
+                        <div className="flex gap-2.5">
                           <button
-                            onClick={() => {
-                              const pendIds = scanResult.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id);
-                              setSelectedPedidoIds(pendIds);
-                            }}
-                            className="text-blue-600 dark:text-blue-400 font-bold hover:underline"
+                            onClick={() => handleRechazarSolicitudPlantel(s.Id)}
+                            className="px-3.5 py-2 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 text-xs font-bold rounded-lg transition-colors flex items-center cursor-pointer"
                           >
-                            Seleccionar Pendientes
+                            <X className="w-4 h-4 mr-1.5" /> Rechazar
                           </button>
-                          <span className="text-gray-300">|</span>
                           <button
-                            onClick={() => setSelectedPedidoIds([])}
-                            className="text-gray-500 font-bold hover:underline"
+                            onClick={() => handleAprobarSolicitudPlantel(s.Id)}
+                            className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 text-white text-xs font-bold rounded-lg shadow-md transition-all transform hover:scale-[1.02] active:scale-95 flex items-center cursor-pointer"
                           >
-                            Deseleccionar
+                            <CheckCircle className="w-4 h-4 mr-1.5" /> ✅ Aprobar e Importar Plantel
                           </button>
                         </div>
-                      </div>
+                      )}
+                    </div>
 
-                      <div className="divide-y divide-gray-200 dark:divide-gray-800">
-                        {scanResult.pedidos.map((p: any) => {
-                          const isSelected = selectedPedidoIds.includes(p.Id);
-                          const isEntregado = p.Entregado;
-                          const isDietaEspecial = (p.TipoDieta || '').toLowerCase() !== 'normal';
+                    {/* LISTA DE NOVEDADES EN LA SOLICITUD */}
+                    <div className="mt-4">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 mb-2.5 flex items-center">
+                        <AlertTriangle className="w-3.5 h-3.5 mr-1 text-indigo-500" />
+                        Novedades a Autorizar ({items.length}):
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto pr-1">
+                        {items.map((it: any, idx: number) => {
+                          const cleanDni = it.DNI || it.dni;
+                          const nombre = it.NombreCompleto || it.nombre;
+                          const isNuevo = Boolean(it.isNuevo);
+                          const racionAnt = it.racionAnterior !== undefined ? it.racionAnterior : '-';
+                          const racionNueva = it.racionNueva !== undefined ? it.racionNueva : (it.ConVianda === false || it.Horario === 'Sin Ración' ? 0 : (it.Horario?.includes('24') || it.Horario?.includes('y Cena') ? 2 : 1));
+
+                          let noveltyBadge = null;
+                          if (isNuevo) {
+                            noveltyBadge = (
+                              <span className="text-[10px] font-black uppercase text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/80 px-2.5 py-1 rounded-md border border-emerald-300 dark:border-emerald-800 whitespace-nowrap inline-flex items-center justify-center leading-none h-[24px]">
+                                🌟 Agente Nuevo ({racionNueva === 2 ? '2 Raciones' : racionNueva === 1 ? '1 Ración' : 'Sin Ración'})
+                              </span>
+                            );
+                          } else if (racionNueva === 0) {
+                            noveltyBadge = (
+                              <span className="text-[10px] font-black uppercase text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-950/80 px-2.5 py-1 rounded-md border border-red-300 dark:border-red-800 whitespace-nowrap inline-flex items-center justify-center leading-none h-[24px]">
+                                🚫 Inhabilitar ({racionAnt === 2 ? '2 Raciones' : '1 Ración'} ➔ 0)
+                              </span>
+                            );
+                          } else if (racionAnt < racionNueva) {
+                            noveltyBadge = (
+                              <span className="text-[10px] font-black uppercase text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-950/80 px-2.5 py-1 rounded-md border border-indigo-300 dark:border-indigo-800 whitespace-nowrap inline-flex items-center justify-center leading-none h-[24px]">
+                                ⬆️ Aumento ({racionAnt === 0 ? 'Sin Ración' : '1 Ración'} ➔ {racionNueva === 2 ? '2 Raciones' : '1 Ración'})
+                              </span>
+                            );
+                          } else {
+                            noveltyBadge = (
+                              <span className="text-[10px] font-black uppercase text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/80 px-2.5 py-1 rounded-md border border-amber-300 dark:border-amber-800 whitespace-nowrap inline-flex items-center justify-center leading-none h-[24px]">
+                                ⬇️ Disminución ({racionAnt === 2 ? '2 Raciones' : '1 Ración'} ➔ {racionNueva === 0 ? 'Sin Ración' : '1 Ración'})
+                              </span>
+                            );
+                          }
 
                           return (
-                            <div 
-                              key={p.Id} 
-                              className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors ${
-                                isEntregado 
-                                  ? 'bg-green-50/50 dark:bg-green-950/20' 
-                                  : isSelected 
-                                  ? 'bg-blue-50/60 dark:bg-blue-950/30' 
-                                  : 'hover:bg-gray-50 dark:hover:bg-gray-800/40'
-                              }`}
-                            >
-                              <div className="flex items-center space-x-4">
-                                {!isEntregado && (
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSelectedPedidoIds(prev => [...prev, p.Id]);
-                                      } else {
-                                        setSelectedPedidoIds(prev => prev.filter(id => id !== p.Id));
-                                      }
-                                    }}
-                                    className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer"
-                                  />
-                                )}
+                            <div key={idx} className="p-3 rounded-xl border border-indigo-100 dark:border-gray-800 bg-white dark:bg-gray-800 text-xs flex flex-col gap-2 shadow-xs">
+                              {/* FILA 1: NOMBRE COMPLETO DEL AGENTE */}
+                              <p className="font-bold text-gray-900 dark:text-gray-100 truncate">{nombre}</p>
 
-                                <div>
-                                  <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                                    <h4 className="text-base font-bold text-gray-900 dark:text-gray-100">
-                                      {p.AgenteNombre}
-                                    </h4>
-                                    <span className="text-xs text-gray-500 font-semibold">
-                                      DNI: {p.AgenteDNI}
-                                    </span>
-                                    {isDietaEspecial && (
-                                      <span className="bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 text-xs font-black px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center">
-                                        🥗 {p.TipoDieta}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                    Servicio: <strong>{p.ServicioNombre}</strong> • Dieta: <strong className="text-gray-700 dark:text-gray-300">{p.TipoDieta}</strong>
-                                  </p>
+                              {/* FILA 2: DNI Y BADGE ALINEADO AL DNI EN 1 SOLO RENGLÓN Y CON LA MISMA ALTURA */}
+                              <div className="flex items-center justify-between gap-2 pt-1 border-t border-gray-100 dark:border-gray-700/60">
+                                <span className="text-gray-500 dark:text-gray-400 font-mono text-[11px]">DNI: {cleanDni}</span>
+                                <div className="shrink-0 ml-auto">
+                                  {noveltyBadge}
                                 </div>
-                              </div>
-
-                              {/* ESTADO & BOTÓN INDIVIDUAL */}
-                              <div className="flex items-center space-x-3">
-                                {isEntregado ? (
-                                  <div className="text-right">
-                                    <span className="inline-flex items-center text-xs font-black bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300 px-3 py-1.5 rounded-xl border border-green-300 dark:border-green-800">
-                                      <CheckCircle className="w-3.5 h-3.5 mr-1 text-green-600" />
-                                      ENTREGADO {p.FechaEntregado ? new Date(p.FechaEntregado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' }) + ' hs' : ''}
-                                    </span>
-                                    {p.EntregadoPor && (
-                                      <div className="text-[10px] text-gray-400 mt-0.5">Por: {p.EntregadoPor}</div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={() => handleConfirmDelivery([p.Id])}
-                                    className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center cursor-pointer"
-                                  >
-                                    <Check className="w-3.5 h-3.5 mr-1" />
-                                    Entregar Ración
-                                  </button>
-                                )}
                               </div>
                             </div>
                           );
                         })}
                       </div>
                     </div>
-                  </>
-                )}
-              </div>
+                  </div>
+                );
+              })
             )}
           </div>
-
-          {/* HISTORIAL DE ENTREGAS EN LA MISMA VISTA (ÚLTIMO PRIMERO) */}
-          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                  <History className="w-5 h-5 mr-2 text-indigo-500" />
-                  Historial de Entregas Realizadas
-                </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Las entregas registradas en este turno figuran en tiempo real. <strong>El último escaneo exitoso se ubica siempre al principio.</strong>
-                </p>
-              </div>
-
-              <div className="flex items-center space-x-3 w-full sm:w-auto">
-                <div className="relative w-full sm:w-64">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
-                  <input 
-                    type="text"
-                    value={filtroHistorialEntregas}
-                    onChange={e => setFiltroHistorialEntregas(e.target.value)}
-                    placeholder="Buscar agente, DNI o servicio..."
-                    className="w-full pl-9 pr-3 py-1.5 text-xs font-semibold rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-                <button
-                  onClick={fetchDeliverySummary}
-                  className="p-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl text-gray-600 dark:text-gray-300"
-                  title="Actualizar historial"
-                >
-                  <RefreshCw className={`w-4 h-4 ${cargandoSummary ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6">
-              {!summaryData?.deliveriesHistory || summaryData.deliveriesHistory.length === 0 ? (
-                <div className="p-12 text-center text-gray-400 dark:text-gray-500 italic bg-gray-50/50 dark:bg-gray-800/20 rounded-2xl border border-dashed border-gray-200 dark:border-gray-800">
-                  <History className="w-10 h-10 mx-auto mb-2 opacity-50" />
-                  <p className="font-bold text-sm">Aún no hay entregas registradas para la fecha y turno seleccionados.</p>
-                  <p className="text-xs mt-1">Escanee un DNI en el cuadro superior para registrar la primera ración.</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto border border-gray-200 dark:border-gray-800 rounded-xl">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
-                    <thead className="bg-gray-50 dark:bg-gray-800/50 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Hora Entrega</th>
-                        <th className="px-4 py-3 text-left">Agente / DNI</th>
-                        <th className="px-4 py-3 text-left">Servicio</th>
-                        <th className="px-4 py-3 text-left">Comida / Dieta</th>
-                        <th className="px-4 py-3 text-left">Registrado Por</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-xs">
-                      {summaryData.deliveriesHistory
-                        .filter((item: any) => {
-                          if (!filtroHistorialEntregas.trim()) return true;
-                          const query = filtroHistorialEntregas.toLowerCase();
-                          return (
-                            (item.AgenteNombre || '').toLowerCase().includes(query) ||
-                            (item.AgenteDNI || '').toLowerCase().includes(query) ||
-                            (item.ServicioNombre || '').toLowerCase().includes(query)
-                          );
-                        })
-                        .map((item: any, idx: number) => {
-                          const isLatest = idx === 0;
-                          return (
-                            <tr 
-                              key={item.Id} 
-                              className={`transition-colors ${
-                                isLatest 
-                                  ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-l-4 border-l-emerald-500 font-semibold' 
-                                  : 'hover:bg-gray-50 dark:hover:bg-gray-800/40'
-                              }`}
-                            >
-                              <td className="px-4 py-3 whitespace-nowrap font-mono font-bold text-gray-900 dark:text-gray-100">
-                                <div className="flex items-center space-x-1.5">
-                                  {isLatest && (
-                                    <span className="bg-emerald-500 text-white text-[9px] font-black px-2 py-0.5 rounded-full uppercase animate-pulse">
-                                      Último
-                                    </span>
-                                  )}
-                                  <span>
-                                    {item.FechaEntregado 
-                                      ? new Date(item.FechaEntregado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' }) + ' hs'
-                                      : '-'}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <div className="font-bold text-gray-900 dark:text-gray-100">{item.AgenteNombre}</div>
-                                <div className="text-[10px] text-gray-500 font-mono">DNI: {item.AgenteDNI}</div>
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-gray-700 dark:text-gray-300 font-medium">
-                                {item.ServicioNombre}
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap">
-                                <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 font-bold px-2 py-0.5 rounded-md mr-1.5">
-                                  {item.TipoComida}
-                                </span>
-                                <span className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold px-2 py-0.5 rounded-md">
-                                  {item.TipoDieta}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3 whitespace-nowrap text-gray-500 dark:text-gray-400">
-                                {item.EntregadoPor}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
         </div>
       )}
 
@@ -5951,6 +6793,85 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                     </div>
                   )}
                 </div>
+              </div>
+
+              {/* SECCIÓN GESTIÓN DE PERSONAL DE NUTRICIÓN */}
+              <div className="mt-8 border-t border-gray-200 dark:border-gray-700 pt-6">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                      <UserPlus className="w-5 h-5 mr-2 text-emerald-500" /> Personal de Nutrición (Encargados de Entrega)
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Cree y gestione los usuarios autorizados para escanear y validar la entrega de raciones.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={crearUsuarioNutricionModal}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm flex items-center cursor-pointer"
+                  >
+                    <PlusCircle className="w-4 h-4 mr-1.5" />
+                    Nuevo Usuario de Nutrición
+                  </button>
+                </div>
+
+                {cargandoNutricion ? (
+                  <div className="py-8 text-center text-gray-400 text-xs">
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2 text-emerald-500" />
+                    Cargando usuarios de Nutrición...
+                  </div>
+                ) : usuariosNutricion.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-gray-400 italic bg-gray-50 dark:bg-gray-800/30 rounded-xl border border-dashed border-gray-200 dark:border-gray-800">
+                    No hay usuarios de Nutrición registrados para este hospital. Haga clic en el botón superior para crear el primero.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-gray-200 dark:border-gray-800 rounded-xl bg-white dark:bg-gray-800/40">
+                    <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                      <thead className="bg-gray-50 dark:bg-gray-800/60 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase">
+                        <tr>
+                          <th className="px-4 py-2.5 text-left">Usuario (Login)</th>
+                          <th className="px-4 py-3 text-left">Apellido y Nombre</th>
+                          <th className="px-4 py-3 text-left">Estado</th>
+                          <th className="px-4 py-3 text-right">Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-xs">
+                        {usuariosNutricion.map((u: any) => (
+                          <tr key={u.Id} className="hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                            <td className="px-4 py-2.5 font-mono font-bold text-gray-900 dark:text-gray-100">{u.NombreUsuario}</td>
+                            <td className="px-4 py-2.5 font-semibold text-gray-700 dark:text-gray-300">{u.NombreCompleto || '-'}</td>
+                            <td className="px-4 py-2.5">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                u.Activo ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300'
+                              }`}>
+                                {u.Activo ? 'Activo' : 'Inactivo'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2.5 text-right space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleStatusNutricion(u.Id, u.NombreUsuario)}
+                                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg ${
+                                  u.Activo ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 hover:bg-amber-200' : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 hover:bg-emerald-200'
+                                }`}
+                              >
+                                {u.Activo ? 'Inhabilitar' : 'Habilitar'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => resetPasswordNutricionModal(u.Id, u.NombreUsuario)}
+                                className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 text-[11px] font-bold rounded-lg"
+                              >
+                                Resetear Clave (123456)
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
 
               <div className="mt-8 flex justify-end">
@@ -7492,6 +8413,1505 @@ function RRHHPanel({ token }: { token: string }) {
         </div>
       )}
 
+    </div>
+  );
+}
+
+function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }: { token: string | null; hospitalName: string | null; username: string | null; dietasHabilitadasProp: string[] }) {
+  const [activeTab, setActiveTab] = useState<"Entregas" | "CrearEmergencia" | "Reportes">("Entregas");
+  const { theme } = useTheme();
+
+  // Estados Módulo de Entrega
+  const [scanFecha, setScanFecha] = useState(getTodayStr());
+  const [scanTipoComida, setScanTipoComida] = useState<"Almuerzo" | "Cena">(new Date().getHours() < 15 ? "Almuerzo" : "Cena");
+  const [scanInput, setScanInput] = useState("");
+  const [scanResult, setScanResult] = useState<any | null>(null);
+  const [selectedPedidoIds, setSelectedPedidoIds] = useState<number[]>([]);
+  const [cargandoScan, setCargandoScan] = useState(false);
+  const [summaryData, setSummaryData] = useState<any>(null);
+  const [historyFilter, setHistoryFilter] = useState("");
+  const [mostrarModalConsolidado, setMostrarModalConsolidado] = useState(false);
+  const [selectedConsolidadoIds, setSelectedConsolidadoIds] = useState<number[]>([]);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+
+  const playWarningBeep = () => {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const times = [0, 0.15, 0.3];
+      times.forEach(t => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(880, ctx.currentTime + t);
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + t + 0.1);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + t);
+        osc.stop(ctx.currentTime + t + 0.1);
+      });
+    } catch (e) {
+      console.error("Audio warning beep error:", e);
+    }
+  };
+
+  const playSuccessBeep = () => {
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.2);
+    } catch (e) {
+      // Autoplay fallback
+    }
+  };
+
+  // Estados Módulo Pedidos de Emergencia Autoautorizados (Finde)
+  const [emergDni, setEmergDni] = useState("");
+  const [emergNombre, setEmergNombre] = useState("");
+  const [emergHorario, setEmergHorario] = useState("Almuerzo o Cena");
+  const [emergConVianda, setEmergConVianda] = useState(true);
+  const [emergInicio, setEmergInicio] = useState(getTodayStr());
+  const [emergFin, setEmergFin] = useState(getTodayStr());
+  const [emergReemplazaDni, setEmergReemplazaDni] = useState("");
+  const [emergJustificacion, setEmergJustificacion] = useState("");
+  const [emergDieta, setEmergDieta] = useState(dietasHabilitadasProp?.[0] || DIETAS_DISPONIBLES[0] || "Normal");
+  const [cargandoEmerg, setCargandoEmerg] = useState(false);
+
+  // Estados Módulo de Reportes (Idem Jefe sin vouchers)
+  const [repDesde, setRepDesde] = useState(getTodayStr());
+  const [repHasta, setRepHasta] = useState(getTodayStr());
+  const [repFiltroEmpleado, setRepFiltroEmpleado] = useState("");
+  const [reportes, setReportes] = useState<any[]>([]);
+  const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc'|'desc'}>({key: 'fecha', direction: 'desc'});
+
+  const handleSort = (key: string) => {
+    let direction: 'asc'|'desc' = 'asc';
+    if (sortConfig.key === key && sortConfig.direction === 'asc') direction = 'desc';
+    setSortConfig({ key, direction });
+  };
+
+  const sortedReportes = [...reportes].sort((a, b) => {
+    let valA = '';
+    let valB = '';
+    if (sortConfig.key === 'fecha') { valA = a.FechaPedido; valB = b.FechaPedido; }
+    if (sortConfig.key === 'tipo') { valA = a.TipoComida; valB = b.TipoComida; }
+    if (sortConfig.key === 'nombre') {
+      valA = a.Personal ? `${a.Personal.NombreCompleto}` : `${a.EmergenciaNombreCompleto}`;
+      valB = b.Personal ? `${b.Personal.NombreCompleto}` : `${b.EmergenciaNombreCompleto}`;
+    }
+    if (sortConfig.key === 'dni') {
+      valA = a.Personal ? a.Personal.DNI : a.EmergenciaDNI;
+      valB = b.Personal ? b.Personal.DNI : b.EmergenciaDNI;
+    }
+    if (sortConfig.key === 'estado') { valA = a.Estado; valB = b.Estado; }
+
+    if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+    if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+    return 0;
+  });
+
+  const generarReporte = async () => {
+    if (!token) return;
+    const today = getTodayStr();
+    try {
+      const res = await fetch(`${API_URL}/api/reports?fechaInicio=${today}&fechaFin=${today}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setReportes(data);
+        } else {
+          setReportes([]);
+        }
+      } else {
+        setReportes([]);
+      }
+    } catch (e) {
+      console.error("Error al generar reporte:", e);
+      setReportes([]);
+    }
+  };
+
+  const getServicioNombre = (r: any) => {
+    if (r.SolicitadoPor?.Servicio?.Nombre) return r.SolicitadoPor.Servicio.Nombre;
+    if (r.Personal?.Servicio?.Nombre) return r.Personal.Servicio.Nombre;
+    if (r.PersonalReemplazado?.Servicio?.Nombre) return r.PersonalReemplazado.Servicio.Nombre;
+    return 'Servicio No Especificado';
+  };
+
+  const exportExcel = () => {
+    if (reportes.length === 0) return;
+    const dataToExport = reportes.map(r => ({
+      Fecha: r.FechaPedido.split('T')[0],
+      DNI: r.Personal ? r.Personal.DNI : r.EmergenciaDNI,
+      Nombre: r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`,
+      Servicio: getServicioNombre(r),
+      Comida: r.TipoComida,
+      Dieta: r.TipoDieta,
+      Estado: r.Estado
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Reportes");
+    XLSX.writeFile(workbook, `Reportes_Nutricion_${repDesde}_${repHasta}.xlsx`);
+  };
+
+  const exportPDF = () => {
+    if (reportes.length === 0) return Swal.fire({ title: "Aviso", text: "No hay reportes para exportar.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    const filtered = reportes.filter(r => {
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+    if (filtered.length === 0) return Swal.fire({ title: "Aviso", text: "No hay reportes para exportar con el filtro actual.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+
+    const doc = new jsPDF();
+    doc.setFontSize(14);
+    doc.text(`Reportes de Raciones SisAR (${repDesde.split('-').reverse().join('/')} al ${repHasta.split('-').reverse().join('/')})`, 14, 15);
+    const tableData = filtered.map(r => [
+      r.FechaPedido.split('T')[0].split('-').reverse().join('/'),
+      r.Personal ? r.Personal.DNI : (r.EmergenciaDNI || "-"),
+      r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`,
+      getServicioNombre(r),
+      r.TipoComida,
+      r.TipoDieta,
+      r.Estado
+    ]);
+
+    autoTable(doc, {
+      head: [['Fecha', 'DNI', 'Nombre', 'Servicio', 'Comida', 'Dieta', 'Estado']],
+      body: tableData,
+      startY: 22,
+      styles: { fontSize: 8 },
+      headStyles: { fillColor: [79, 70, 229] }
+    });
+
+    doc.save(`Reporte_Nutricion_${repDesde}_al_${repHasta}.pdf`);
+  };
+
+  const handleImprimirCocina = (turno: 'Almuerzo' | 'Cena') => {
+    if (reportes.length === 0) {
+      Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const filtered = reportes.filter(r => {
+      if (r.Estado !== 'Aprobado') return false;
+      if (r.TipoComida?.toLowerCase() !== turno.toLowerCase()) return false;
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+
+    if (filtered.length === 0) {
+      Swal.fire({ title: "Aviso", text: `No hay datos de ${turno} para imprimir según el filtro actual.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const resComida: Record<string, number> = {};
+    let totalComida = 0;
+
+    filtered.forEach(r => {
+      const dieta = r.TipoDieta || 'Normal';
+      resComida[dieta] = (resComida[dieta] || 0) + 1;
+      totalComida++;
+    });
+
+    const now = new Date();
+    const fechaImpresion = now.toLocaleDateString('es-AR');
+    const horaImpresion = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\s?[a-zA-Z\.]+/g, '').trim();
+    const usuarioImpresion = username || 'Personal Nutrición';
+    const efNombre = hospitalName || 'Efector';
+    const fDesdeStr = repDesde.split('-').reverse().join('/');
+    const fHastaStr = repHasta.split('-').reverse().join('/');
+
+    const renderTablaDietas = (counts: Record<string, number>, total: number) => {
+      if (total === 0) return '<p style="color:#666; font-style:italic; margin-bottom: 20px;">Sin pedidos registrados para este turno.</p>';
+      let rows = '';
+      Object.entries(counts).sort((a,b) => b[1] - a[1]).forEach(([dieta, cant]) => {
+        rows += `
+          <tr>
+            <td style="padding: 8px 12px; border: 1px solid #ccc; font-weight: bold; font-size: 14px;">${dieta}</td>
+            <td style="padding: 8px 12px; border: 1px solid #ccc; text-align: center; font-size: 16px; font-weight: bold; color: #1e40af;">${cant}</td>
+          </tr>
+        `;
+      });
+      return `
+        <table style="width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 20px;">
+          <thead>
+            <tr style="background-color: #f3f4f6;">
+              <th style="padding: 8px 12px; border: 1px solid #ccc; text-align: left; font-size: 13px; color: #374151;">Tipo de Dieta</th>
+              <th style="padding: 8px 12px; border: 1px solid #ccc; text-align: center; font-size: 13px; color: #374151; width: 180px;">Cantidad a Cocinar</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+            <tr style="background-color: #e5e7eb; font-weight: bold;">
+              <td style="padding: 8px 12px; border: 1px solid #ccc; text-align: right; font-size: 14px;">TOTAL RACIONES (${turno.toUpperCase()}):</td>
+              <td style="padding: 8px 12px; border: 1px solid #ccc; text-align: center; font-size: 16px; color: #000;">${total}</td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+    };
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Permita las ventanas emergentes para imprimir.");
+      return;
+    }
+
+    const iconoTurno = turno === 'Almuerzo' ? '☀️' : '🌙';
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Reporte de Producción - Cocina (${turno})</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 25px; color: #111; }
+            .header { border-bottom: 3px solid #1e3a8a; padding-bottom: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .title { font-size: 22px; font-weight: bold; color: #1e3a8a; letter-spacing: 0.5px; }
+            .subtitle { font-size: 14px; color: #374151; margin-top: 5px; }
+            .meta { text-align: right; font-size: 12px; color: #4b5563; }
+            .section-title { font-size: 16px; font-weight: bold; color: #1f2937; margin-top: 20px; border-left: 4px solid #2563eb; padding-left: 10px; }
+            .footer { margin-top: 35px; border-top: 1px dashed #9ca3af; padding-top: 8px; font-size: 10px; color: #6b7280; text-align: right; }
+            @media print {
+              @page { size: A4 portrait; margin: 1.5cm; }
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body onload="setTimeout(() => { window.print(); window.close(); }, 600)">
+          <div class="header">
+            <div>
+              <div class="title">REPORTE DE PRODUCCIÓN - COCINA (${turno.toUpperCase()})</div>
+              <div class="subtitle">Efector: <strong>${efNombre}</strong></div>
+            </div>
+            <div class="meta">
+              <div>Período: <strong>${fDesdeStr} ${fDesdeStr !== fHastaStr ? 'al ' + fHastaStr : ''}</strong></div>
+              <div>Fecha de Emisión: ${fechaImpresion}</div>
+            </div>
+          </div>
+
+          <div class="section-title">${iconoTurno} ${turno.toUpperCase()}</div>
+          ${renderTablaDietas(resComida, totalComida)}
+
+          <div style="margin-top: 25px; padding: 14px; background: #eff6ff; border: 1px solid #93c5fd; border-radius: 8px; font-size: 16px; font-weight: bold; text-align: right; color: #1e3a8a;">
+            TOTAL RACIONES ${turno.toUpperCase()} A COCINAR: <span style="color: #1d4ed8; font-size: 20px; margin-left: 8px;">${totalComida}</span>
+          </div>
+
+          <div class="footer">
+            Impreso el ${fechaImpresion} a las ${horaImpresion} | Usuario: ${usuarioImpresion}
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const handleImprimirEntrega = (turno: 'Almuerzo' | 'Cena') => {
+    if (reportes.length === 0) {
+      Swal.fire({ title: "Aviso", text: "No hay reportes generados para imprimir.", icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const filtered = reportes.filter(r => {
+      if (r.Estado !== 'Aprobado') return false;
+      if (r.TipoComida?.toLowerCase() !== turno.toLowerCase()) return false;
+      if (!repFiltroEmpleado) return true;
+      const term = repFiltroEmpleado.toLowerCase();
+      const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
+      const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+      return name.includes(term) || dni.includes(term);
+    });
+
+    if (filtered.length === 0) {
+      Swal.fire({ title: "Aviso", text: `No hay datos de ${turno} para imprimir según el filtro actual.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    const now = new Date();
+    const fechaImpresion = now.toLocaleDateString('es-AR');
+    const horaImpresion = now.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }).replace(/\s?[a-zA-Z\.]+/g, '').trim();
+    const usuarioImpresion = username || 'Personal Nutrición';
+    const efNombre = hospitalName || 'Efector';
+    const fDesdeStr = repDesde.split('-').reverse().join('/');
+    const fHastaStr = repHasta.split('-').reverse().join('/');
+
+    interface FilaEntrega {
+      fechaOriginal: string;
+      fechaOrder: string;
+      servicioName: string;
+      agenteNombreClean: string;
+      agenteDetalle: string;
+      tipoComida: string;
+      tipoDieta: string;
+      comidaDietaDetalle: string;
+      cantidadRaciones: number;
+    }
+
+    const construirFilas = (listaReportes: any[]): FilaEntrega[] => {
+      const porServicio: Record<string, any[]> = {};
+      listaReportes.forEach(r => {
+        const sName = getServicioNombre(r);
+        if (!porServicio[sName]) porServicio[sName] = [];
+        porServicio[sName].push(r);
+      });
+
+      const filas: FilaEntrega[] = [];
+      const serviciosKeys = Object.keys(porServicio).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+      serviciosKeys.forEach(servicio => {
+        const reportesServicio = porServicio[servicio];
+        const individuales = reportesServicio.filter(r => r.Servicio?.VoucherIndividual || r.Personal?.Servicio?.VoucherIndividual || r.SolicitadoPor?.Servicio?.VoucherIndividual);
+        const consolidados = reportesServicio.filter(r => !(r.Servicio?.VoucherIndividual || r.Personal?.Servicio?.VoucherIndividual || r.SolicitadoPor?.Servicio?.VoucherIndividual));
+
+        if (consolidados.length > 0) {
+          const date = consolidados[0].FechaPedido.split('T')[0].split('-').reverse().join('/');
+          const totalPlatos = consolidados.length;
+          const counts: Record<string, number> = {};
+          consolidados.forEach(p => { counts[p.TipoDieta || 'Normal'] = (counts[p.TipoDieta || 'Normal'] || 0) + 1; });
+          const dietasText = Object.entries(counts).map(([dieta, cant]) => `${dieta} (${cant})`).join(' | ');
+
+          filas.push({
+            fechaOriginal: consolidados[0].FechaPedido,
+            fechaOrder: date,
+            servicioName: servicio,
+            agenteNombreClean: 'CONSOLIDADO',
+            agenteDetalle: `<strong>CONSOLIDADO (${servicio})</strong><br/><span style="color: #2563eb; font-size: 10px; font-weight: bold;">TOTAL: ${totalPlatos} RACION(ES)</span><br/><span style="color: #555; font-size: 9px;">${dietasText}</span>`,
+            tipoComida: consolidados[0].TipoComida || turno,
+            tipoDieta: dietasText,
+            comidaDietaDetalle: `<strong>${consolidados[0].TipoComida || turno}</strong><br/><span style="font-size: 9px;">${dietasText}</span>`,
+            cantidadRaciones: totalPlatos
+          });
+        }
+
+        const filasIndividualesServicio: FilaEntrega[] = [];
+        individuales.forEach(p => {
+          const fechaOrder = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
+          const nombreAgente = p.EmergenciaNombreCompleto
+            || p.Personal?.NombreCompleto
+            || `${p.EmergenciaNombre || ''} ${p.EmergenciaApellido || ''}`.trim()
+            || p.PersonalReemplazado?.NombreCompleto
+            || 'Agente';
+
+          const dniAgente = p.EmergenciaDNI
+            || p.Personal?.DNI
+            || p.PersonalReemplazado?.DNI
+            || '-';
+
+          filasIndividualesServicio.push({
+            fechaOriginal: p.FechaPedido,
+            fechaOrder: fechaOrder,
+            servicioName: servicio,
+            agenteNombreClean: nombreAgente,
+            agenteDetalle: `<strong>${nombreAgente}</strong><br/><span style="color: #555; font-size: 10px;">DNI: ${dniAgente}</span>`,
+            tipoComida: p.TipoComida || turno,
+            tipoDieta: p.TipoDieta || 'Normal',
+            comidaDietaDetalle: `<strong>${p.TipoComida || turno}</strong> (${p.TipoDieta || 'Normal'})`,
+            cantidadRaciones: 1
+          });
+        });
+
+        filasIndividualesServicio.sort((a, b) => a.agenteNombreClean.localeCompare(b.agenteNombreClean, 'es', { sensitivity: 'base' }));
+        filas.push(...filasIndividualesServicio);
+      });
+
+      return filas;
+    };
+
+    const filas = construirFilas(filtered);
+    const iconoTurno = turno === 'Almuerzo' ? '☀️' : '🌙';
+
+    let rowsHTML = '';
+    let totalRacionesTurno = 0;
+
+    filas.forEach((f, idx) => {
+      totalRacionesTurno += f.cantidadRaciones;
+      rowsHTML += `
+        <tr>
+          <td style="padding: 8px 6px; border: 1px solid #999; text-align: center; font-size: 11px;">${idx + 1}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px; white-space: nowrap;">${f.fechaOrder}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">${f.servicioName}</td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
+            ${f.agenteDetalle}
+          </td>
+          <td style="padding: 8px 6px; border: 1px solid #999; font-size: 11px;">
+            ${f.comidaDietaDetalle}
+          </td>
+          <td style="padding: 8px 6px; border: 1px solid #999; width: 190px; text-align: center; vertical-align: bottom;">
+            <div style="border-bottom: 1px solid #444; height: 35px; width: 90%; margin: 0 auto 3px auto;"></div>
+            <span style="font-size: 8px; color: #666; text-transform: uppercase; font-weight: bold;">Firma / Conformidad</span>
+          </td>
+        </tr>
+      `;
+    });
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Permita las ventanas emergentes para imprimir.");
+      return;
+    }
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Planilla de Entrega y Conformidad - ${turno}</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; color: #111; }
+            .header { border-bottom: 2px solid #111; padding-bottom: 10px; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .title { font-size: 18px; font-weight: bold; color: #111; }
+            .subtitle { font-size: 13px; color: #374151; margin-top: 4px; }
+            .meta { text-align: right; font-size: 11px; color: #4b5563; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th { background-color: #f3f4f6; padding: 8px 6px; border: 1px solid #666; font-size: 11px; text-align: left; text-transform: uppercase; color: #374151; }
+            .summary { margin-top: 18px; font-size: 13px; font-weight: bold; text-align: right; border-top: 2px solid #111; padding-top: 8px; }
+            .footer { margin-top: 25px; border-top: 1px dashed #aaa; padding-top: 6px; font-size: 9px; color: #6b7280; text-align: right; }
+            @media print {
+              @page { size: A4 portrait; margin: 1cm; }
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body onload="setTimeout(() => { window.print(); window.close(); }, 600)">
+          <div class="header">
+            <div>
+              <div class="title">${iconoTurno} PLANILLA DE ENTREGA Y CONFORMIDAD - ${turno.toUpperCase()}</div>
+              <div class="subtitle">Efector: <strong>${efNombre}</strong></div>
+            </div>
+            <div class="meta">
+              <div>Período: <strong>${fDesdeStr} ${fDesdeStr !== fHastaStr ? 'al ' + fHastaStr : ''}</strong></div>
+              <div>Fecha de Emisión: ${fechaImpresion}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="text-align: center; width: 30px;">#</th>
+                <th style="width: 80px;">Fecha</th>
+                <th>Servicio / Destino</th>
+                <th>Agente / Paciente</th>
+                <th style="width: 140px;">Comida / Dieta</th>
+                <th style="text-align: center; width: 190px;">Firma de Conformidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHTML}
+            </tbody>
+          </table>
+
+          <div class="summary">
+            TOTAL RACIONES A ENTREGAR (${turno.toUpperCase()}): ${totalRacionesTurno}
+          </div>
+
+          <div class="footer">
+            Impreso el ${fechaImpresion} a las ${horaImpresion} | Usuario: ${usuarioImpresion}
+          </div>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
+  };
+
+  const fetchDeliverySummary = () => {
+    if (!token) return;
+    fetch(`${API_URL}/api/deliveries/summary?fecha=${scanFecha}&tipoComida=${scanTipoComida}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(r => r.json())
+      .then(d => setSummaryData(d))
+      .catch(console.error);
+  };
+
+  useEffect(() => {
+    if (activeTab === "Entregas") {
+      fetchDeliverySummary();
+    } else if (activeTab === "Reportes") {
+      generarReporte();
+    }
+  }, [activeTab, scanFecha, scanTipoComida, token]);
+
+  const handleScanCheck = async (queryValue: string) => {
+    if (!token || !queryValue.trim()) return;
+    setCargandoScan(true);
+    try {
+      const res = await fetch(`${API_URL}/api/deliveries/check?query=${encodeURIComponent(queryValue.trim())}&fecha=${scanFecha}&tipoComida=${scanTipoComida}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      setCargandoScan(false);
+      setScanInput("");
+
+      if (data.error || !data.pedidos || data.pedidos.length === 0) {
+        // REQUISITO 3: Sin ración asignada -> Sonido advertencia + SweetAlert que NO se cierra con ENTER ni timer
+        playWarningBeep();
+        await Swal.fire({
+          title: "❌ SIN RACIÓN SOLICITADA",
+          html: `<div style="font-size:15px; margin-top:8px; line-height:1.5;">El DNI/Código <strong>${queryValue.trim()}</strong> NO tiene ración solicitada ni aprobada para el turno de <strong>${scanTipoComida}</strong> (${scanFecha.split('-').reverse().join('/')}).</div>`,
+          icon: "error",
+          confirmButtonText: "OK, Entendido",
+          confirmButtonColor: "#dc2626",
+          allowEnterKey: false,
+          allowOutsideClick: false,
+          allowEscapeKey: false,
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+        setScanResult(null);
+        setTimeout(() => scanInputRef.current?.focus(), 100);
+        return;
+      }
+
+      setScanResult(data);
+
+      if (data.mode === 'individual') {
+        // REQUISITO 2: Servicio Individual -> Grabar entrega AUTOMÁTICAMENTE
+        const pendIds = data.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id);
+        if (pendIds.length === 0) {
+          // Ya estaba entregada previamente
+          playWarningBeep();
+          await Swal.fire({
+            title: "⚠️ RACIÓN YA ENTREGADA",
+            html: `<div style="font-size:15px; line-height:1.5;">La ración de <strong>${data.agenteScanned?.NombreCompleto || data.pedidos[0]?.AgenteNombre}</strong> ya fue registrada como entregada anteriormente.</div>`,
+            icon: "warning",
+            confirmButtonText: "OK (Enter)",
+            confirmButtonColor: "#f59e0b",
+            allowEnterKey: true,
+            timer: 3000,
+            background: theme === 'dark' ? '#1f2937' : '#fff',
+            color: theme === 'dark' ? '#fff' : '#000'
+          });
+          setScanResult(null);
+          setTimeout(() => scanInputRef.current?.focus(), 100);
+          return;
+        }
+
+        const pObj = data.pedidos[0];
+        await handleConfirmDeliveryAutomatic(pendIds, pObj, data);
+      } else if (data.mode === 'servicio') {
+        // REQUISITO 1: Servicio Consolidado -> Abrir MODAL con checkboxes
+        const pendIds = data.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id);
+        setSelectedConsolidadoIds(pendIds);
+        setMostrarModalConsolidado(true);
+      }
+    } catch (err) {
+      setCargandoScan(false);
+      console.error(err);
+    }
+  };
+
+  const handleConfirmDeliveryAutomatic = async (pedidoIdsToConfirm: number[], pedidoData: any, fullData: any) => {
+    if (!token || pedidoIdsToConfirm.length === 0) return;
+    try {
+      const res = await fetch(`${API_URL}/api/deliveries/confirm-delivery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ pedidoIds: pedidoIdsToConfirm })
+      });
+      const data = await res.json();
+      if (data.error) {
+        playWarningBeep();
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        return;
+      }
+
+      playSuccessBeep();
+      fetchDeliverySummary();
+      setScanResult(null);
+
+      // SweetAlert confirmación de entrega individual que auto-cierra en 2.5s o con ENTER
+      Swal.fire({
+        title: "✅ ¡ENTREGA CONFIRMADA!",
+        html: `
+          <div style="text-align: left; background: ${theme === 'dark' ? '#064e3b' : '#f0fdf4'}; border: 1px solid ${theme === 'dark' ? '#059669' : '#86efac'}; border-radius: 12px; padding: 14px; margin-top: 10px; color: ${theme === 'dark' ? '#ecfdf5' : '#14532d'};">
+            <div style="font-size: 17px; font-weight: 900; color: ${theme === 'dark' ? '#6ee7b7' : '#166534'};">${pedidoData?.AgenteNombre || fullData.agenteScanned?.NombreCompleto}</div>
+            <div style="font-size: 13px; font-weight: 600; margin-top: 4px;">DNI: <strong>${pedidoData?.AgenteDNI || fullData.agenteScanned?.DNI || '-'}</strong></div>
+            <div style="font-size: 13px; font-weight: 600;">Servicio: <strong>${pedidoData?.ServicioNombre || fullData.servicio?.Nombre || 'Servicio'}</strong></div>
+            <div style="font-size: 13px; font-weight: 600; margin-top: 4px;">Dieta: <span style="background: #16a34a; color: white; padding: 3px 10px; border-radius: 6px; font-weight: 800;">${pedidoData?.TipoDieta || 'Normal'}</span> (${scanTipoComida})</div>
+          </div>
+        `,
+        icon: "success",
+        timer: 2500,
+        confirmButtonText: "OK (Enter)",
+        confirmButtonColor: "#16a34a",
+        allowEnterKey: true,
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      }).then(() => {
+        setTimeout(() => scanInputRef.current?.focus(), 100);
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleConfirmDeliveryConsolidado = async () => {
+    if (!token || selectedConsolidadoIds.length === 0) {
+      Swal.fire({ title: "Atención", text: "Seleccione al menos un integrante para entregar ración.", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+    try {
+      const res = await fetch(`${API_URL}/api/deliveries/confirm-delivery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ pedidoIds: selectedConsolidadoIds })
+      });
+      const data = await res.json();
+      if (data.error) {
+        playWarningBeep();
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        return;
+      }
+
+      playSuccessBeep();
+      fetchDeliverySummary();
+      setMostrarModalConsolidado(false);
+      setScanResult(null);
+
+      const cantConfirmed = selectedConsolidadoIds.length;
+      setSelectedConsolidadoIds([]);
+
+      Swal.fire({
+        title: "✅ ¡ENTREGA CONSOLIDADA REGISTRADA!",
+        text: `Se registraron exitosamente ${cantConfirmed} ración(es) para el servicio ${scanResult?.servicio?.Nombre || ''}.`,
+        icon: "success",
+        timer: 2500,
+        confirmButtonText: "OK (Enter)",
+        confirmButtonColor: "#16a34a",
+        allowEnterKey: true,
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      }).then(() => {
+        setTimeout(() => scanInputRef.current?.focus(), 100);
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleConfirmDeliveryBatch = async (pedidoIdsToConfirm: number[]) => {
+    if (!token || pedidoIdsToConfirm.length === 0) return;
+    try {
+      const res = await fetch(`${API_URL}/api/deliveries/confirm-delivery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ pedidoIds: pedidoIdsToConfirm })
+      });
+      const data = await res.json();
+      if (data.error) {
+        playWarningBeep();
+        Swal.fire({ title: "Error", text: data.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        return;
+      }
+      playSuccessBeep();
+      fetchDeliverySummary();
+      if (scanResult) {
+        setScanResult((prev: any) => ({
+          ...prev,
+          pedidos: (prev.pedidos || []).map((p: any) => pedidoIdsToConfirm.includes(p.Id) ? { ...p, Entregado: true } : p)
+        }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCrearEmergenciaAuto = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emergDni || !emergNombre || !emergJustificacion) {
+      Swal.fire({ title: "Atención", text: "Complete DNI, Nombre Completo y Justificación.", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+    setCargandoEmerg(true);
+    fetch(`${API_URL}/api/emergencies`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        dni: emergDni,
+        nombreCompleto: emergNombre,
+        periodoInicio: emergInicio,
+        periodoFin: emergFin,
+        tipoComida: emergHorario === "Almuerzo y Cena" ? "Ambos" : "Almuerzo",
+        tipoDieta: emergDieta,
+        justificacion: emergJustificacion,
+        autoAprobar: true,
+        esNutricionGerencia: true
+      })
+    })
+      .then(r => r.json())
+      .then(d => {
+        setCargandoEmerg(false);
+        if (d.error) {
+          Swal.fire({ title: "Error", text: d.error, icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          return;
+        }
+        Swal.fire({ title: "¡Emergencia Registrada!", text: "El pedido de emergencia fue cargado y autoautorizado correctamente.", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        setEmergDni("");
+        setEmergNombre("");
+        setEmergJustificacion("");
+        setEmergReemplazaDni("");
+      })
+      .catch(err => {
+        setCargandoEmerg(false);
+        console.error(err);
+      });
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* HEADER DE PESTAÑAS EXCLUSIVAS ROL NUTRICIÓN */}
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-1.5 flex flex-wrap gap-1">
+        <button
+          onClick={() => setActiveTab("Entregas")}
+          className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === "Entregas"
+              ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+          }`}
+        >
+          <QrCode className="w-4 h-4 mr-2 text-indigo-500" />
+          Estación de Entrega (DNI / QR)
+        </button>
+        <button
+          onClick={() => setActiveTab("CrearEmergencia")}
+          className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === "CrearEmergencia"
+              ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+          }`}
+        >
+          <PlusCircle className="w-4 h-4 mr-2 text-emerald-500" />
+          Pedido Emergencia Autoautorizable (Fin de Semana)
+        </button>
+        <button
+          onClick={() => setActiveTab("Reportes")}
+          className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === "Reportes"
+              ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+          }`}
+        >
+          <Search className="w-4 h-4 mr-2 text-indigo-500" />
+          Reportes y Consultas
+        </button>
+      </div>
+
+      {/* PESTAÑA 1: ENTREGAS */}
+      {activeTab === "Entregas" && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          
+          {/* 1. INDICADOR DE AVANCE DE ENTREGAS */}
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-4">
+              <div>
+                <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-black bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-700/50 mb-2 uppercase tracking-wider">
+                  <Activity className="w-3.5 h-3.5 mr-1.5 text-indigo-500 animate-pulse" /> Indicador de Avance de Entregas
+                </div>
+                <h2 className="text-2xl font-black text-gray-900 dark:text-gray-100 flex items-center tracking-tight">
+                  <Utensils className="w-6 h-6 mr-2.5 text-blue-600 dark:text-blue-400" />
+                  Progreso del Turno ({scanTipoComida} - {scanFecha.split('-').reverse().join('/')})
+                </h2>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="border border-emerald-300 dark:border-emerald-500/40 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 font-bold px-3.5 py-1.5 rounded-xl flex items-center text-xs shadow-xs">
+                  <CheckCircle className="w-4 h-4 mr-1.5 text-emerald-600 dark:text-emerald-400" />
+                  Entregadas: <span className="text-sm font-black ml-1 text-emerald-900 dark:text-white">{summaryData?.totalDelivered || 0}</span>
+                </div>
+                <div className="border border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 font-bold px-3.5 py-1.5 rounded-xl flex items-center text-xs shadow-xs">
+                  <AlertTriangle className="w-4 h-4 mr-1.5 text-amber-600 dark:text-amber-400" />
+                  Faltan Entregar: <span className="text-sm font-black ml-1 text-amber-900 dark:text-white">{summaryData?.totalPending || 0}</span>
+                </div>
+                <div className="border border-blue-300 dark:border-blue-500/40 bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 font-bold px-3.5 py-1.5 rounded-xl flex items-center text-xs shadow-xs">
+                  <Users className="w-4 h-4 mr-1.5 text-blue-600 dark:text-blue-400" />
+                  Total Aprobadas: <span className="text-sm font-black ml-1 text-blue-900 dark:text-white">{summaryData?.totalApproved || 0}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-2 font-semibold">
+              <span>Completado: <strong className="text-gray-900 dark:text-gray-200">{summaryData?.totalDelivered || 0}</strong> de <strong className="text-gray-900 dark:text-gray-200">{summaryData?.totalApproved || 0}</strong> raciones ({summaryData?.percentage || 0}%)</span>
+              <span>Faltan: <strong className="text-amber-600 dark:text-amber-400">{summaryData?.totalPending || 0}</strong> raciones</span>
+            </div>
+
+            <div className="w-full bg-gray-100 dark:bg-gray-800 h-6 rounded-full overflow-hidden border border-gray-200 dark:border-gray-700/80 p-0.5 relative shadow-inner">
+              <div
+                className="bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400 h-full rounded-full transition-all duration-500 flex items-center justify-center relative"
+                style={{ width: `${Math.max(summaryData?.percentage || 0, 5)}%` }}
+              >
+                <span className="text-[11px] font-black text-white drop-shadow-md px-2">
+                  {summaryData?.percentage || 0}%
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. ESTACIÓN DE ENTREGA DE VIANDAS (DNI / QR) */}
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 pb-6 border-b border-gray-200 dark:border-gray-800">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center tracking-tight">
+                  <QrCode className="w-6 h-6 mr-2.5 text-blue-600 dark:text-blue-400" />
+                  Estación de Entrega de Viandas (DNI / QR)
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Escanee el DNI físico del agente o el código QR del voucher para validar y registrar la entrega en tiempo real.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3.5 py-1.5 rounded-xl">
+                  <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Fecha:</span>
+                  <input
+                    type="date"
+                    value={scanFecha}
+                    onChange={e => setScanFecha(e.target.value)}
+                    className="bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex bg-gray-200 dark:bg-gray-800 p-1 rounded-xl gap-1 border border-gray-300 dark:border-gray-700/60">
+                  <button
+                    onClick={() => setScanTipoComida("Almuerzo")}
+                    className={`px-3.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                      scanTipoComida === "Almuerzo"
+                        ? 'bg-amber-500 text-white shadow-sm font-extrabold'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    ☀️ Almuerzo
+                  </button>
+                  <button
+                    onClick={() => setScanTipoComida("Cena")}
+                    className={`px-3.5 py-1 text-xs font-bold rounded-lg transition-all ${
+                      scanTipoComida === "Cena"
+                        ? 'bg-indigo-600 text-white shadow-sm font-extrabold'
+                        : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                    }`}
+                  >
+                    🌙 Cena
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (scanInput.trim()) handleScanCheck(scanInput.trim());
+              }}
+              className="mb-6"
+            >
+              <div className="relative flex items-center">
+                <Scan className="w-6 h-6 absolute left-4 text-blue-500 dark:text-blue-400 animate-pulse" />
+                <input
+                  ref={scanInputRef}
+                  type="text"
+                  value={scanInput}
+                  onChange={(e) => setScanInput(e.target.value)}
+                  placeholder="📲 LECTOR ACTIVO: Escanee el DNI o QR aquí (o ingrese DNI y presione Enter)..."
+                  className="w-full pl-12 pr-28 py-4 bg-blue-50/50 dark:bg-gray-800/80 border-2 border-blue-400 dark:border-blue-600/70 focus:border-blue-600 focus:ring-4 focus:ring-blue-100 dark:focus:ring-blue-900/40 rounded-2xl font-bold text-gray-900 dark:text-white text-base placeholder-gray-400 transition-all shadow-inner"
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  disabled={cargandoScan || !scanInput.trim()}
+                  className="absolute right-3 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-black rounded-xl transition-all shadow-md flex items-center cursor-pointer"
+                >
+                  {cargandoScan ? <RefreshCw className="w-4 h-4 animate-spin mr-1.5" /> : <Search className="w-4 h-4 mr-1.5" />}
+                  Buscar
+                </button>
+              </div>
+            </form>
+
+            {!cargandoScan && !scanResult && (
+              <div className="border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-2xl p-12 text-center flex flex-col items-center justify-center bg-gray-50/50 dark:bg-gray-950/30">
+                <div className="w-16 h-16 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/40 rounded-2xl flex items-center justify-center mb-3 shadow-xs">
+                  <QrCode className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+                </div>
+                <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200">Estación Lista para Escanear</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md">
+                  Aproxime el código de barras PDF417 del DNI físico del agente o el código QR del voucher al lector de cocina.
+                </p>
+              </div>
+            )}
+
+            {!cargandoScan && scanResult && (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                {scanResult.pedidos.length === 0 ? (
+                  <div className="p-6 bg-red-50 dark:bg-red-950/40 border-2 border-red-300 dark:border-red-800/80 rounded-2xl text-center">
+                    <AlertTriangle className="w-12 h-12 text-red-500 dark:text-red-400 mx-auto mb-2" />
+                    <h3 className="text-lg font-extrabold text-red-700 dark:text-red-300">
+                      ❌ SIN RACIÓN SOLICITADA PARA ESTE TURNO Y FECHA
+                    </h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      No se encontraron pedidos de comida aprobados para el DNI/código escaneado en {scanTipoComida} ({scanFecha.split('-').reverse().join('/')}).
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-white dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg overflow-hidden">
+                    
+                    {/* HEADER DEL VOUCHER ESCANEADO */}
+                    <div className={`p-6 text-white flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 ${
+                      scanResult.mode === 'servicio'
+                        ? 'bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700'
+                        : 'bg-gradient-to-r from-blue-700 via-indigo-700 to-emerald-700'
+                    }`}>
+                      <div>
+                        <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-black bg-white/20 text-white border border-white/30 mb-2 uppercase tracking-wider">
+                          {scanResult.mode === 'servicio' ? (
+                            <>📋 VOUCHER CONSOLIDADO DE SERVICIO</>
+                          ) : (
+                            <>👤 VOUCHER INDIVIDUAL DE AGENTE</>
+                          )}
+                        </div>
+                        <h3 className="text-2xl font-black tracking-tight">
+                          {scanResult.mode === 'servicio'
+                            ? (scanResult.servicio?.Nombre || 'Servicio Consolidado')
+                            : (scanResult.agenteScanned?.NombreCompleto || scanResult.pedidos[0]?.AgenteNombre || 'Agente')}
+                        </h3>
+                        <p className="text-xs text-blue-100 mt-1 font-medium">
+                          {scanResult.mode === 'servicio' ? (
+                            <>Agente que presenta DNI: <strong>{scanResult.agenteScanned?.NombreCompleto || 'Agente'}</strong> (DNI: {scanResult.agenteScanned?.DNI || scanInput})</>
+                          ) : (
+                            <>DNI: <strong>{scanResult.agenteScanned?.DNI || scanResult.pedidos[0]?.AgenteDNI || scanInput}</strong> • Servicio: <strong>{scanResult.servicio?.Nombre || scanResult.pedidos[0]?.ServicioNombre || 'Servicio'}</strong></>
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        {(() => {
+                          const pendingCount = scanResult.pedidos.filter((p: any) => !p.Entregado).length;
+                          const deliveredCount = scanResult.pedidos.filter((p: any) => p.Entregado).length;
+
+                          return (
+                            <>
+                              <div className="text-xs font-bold bg-black/25 px-3.5 py-1.5 rounded-xl border border-white/20">
+                                Total Raciones: <span className="font-black text-white text-sm">{scanResult.pedidos.length}</span> ({deliveredCount} entregadas, {pendingCount} pendientes)
+                              </div>
+                              {pendingCount > 0 && (
+                                <button
+                                  onClick={() => handleConfirmDeliveryBatch(scanResult.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id))}
+                                  className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-xl shadow-lg flex items-center cursor-pointer transition-transform transform active:scale-95"
+                                >
+                                  <CheckCircle className="w-4 h-4 mr-2" />
+                                  Entregar {scanResult.mode === 'servicio' ? `Todas las Raciones (${pendingCount})` : 'Ración'}
+                                </button>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* DETALLE DE RACIONES Y DIETAS EN EL VOUCHER */}
+                    <div className="p-6">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-3 flex items-center">
+                        <Utensils className="w-4 h-4 mr-1.5 text-blue-500" />
+                        Detalle de Raciones Solicitadas ({scanResult.pedidos.length}):
+                      </h4>
+
+                      <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-xl">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-gray-50 dark:bg-gray-800 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-700">
+                              <th className="px-4 py-2.5">Agente / Destino</th>
+                              <th className="px-4 py-2.5">Servicio</th>
+                              <th className="px-4 py-2.5">Comida / Dieta</th>
+                              <th className="px-4 py-2.5">Estado Entrega</th>
+                              <th className="px-4 py-2.5 text-center">Acción</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100 dark:divide-gray-700 text-xs">
+                            {scanResult.pedidos.map((p: any) => (
+                              <tr key={p.Id} className={`hover:bg-gray-50 dark:hover:bg-gray-700/40 ${p.Entregado ? 'bg-emerald-50/40 dark:bg-emerald-950/20' : ''}`}>
+                                <td className="px-4 py-3">
+                                  <div className="font-bold text-gray-900 dark:text-gray-100">{p.AgenteNombre}</div>
+                                  <div className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">DNI: {p.AgenteDNI}</div>
+                                </td>
+                                <td className="px-4 py-3 font-semibold text-gray-700 dark:text-gray-300">
+                                  {p.ServicioNombre}
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  <span className="bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700/50 font-bold px-2 py-0.5 rounded-md text-[10px] mr-1.5">
+                                    {p.TipoComida}
+                                  </span>
+                                  <span className="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-semibold px-2 py-0.5 rounded-md text-[10px]">
+                                    {p.TipoDieta}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 whitespace-nowrap">
+                                  {p.Entregado ? (
+                                    <div className="inline-flex items-center text-emerald-700 dark:text-emerald-400 font-bold text-xs">
+                                      <CheckCircle className="w-4 h-4 mr-1 text-emerald-500" />
+                                      Entregado ({p.FechaEntregado ? new Date(p.FechaEntregado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) : 'Hoy'})
+                                    </div>
+                                  ) : (
+                                    <span className="inline-flex items-center text-amber-700 dark:text-amber-400 font-bold text-xs bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2.5 py-1 rounded-lg">
+                                      <AlertTriangle className="w-3.5 h-3.5 mr-1 text-amber-500" />
+                                      Pendiente de Entrega
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  {!p.Entregado ? (
+                                    <button
+                                      onClick={() => handleConfirmDeliveryBatch([p.Id])}
+                                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all cursor-pointer"
+                                    >
+                                      Entregar
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-gray-400 font-bold uppercase">✓ Entregado</span>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 3. HISTORIAL DE ENTREGAS REALIZADAS */}
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 pb-4 border-b border-gray-200 dark:border-gray-800">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center tracking-tight">
+                  <History className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" />
+                  Historial de Entregas Realizadas
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Las entregas registradas en este turno figuran en tiempo real. El último escaneo exitoso se ubica siempre al principio.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                <div className="relative flex-1 md:w-72">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={historyFilter}
+                    onChange={e => setHistoryFilter(e.target.value)}
+                    placeholder="Buscar agente, DNI o servicio..."
+                    className="w-full pl-9 pr-3 py-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-xs font-semibold text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <button
+                  onClick={fetchDeliverySummary}
+                  className="p-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl border border-gray-300 dark:border-gray-700 transition-colors"
+                  title="Actualizar Historial"
+                >
+                  <RefreshCw className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* TABLA DE HISTORIAL */}
+            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 dark:bg-gray-800/80 text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider border-b border-gray-200 dark:border-gray-800">
+                    <th className="px-4 py-3">Hora Entrega</th>
+                    <th className="px-4 py-3">Agente / DNI</th>
+                    <th className="px-4 py-3">Servicio</th>
+                    <th className="px-4 py-3">Comida / Dieta</th>
+                    <th className="px-4 py-3">Registrado Por</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-xs">
+                  {(() => {
+                    const rawList = summaryData?.deliveriesHistory || [];
+                    const filteredList = rawList.filter((item: any) => {
+                      if (!historyFilter.trim()) return true;
+                      const q = historyFilter.toLowerCase();
+                      return (
+                        (item.AgenteNombre || '').toLowerCase().includes(q) ||
+                        (item.AgenteDNI || '').toLowerCase().includes(q) ||
+                        (item.ServicioNombre || '').toLowerCase().includes(q)
+                      );
+                    });
+
+                    if (filteredList.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={5} className="py-8 text-center text-gray-400 dark:text-gray-500 italic">
+                            Sin entregas registradas para este turno o filtro.
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return filteredList.map((item: any, idx: number) => {
+                      const isLatest = idx === 0;
+                      const formattedTime = item.FechaEntregado
+                        ? new Date(item.FechaEntregado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' hs'
+                        : '-';
+
+                      return (
+                        <tr key={item.Id || idx} className={`hover:bg-gray-50 dark:hover:bg-gray-800/40 transition-colors ${isLatest ? 'bg-emerald-50/60 dark:bg-emerald-950/20' : ''}`}>
+                          <td className="px-4 py-3 font-mono font-bold whitespace-nowrap">
+                            {isLatest && (
+                              <span className="mr-2 px-1.5 py-0.5 bg-emerald-500 text-black text-[9px] font-black rounded uppercase tracking-wider animate-pulse">
+                                ÚLTIMO
+                              </span>
+                            )}
+                            <span className={isLatest ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-gray-900 dark:text-gray-300'}>
+                              {formattedTime}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="font-bold text-gray-900 dark:text-gray-100">{item.AgenteNombre}</div>
+                            <div className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">DNI: {item.AgenteDNI}</div>
+                          </td>
+                          <td className="px-4 py-3 font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wide text-[11px]">
+                            {item.ServicioNombre}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className="bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700/50 font-bold px-2 py-0.5 rounded-md text-[10px] mr-1.5">
+                              {item.TipoComida}
+                            </span>
+                            <span className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 font-semibold px-2 py-0.5 rounded-md text-[10px]">
+                              {item.TipoDieta}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">
+                            {item.EntregadoPor || 'Nutrición'}
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PESTAÑA 2: EMERGENCIA AUTOAUTORIZADA */}
+      {activeTab === "CrearEmergencia" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 animate-in fade-in duration-300">
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center mb-4">
+            <PlusCircle className="w-6 h-6 mr-2 text-emerald-500" />
+            Cargar Pedido de Emergencia (Fin de Semana / Guardias)
+          </h2>
+          <form onSubmit={handleCrearEmergenciaAuto} className="space-y-4 max-w-xl">
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">DNI del Agente *</label>
+              <input
+                type="text"
+                value={emergDni}
+                onChange={e => setEmergDni(e.target.value)}
+                placeholder="Ingrese DNI..."
+                className="w-full px-3 py-2 border rounded-xl bg-gray-50 dark:bg-gray-800 text-sm font-semibold text-gray-900 dark:text-gray-100"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Nombre Completo *</label>
+              <input
+                type="text"
+                value={emergNombre}
+                onChange={e => setEmergNombre(e.target.value)}
+                placeholder="Apellido y Nombre..."
+                className="w-full px-3 py-2 border rounded-xl bg-gray-50 dark:bg-gray-800 text-sm font-semibold text-gray-900 dark:text-gray-100"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1">Justificación *</label>
+              <textarea
+                value={emergJustificacion}
+                onChange={e => setEmergJustificacion(e.target.value)}
+                placeholder="Motivo del pedido de emergencia (Ej. Reemplazo de guardia)..."
+                className="w-full px-3 py-2 border rounded-xl bg-gray-50 dark:bg-gray-800 text-sm font-semibold text-gray-900 dark:text-gray-100"
+                required
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={cargandoEmerg}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-md transition-all flex items-center cursor-pointer"
+            >
+              {cargandoEmerg ? <RefreshCw className="w-4 h-4 animate-spin mr-2" /> : <CheckCircle className="w-4 h-4 mr-2" />}
+              Registrar y Emitir Ración de Emergencia
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* PESTAÑA 3: REPORTES Y CONSULTAS (SOLO DÍA ACTUAL) */}
+      {activeTab === "Reportes" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
+          <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                <Search className="w-5 h-5 mr-2 text-indigo-500" /> Reportes del Día Actual ({getTodayStr().split('-').reverse().join('/')})
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Consola de reportes de producción de cocina y planillas de entrega de raciones del día de hoy.</p>
+            </div>
+            <button
+              onClick={generarReporte}
+              className="flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl shadow-xs font-bold text-xs transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4 mr-1.5" /> Actualizar Datos
+            </button>
+          </div>
+          <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-wrap gap-4 items-center bg-white dark:bg-gray-900">
+            <div className="flex flex-wrap gap-2 w-full lg:w-auto">
+              <button onClick={() => handleImprimirCocina('Almuerzo')} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-3.5 py-2.5 rounded-lg shadow-sm font-bold text-xs transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-amber-600 hover:bg-amber-700 text-white cursor-pointer'}`} title="Imprimir reporte de producción para Cocina (Almuerzo)">
+                <Printer className="w-4 h-4 mr-1.5" /> Cocina Alm.
+              </button>
+              <button onClick={() => handleImprimirCocina('Cena')} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-3.5 py-2.5 rounded-lg shadow-sm font-bold text-xs transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-amber-700 hover:bg-amber-800 text-white cursor-pointer'}`} title="Imprimir reporte de producción para Cocina (Cena)">
+                <Printer className="w-4 h-4 mr-1.5" /> Cocina Cena
+              </button>
+              <button onClick={() => handleImprimirEntrega('Almuerzo')} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-3.5 py-2.5 rounded-lg shadow-sm font-bold text-xs transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'}`} title="Imprimir planilla de Entrega para Almuerzo">
+                <Printer className="w-4 h-4 mr-1.5" /> Entrega Alm.
+              </button>
+              <button onClick={() => handleImprimirEntrega('Cena')} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-3.5 py-2.5 rounded-lg shadow-sm font-bold text-xs transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'}`} title="Imprimir planilla de Entrega para Cena">
+                <Printer className="w-4 h-4 mr-1.5" /> Entrega Cena
+              </button>
+              <button onClick={exportExcel} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold text-xs transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-green-600 hover:bg-green-700 text-white cursor-pointer'}`} title="Exportar a Excel (CSV)">
+                EXCEL
+              </button>
+              <button onClick={exportPDF} disabled={reportes.length === 0} className={`flex-1 sm:flex-none flex items-center justify-center px-4 py-2.5 rounded-lg shadow-sm font-bold text-xs transition-colors ${reportes.length === 0 ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700 text-white cursor-pointer'}`} title="Exportar a PDF">
+                PDF
+              </button>
+            </div>
+            <div className="w-full lg:flex-1">
+              <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1.5">Filtro rápido (DNI o Nombre)</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Search className="h-4 w-4 text-gray-400" />
+                </div>
+                <input type="text" value={repFiltroEmpleado} onChange={e => setRepFiltroEmpleado(e.target.value)} placeholder="Ej. Juan Perez..." className="block w-full pl-9 pr-3 py-2.5 text-sm border-gray-300 dark:border-gray-700 rounded-lg shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 transition-colors" />
+              </div>
+            </div>
+          </div>
+          <div className="p-0 overflow-x-auto">
+            {reportes.length === 0 ? (
+              <div className="text-center text-gray-500 dark:text-gray-400 py-12 flex flex-col items-center">
+                <FileText className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
+                No hay raciones solicitadas registradas para el día de hoy ({getTodayStr().split('-').reverse().join('/')}).
+              </div>
+            ) : (
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+                <thead className="bg-gray-50 dark:bg-gray-800/50">
+                  <tr>
+                    <th onClick={() => handleSort('fecha')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Fecha {sortConfig.key==='fecha' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                    <th onClick={() => handleSort('tipo')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Tipo {sortConfig.key==='tipo' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                    <th onClick={() => handleSort('nombre')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Personal / Paciente {sortConfig.key==='nombre' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                    <th onClick={() => handleSort('dni')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">DNI {sortConfig.key==='dni' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                    <th onClick={() => handleSort('estado')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Estado {sortConfig.key==='estado' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
+                  {sortedReportes.filter(r => {
+                    if (!repFiltroEmpleado) return true;
+                    const term = repFiltroEmpleado.toLowerCase();
+                    const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
+                    const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
+                    return name.includes(term) || dni.includes(term);
+                  }).map((r) => (
+                    <tr key={r.Id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">{r.FechaPedido.split('T')[0].split('-').reverse().join('/')}</td>
+                      <td className="px-6 py-4 text-sm">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.TipoComida.toLowerCase() === 'almuerzo' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-300'}`}>
+                          {r.TipoComida}
+                        </span>
+                        <span className="ml-2 text-xs text-gray-500 dark:text-gray-400">{r.TipoDieta}</span>
+                      </td>
+                      <td className="px-6 py-4 text-sm font-bold text-gray-900 dark:text-gray-100">{r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`}</td>
+                      <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
+                      <td className="px-6 py-4 text-sm">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.Estado === 'Aprobado' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : r.Estado === 'Rechazado' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
+                          {r.Estado}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+      {/* MODAL PARA VOUCHER CONSOLIDADO DE SERVICIO */}
+      {mostrarModalConsolidado && scanResult && (
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            
+            {/* ENCABEZADO DEL MODAL */}
+            <div className="bg-gradient-to-r from-purple-700 via-indigo-700 to-blue-700 p-5 text-white flex justify-between items-start shrink-0">
+              <div>
+                <div className="inline-flex items-center px-3 py-0.5 rounded-full text-[10px] font-black bg-white/20 text-white border border-white/30 mb-1.5 uppercase tracking-wider">
+                  📋 VOUCHER CONSOLIDADO DE SERVICIO
+                </div>
+                <h3 className="text-xl font-black tracking-tight">
+                  Servicio: {scanResult.servicio?.Nombre || 'Servicio'}
+                </h3>
+                <p className="text-xs text-purple-100 mt-1">
+                  Agente que retira: <strong>{scanResult.agenteScanned?.NombreCompleto || 'Agente'}</strong> (DNI: {scanResult.agenteScanned?.DNI || scanInput})
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarModalConsolidado(false);
+                  setScanResult(null);
+                  setSelectedConsolidadoIds([]);
+                  setTimeout(() => scanInputRef.current?.focus(), 100);
+                }}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* BARRA DE ACCIONES RAPIDAS DE SELECCION */}
+            <div className="p-4 bg-gray-50 dark:bg-gray-800/60 border-b border-gray-200 dark:border-gray-800 flex flex-wrap justify-between items-center gap-3 shrink-0">
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allPendIds = scanResult.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id);
+                    if (selectedConsolidadoIds.length === allPendIds.length) {
+                      setSelectedConsolidadoIds([]);
+                    } else {
+                      setSelectedConsolidadoIds(allPendIds);
+                    }
+                  }}
+                  className="px-3.5 py-1.5 bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/70 text-xs font-bold rounded-lg border border-indigo-200 dark:border-indigo-700 transition-colors cursor-pointer"
+                >
+                  {selectedConsolidadoIds.length === scanResult.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id).length
+                    ? "Deseleccionar Todos"
+                    : "Seleccionar Todos los Pendientes"}
+                </button>
+              </div>
+
+              <span className="text-xs font-bold text-gray-700 dark:text-gray-300">
+                Seleccionados: <strong className="text-indigo-600 dark:text-indigo-400 font-extrabold">{selectedConsolidadoIds.length}</strong> de {scanResult.pedidos.filter((p: any) => !p.Entregado).length} pendientes
+              </span>
+            </div>
+
+            {/* LISTA DE INTEGRANTES DEL SERVICIO CON CHECKBOX */}
+            <div className="p-4 overflow-y-auto flex-1 space-y-2">
+              {scanResult.pedidos.map((p: any) => {
+                const isSelected = selectedConsolidadoIds.includes(p.Id);
+                const isDelivered = Boolean(p.Entregado);
+
+                return (
+                  <label
+                    key={p.Id}
+                    className={`flex items-center justify-between p-3.5 rounded-xl border transition-all ${
+                      isDelivered
+                        ? 'bg-gray-100 dark:bg-gray-800/40 border-gray-200 dark:border-gray-800 opacity-60 cursor-not-allowed'
+                        : isSelected
+                        ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 cursor-pointer shadow-xs'
+                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700/70 hover:border-gray-300 dark:hover:border-gray-600 cursor-pointer'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <input
+                        type="checkbox"
+                        disabled={isDelivered}
+                        checked={isSelected}
+                        onChange={() => {
+                          if (isDelivered) return;
+                          if (isSelected) {
+                            setSelectedConsolidadoIds(prev => prev.filter(id => id !== p.Id));
+                          } else {
+                            setSelectedConsolidadoIds(prev => [...prev, p.Id]);
+                          }
+                        }}
+                        className="w-5 h-5 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+                      />
+                      <div>
+                        <div className="font-bold text-sm text-gray-900 dark:text-gray-100">{p.AgenteNombre}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 font-mono">DNI: {p.AgenteDNI}</div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-3">
+                      <span className="bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-700/50 font-bold px-2.5 py-1 rounded-md text-xs">
+                        {p.TipoDieta}
+                      </span>
+
+                      {isDelivered ? (
+                        <span className="inline-flex items-center text-emerald-600 dark:text-emerald-400 font-bold text-xs bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 rounded-lg">
+                          <CheckCircle className="w-3.5 h-3.5 mr-1" />
+                          Entregado
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center text-amber-700 dark:text-amber-400 font-bold text-xs bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 px-2.5 py-1 rounded-lg">
+                          <AlertTriangle className="w-3.5 h-3.5 mr-1" />
+                          Pendiente
+                        </span>
+                      )}
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* BOTONES DE ACCIÓN FOOTER MODAL */}
+            <div className="p-4 bg-gray-50 dark:bg-gray-800/80 border-t border-gray-200 dark:border-gray-800 flex justify-between items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setMostrarModalConsolidado(false);
+                  setScanResult(null);
+                  setSelectedConsolidadoIds([]);
+                  setTimeout(() => scanInputRef.current?.focus(), 100);
+                }}
+                className="px-5 py-2.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                disabled={selectedConsolidadoIds.length === 0}
+                onClick={handleConfirmDeliveryConsolidado}
+                className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center cursor-pointer"
+              >
+                <CheckCircle className="w-4 h-4 mr-2" />
+                Registrar Entrega de Seleccionados ({selectedConsolidadoIds.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
