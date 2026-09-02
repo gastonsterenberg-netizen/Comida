@@ -26,7 +26,7 @@ const authenticateToken = (req, res, next) => __awaiter(void 0, void 0, void 0, 
     }
     jsonwebtoken_1.default.verify(token, JWT_SECRET, (err, decodedUser) => __awaiter(void 0, void 0, void 0, function* () {
         if (err || !decodedUser) {
-            res.status(403).json({ error: 'Sesión expirada o token inválido. Por favor, vuelva a iniciar sesión.' });
+            res.status(401).json({ error: 'Sesión expirada o token inválido. Por favor, vuelva a iniciar sesión.' });
             return;
         }
         try {
@@ -35,7 +35,7 @@ const authenticateToken = (req, res, next) => __awaiter(void 0, void 0, void 0, 
                 select: { Activo: true }
             });
             if (!dbUser || dbUser.Activo === false) {
-                res.status(403).json({ error: 'Usuario inhabilitado. Sesión rechazada.' });
+                res.status(401).json({ error: 'Usuario inhabilitado. Sesión rechazada.' });
                 return;
             }
             req.user = decodedUser;

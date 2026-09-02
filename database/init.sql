@@ -79,3 +79,19 @@ INSERT INTO Hospitales (Nombre, Codigo) VALUES ('Hospital Norte', 'H-NOR');
 INSERT INTO Servicios (HospitalId, Nombre) VALUES (1, 'Guardia Medica');
 INSERT INTO Servicios (HospitalId, Nombre) VALUES (1, 'Terapia Intensiva');
 INSERT INTO Servicios (HospitalId, Nombre) VALUES (2, 'Pediatria');
+
+-- Tabla de Menú del Día (Cargado por Nutrición)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'MenuDia')
+BEGIN
+    CREATE TABLE MenuDia (
+        Id INT IDENTITY(1,1) PRIMARY KEY,
+        HospitalId INT NOT NULL FOREIGN KEY REFERENCES Hospitales(Id),
+        Fecha DATE NOT NULL,
+        MenuAlmuerzo NVARCHAR(500) NULL,
+        MenuCena NVARCHAR(500) NULL,
+        CreadoPorUsuarioId INT NOT NULL FOREIGN KEY REFERENCES Usuarios(Id),
+        FechaCreacion DATETIME2 NOT NULL DEFAULT GETDATE(),
+        CONSTRAINT UQ_MenuDia_HospitalId_Fecha UNIQUE (HospitalId, Fecha)
+    );
+END
+GO

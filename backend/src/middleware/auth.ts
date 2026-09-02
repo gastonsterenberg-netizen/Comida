@@ -31,7 +31,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
   
   jwt.verify(token, JWT_SECRET, async (err: any, decodedUser: any) => {
     if (err || !decodedUser) {
-      res.status(403).json({ error: 'Sesión expirada o token inválido. Por favor, vuelva a iniciar sesión.' });
+      res.status(401).json({ error: 'Sesión expirada o token inválido. Por favor, vuelva a iniciar sesión.' });
       return;
     }
     
@@ -42,7 +42,7 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       });
 
       if (!dbUser || dbUser.Activo === false) {
-        res.status(403).json({ error: 'Usuario inhabilitado. Sesión rechazada.' });
+        res.status(401).json({ error: 'Usuario inhabilitado. Sesión rechazada.' });
         return;
       }
 

@@ -56,6 +56,52 @@ export default function Home() {
     return () => clearInterval(timer);
   }, []);
 
+  // Interceptor global de fetch para capturar 401 Unauthorized (Sesión Expirada) y redirigir al Login
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const originalFetch = window.fetch;
+    let isExpiredHandled = false;
+
+    window.fetch = async (...args) => {
+      try {
+        const response = await originalFetch(...args);
+        
+        const urlStr = typeof args[0] === 'string' ? args[0] : (args[0] as Request)?.url || '';
+        const isAuthEndpoint = urlStr.includes('/api/auth/login') || urlStr.includes('/api/auth/change-password') || urlStr.includes('/api/auth/2fa');
+
+        if (response.status === 401 && !isExpiredHandled && !isAuthEndpoint) {
+          isExpiredHandled = true;
+          Swal.fire({
+            title: "🔒 Sesión Expirada",
+            text: "Tu sesión ha caducado por inactividad o expiración de credenciales. Serás redirigido al inicio de sesión.",
+            icon: "warning",
+            confirmButtonText: "Iniciar Sesión",
+            confirmButtonColor: "#2563eb",
+            background: theme === 'dark' ? '#1f2937' : '#ffffff',
+            color: theme === 'dark' ? '#ffffff' : '#000000',
+            allowOutsideClick: false,
+            allowEscapeKey: false
+          }).then(() => {
+            isExpiredHandled = false;
+            setToken(null);
+            setRole(null);
+            setUserId(null);
+            setHospitalName(null);
+            setServicioName(null);
+            setUsername(null);
+          });
+        }
+        return response;
+      } catch (err) {
+        throw err;
+      }
+    };
+
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, [theme]);
+
   const [limiteAlmuerzo, setLimiteAlmuerzo] = useState("09:00");
   const [limiteCena, setLimiteCena] = useState("17:00");
   const [limiteAuthAlmuerzo, setLimiteAuthAlmuerzo] = useState("11:00");
@@ -102,7 +148,34 @@ export default function Home() {
     else if (userRole === 5) setRole("Nutricion");
   };
 
-  const handleLogout = () => {
+  const logoutGuardRef = useRef<(() => Promise<{ canLogout: boolean; skipPrompt?: boolean } | boolean>) | null>(null);
+
+  const handleLogout = async () => {
+    if (logoutGuardRef.current) {
+      const guardRes = await logoutGuardRef.current();
+      let canLogout = true;
+      let skipPrompt = false;
+
+      if (typeof guardRes === 'object' && guardRes !== null) {
+        canLogout = guardRes.canLogout;
+        skipPrompt = Boolean(guardRes.skipPrompt);
+      } else {
+        canLogout = Boolean(guardRes);
+      }
+
+      if (!canLogout) return;
+
+      if (skipPrompt) {
+        setToken(null);
+        setRole(null);
+        setUserId(null);
+        setHospitalName(null);
+        setServicioName(null);
+        setUsername(null);
+        return;
+      }
+    }
+
     Swal.fire({
       title: '¿Cerrar sesión?',
       text: "Saldrás de tu cuenta actual.",
@@ -204,7 +277,23 @@ export default function Home() {
           </div>
         )}
 
-        {role === "Jefe" && <JefePanel isPastAlmuerzo={isPastAlmuerzo} isPastCena={isPastCena} isPastAuthAlmuerzo={isPastAuthAlmuerzo} isPastAuthCena={isPastAuthCena} limiteAlmuerzo={limiteAlmuerzo} limiteCena={limiteCena} limiteAuthAlmuerzo={limiteAuthAlmuerzo} limiteAuthCena={limiteAuthCena} token={token} userId={userId} servicioName={servicioName} dietasProp={dietasHabilitadas} />}
+        {role === "Jefe" && (
+          <JefePanel 
+            isPastAlmuerzo={isPastAlmuerzo} 
+            isPastCena={isPastCena} 
+            isPastAuthAlmuerzo={isPastAuthAlmuerzo} 
+            isPastAuthCena={isPastAuthCena} 
+            limiteAlmuerzo={limiteAlmuerzo} 
+            limiteCena={limiteCena} 
+            limiteAuthAlmuerzo={limiteAuthAlmuerzo} 
+            limiteAuthCena={limiteAuthCena} 
+            token={token} 
+            userId={userId} 
+            servicioName={servicioName} 
+            dietasProp={dietasHabilitadas}
+            onRegisterLogoutGuard={(guardFn) => { logoutGuardRef.current = guardFn; }}
+          />
+        )}
         {role === "Gerente" && (
           <GerentePanel 
             token={token} 
@@ -265,7 +354,7 @@ function Login({ onLogin }: { onLogin: (token: string, roleId: number, id: numbe
         body: JSON.stringify({ username, password })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error de credenciales");
+      if (!res.ok) throw new Error(data.error || "Usuario o contraseña errónea");
       
       if (data.requirePasswordChange) {
         setTempToken(data.tempToken);
@@ -664,7 +753,8 @@ function JefePanel({
   token, 
   userId, 
   servicioName, 
-  dietasProp 
+  dietasProp,
+  onRegisterLogoutGuard
 }: { 
   isPastAlmuerzo: boolean, 
   isPastCena: boolean, 
@@ -677,12 +767,69 @@ function JefePanel({
   token: string, 
   userId: number | null, 
   servicioName?: string | null, 
-  dietasProp?: string[] 
+  dietasProp?: string[],
+  onRegisterLogoutGuard?: (guardFn: () => Promise<{ canLogout: boolean; skipPrompt?: boolean } | boolean>) => void
 }) {
   const [activeTab, setActiveTab] = useState("Planilla");
   const [planillaTab, setPlanillaTab] = useState<"almuerzo" | "cena">("almuerzo");
   const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [myServiceInfo, setMyServiceInfo] = useState<any | null>(null);
+  const [menuDelDia, setMenuDelDia] = useState<any | null>(null);
+
+  const fetchMenuDelDia = async (targetFecha?: string) => {
+    try {
+      const fQuery = targetFecha || fechaPlanilla;
+      const res = await fetch(`${API_URL}/api/menu?fecha=${fQuery}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMenuDelDia(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchMyServiceInfo = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/services/my-service`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) setMyServiceInfo(await res.json());
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleToggleMyServiceVoucher = async () => {
+    if (!myServiceInfo) return;
+    try {
+      const res = await fetch(`${API_URL}/api/services/${myServiceInfo.Id}/toggle-voucher`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const updated = data.service;
+        setMyServiceInfo(updated);
+        Swal.fire({
+          title: "Modalidad de Voucher Actualizada",
+          text: `El servicio ${updated.Nombre} ahora utiliza Vouchers ${updated.VoucherIndividual ? 'Individuales (Por Agente)' : 'Consolidados (Por Servicio)'}.`,
+          icon: "success",
+          timer: 2500,
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+      } else {
+        const data = await res.json();
+        Swal.fire({ title: "Error", text: data.error || "No se pudo actualizar la modalidad de voucher", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    } catch (e) {
+      Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
 
   // Padron & Plantel Builder
   const [padron, setPadron] = useState<any[]>([]);
@@ -939,6 +1086,7 @@ function JefePanel({
   };
 
   useEffect(() => {
+    fetchMyServiceInfo();
     fetchAdvanceDates();
     fetchHistorialEmergencias();
     fetchPadron();
@@ -954,6 +1102,7 @@ function JefePanel({
     setSavedSelections({});
     loadOrdersForDate(fechaPlanilla);
     setEmgFecha(fechaPlanilla);
+    fetchMenuDelDia(fechaPlanilla);
   }, [fechaPlanilla]);
 
   const [openGroup, setOpenGroup] = useState<"mi_servicio" | "otros">("mi_servicio");
@@ -997,6 +1146,25 @@ function JefePanel({
 
   const removeAgent = (dni: string) => {
     setPlantelDraft(plantelDraft.filter(x => x.DNI !== dni));
+  };
+
+  const handleRemoveAgent = (dni: string, nombreCompleto: string) => {
+    Swal.fire({
+      title: "¿Quitar Agente del Plantel?",
+      text: `¿Estás seguro de quitar a ${nombreCompleto} de la lista de agentes de este servicio?`,
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Sí, Quitar",
+      cancelButtonText: "Cancelar",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        removeAgent(dni);
+      }
+    });
   };
 
   const [showNewAgentModal, setShowNewAgentModal] = useState(false);
@@ -1111,7 +1279,7 @@ function JefePanel({
     setShowNewAgentModal(false);
 
     Swal.fire({
-      title: "Agente Incorporado al Borrador",
+      title: "Agente Incorporado al Plantel",
       text: `${nombre} fue agregado a la lista del plantel. Haga clic en 'Guardar Plantel' para enviar la solicitud a Gerencia.`,
       icon: "success",
       timer: 2500,
@@ -2004,12 +2172,6 @@ function JefePanel({
   });
 
   const hasUnsavedPlantel = (() => {
-    if (pendingDnisInDB.some(dni => !plantelDraft.some(p => p.DNI === dni))) return true;
-
-    const nonPendingDraft = plantelDraft.filter(p => !p.isPendiente);
-    if (nonPendingDraft.length !== staff.length) return true;
-    if (nonPendingDraft.some(p => p.isModificado || p.isNuevo)) return true;
-
     const getRacionNum = (h: string, conV?: boolean, active?: boolean) => {
       if (conV === false || active === false || !h || h === "Sin Ración") return 0;
       const hLower = h.toLowerCase();
@@ -2017,39 +2179,43 @@ function JefePanel({
       return 1;
     };
 
-    return nonPendingDraft.some(p => {
-      const originalInStaff = staff.find(s => s.DNI === p.DNI);
-      if (!originalInStaff) return true;
-
-      const origR = getRacionNum(originalInStaff.Horario, originalInStaff.ConVianda !== false, originalInStaff.Activo !== false);
-      const reqR = getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
-      return origR !== reqR;
-    });
-  })();
-
-  const tieneCambiosPlantelParaGerente = (() => {
-    return plantelDraft.some(p => {
+    // 1. Modificaciones o altas en el borrador que NO hayan sido enviadas a Gerencia (isPendiente === false)
+    const hasNovedadesOrDirectos = plantelDraft.some(p => {
       if (p.isPendiente) return false;
+
       const originalInStaff = staff.find(s => s.DNI === p.DNI);
       const existsInPadron = padron.find(pad => pad.DNI === p.DNI);
-
-      const getRacionNum = (h: string, conV?: boolean, active?: boolean) => {
-        if (conV === false || active === false || !h || h === "Sin Ración") return 0;
-        const hLower = h.toLowerCase();
-        if (hLower.includes("24") || hLower.includes("y cena") || hLower.includes("2 racion")) return 2;
-        return 1;
-      };
 
       const requestedRacion = getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
 
       if (originalInStaff) {
         const originalRacion = getRacionNum(originalInStaff.Horario, originalInStaff.ConVianda !== false, originalInStaff.Activo !== false);
-        return originalRacion !== requestedRacion;
+        const cambioDeRaciones = originalRacion !== requestedRacion;
+        return cambioDeRaciones || Boolean(p.isModificado);
       }
 
       const esNuevoSinDB = !existsInPadron && !originalInStaff;
-      return esNuevoSinDB;
+      return esNuevoSinDB || Boolean(p.isNuevo || p.isModificado);
     });
+
+    if (hasNovedadesOrDirectos) return true;
+
+    // 2. Agentes activos en BD quitados del borrador local
+    const hasRemovedStaff = staff.some(s => {
+      if (pendingDnisInDB.includes(s.DNI)) return false;
+      const inDraft = plantelDraft.find(p => p.DNI === s.DNI);
+      if (!inDraft) {
+        const originalRacion = getRacionNum(s.Horario, s.ConVianda !== false, s.Activo !== false);
+        return originalRacion > 0;
+      }
+      return false;
+    });
+
+    if (hasRemovedStaff) return true;
+
+    // 3. Solicitud pendiente en BD removida del borrador local
+    const pendingDnisRemoved = pendingDnisInDB.some(dni => !plantelDraft.some(p => p.DNI === dni));
+    return pendingDnisRemoved;
   })();
 
   // Guard de Advertencia antes de cerrar/recargar la pestaña del navegador
@@ -2064,6 +2230,79 @@ function JefePanel({
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [activeTab, hasUnsavedChanges, hasUnsavedPlantel]);
+
+  // Guard de Advertencia al intentar Cerrar Sesión desde la barra superior
+  useEffect(() => {
+    if (onRegisterLogoutGuard) {
+      onRegisterLogoutGuard(async () => {
+        if (activeTab === "Planilla" && hasUnsavedChanges) {
+          const result = await Swal.fire({
+            title: "⚠️ Cambios sin guardar en Planilla",
+            text: "Tienes modificaciones en la planilla de comida que no has grabado. ¿Qué deseas hacer antes de cerrar sesión?",
+            icon: "warning",
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: "💾 Guardar y Salir",
+            denyButtonText: "🗑️ Descartar y Salir",
+            cancelButtonText: "❌ Permanecer Aquí",
+            confirmButtonColor: "#2563eb",
+            denyButtonColor: "#dc2626",
+            cancelButtonColor: "#6b7280",
+            background: theme === 'dark' ? '#1f2937' : '#fff',
+            color: theme === 'dark' ? '#fff' : '#000'
+          });
+
+          if (result.isConfirmed) {
+            const ok = await handleGuardarPedidos();
+            return { canLogout: ok, skipPrompt: ok };
+          } else if (result.isDenied) {
+            setSelections(JSON.parse(JSON.stringify(savedSelections)));
+            return { canLogout: true, skipPrompt: true };
+          } else {
+            return { canLogout: false };
+          }
+        }
+
+        if (activeTab === "Plantel" && hasUnsavedPlantel) {
+          const result = await Swal.fire({
+            title: "⚠️ Cambios en Plantel Sin Guardar",
+            text: "Tienes novedades en el plantel que no has guardado. ¿Qué deseas hacer antes de cerrar sesión?",
+            icon: "warning",
+            showCancelButton: true,
+            showDenyButton: true,
+            confirmButtonText: "💾 Guardar y Salir",
+            denyButtonText: "🗑️ Descartar y Salir",
+            cancelButtonText: "❌ Permanecer Aquí",
+            confirmButtonColor: "#2563eb",
+            denyButtonColor: "#dc2626",
+            cancelButtonColor: "#6b7280",
+            background: theme === 'dark' ? '#1f2937' : '#fff',
+            color: theme === 'dark' ? '#fff' : '#000'
+          });
+
+          if (result.isConfirmed) {
+            const ok = await handleGuardarPlantel();
+            return { canLogout: ok, skipPrompt: ok };
+          } else if (result.isDenied) {
+            setPlantelDraft(staff.map((p: any) => ({
+              DNI: p.DNI,
+              NombreCompleto: p.NombreCompleto,
+              Horario: getRacionLabel(p.Horario),
+              ConVianda: p.ConVianda !== false,
+              isNuevo: false,
+              isPendiente: false
+            })));
+            await fetchStaff(fechaPlanilla);
+            return { canLogout: true, skipPrompt: true };
+          } else {
+            return { canLogout: false };
+          }
+        }
+
+        return { canLogout: true, skipPrompt: false };
+      });
+    }
+  }, [activeTab, hasUnsavedChanges, hasUnsavedPlantel, selections, savedSelections, plantelDraft, staff, theme, onRegisterLogoutGuard]);
 
   // Navegación protegida con advertencia de guardado al cambiar de solapa
   const handleTabClick = (targetTab: string) => {
@@ -2172,21 +2411,50 @@ function JefePanel({
     <div className={`space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 ${(activeTab === "Planilla" && hasUnsavedChanges) || (activeTab === "Plantel" && hasUnsavedPlantel) ? 'pb-24' : ''}`}>
       
       {/* TABS NAVIGATION */}
-      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-1.5 flex flex-wrap gap-1">
-        {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => handleTabClick(tab.id)}
-            className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
-              activeTab === tab.id 
-                ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm' 
-                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
-            }`}
-          >
-            {tab.icon}
-            {tab.label}
-          </button>
-        ))}
+      <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-1.5 flex flex-wrap justify-between items-center gap-2">
+        <div className="flex flex-wrap gap-1">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => handleTabClick(tab.id)}
+              className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                activeTab === tab.id 
+                  ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm' 
+                  : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-200'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* CONTROLES DE VOUCHER DEL SERVICIO DEL JEFE */}
+        {myServiceInfo && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 dark:bg-gray-800/80 rounded-xl border border-gray-200 dark:border-gray-700 mr-1">
+            <span className="text-xs font-bold text-gray-500 dark:text-gray-400 hidden lg:inline">Modalidad de Voucher:</span>
+            <span className={`text-[11px] px-2.5 py-1 rounded-lg font-black uppercase tracking-wider flex items-center ${
+              myServiceInfo.VoucherIndividual 
+                ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800' 
+                : 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+            }`}>
+              {myServiceInfo.VoucherIndividual ? '📄 Individual (Por Agente)' : '📦 Consolidado (Por Servicio)'}
+            </span>
+            <button
+              type="button"
+              onClick={handleToggleMyServiceVoucher}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center cursor-pointer ${
+                myServiceInfo.VoucherIndividual
+                  ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white'
+              }`}
+              title={myServiceInfo.VoucherIndividual ? 'Cambiar a Voucher Consolidado (Genera 1 solo voucher para todo el servicio)' : 'Cambiar a Voucher Individual (Genera 1 voucher individual por agente)'}
+            >
+              <RefreshCw className="w-3.5 h-3.5 mr-1" />
+              {myServiceInfo.VoucherIndividual ? 'Cambiar a Consolidado' : 'Cambiar a Individual'}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* SECCION: PLANILLA PERSONAL */}
@@ -2220,6 +2488,50 @@ function JefePanel({
             </span>
           </div>
         )}
+
+        {/* BANNER MENÚ DEL DÍA (NUTRICIÓN) */}
+        {menuDelDia && (menuDelDia.menuAlmuerzo || menuDelDia.menuCena) && (() => {
+          const isToday = fechaPlanilla === getTodayStr();
+          const showAlmuerzo = Boolean(menuDelDia.menuAlmuerzo) && (!isToday || !isPastAlmuerzo);
+          const showCena = Boolean(menuDelDia.menuCena) && (!isToday || !isPastCena);
+
+          if (!showAlmuerzo && !showCena) return null;
+
+          return (
+            <div className="mx-6 mt-4 mb-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 text-white p-4 rounded-2xl shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3 border border-amber-400 animate-in fade-in duration-200">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-white/20 rounded-xl shrink-0">
+                  <Utensils className="w-6 h-6 text-yellow-100" />
+                </div>
+                <div>
+                  <h4 className="font-black text-xs uppercase tracking-wider text-amber-100 flex items-center gap-1.5">
+                    <span>🍽️ MENÚ INFORMADO POR NUTRICIÓN</span>
+                    <span className="text-[10px] bg-white/20 text-white px-2 py-0.5 rounded-full font-bold">
+                      {isToday ? 'HOY' : fechaPlanilla.split('-').reverse().join('/')}
+                    </span>
+                  </h4>
+                  <div className="mt-1 flex flex-wrap gap-x-6 gap-y-1.5 text-sm">
+                    {showAlmuerzo && (
+                      <div className="flex items-center space-x-1.5 font-bold">
+                        <span className="text-yellow-200">☀️ Almuerzo:</span>
+                        <span className="text-white bg-black/20 px-2.5 py-0.5 rounded-lg border border-white/20">{menuDelDia.menuAlmuerzo}</span>
+                      </div>
+                    )}
+                    {showCena && (
+                      <div className="flex items-center space-x-1.5 font-bold">
+                        <span className="text-yellow-200">🌙 Cena:</span>
+                        <span className="text-white bg-black/20 px-2.5 py-0.5 rounded-lg border border-white/20">{menuDelDia.menuCena}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="text-[11px] font-semibold text-amber-100 italic shrink-0 bg-white/10 px-3 py-1.5 rounded-xl border border-white/15">
+                💡 Consulte al agente si consumirá este menú antes de solicitar.
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 rounded-t-xl">
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
@@ -2994,18 +3306,20 @@ function JefePanel({
                         </div>
                         <div className="flex space-x-2">
                           <button
+                            type="button"
                             onClick={() => addAgent(p, "Almuerzo o Cena")}
                             disabled={disable12h || isDraft12h}
-                            className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable12h || isDraft12h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300'}`}
+                            className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable12h || isDraft12h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300 cursor-pointer'}`}
                             title="Asignar 1 Ración (Almuerzo o Cena)"
                           >
                             {isDraft12h ? '✓ 1 Ración' : '1 Ración'}
                           </button>
                           <button
+                            type="button"
                             onClick={() => addAgent(p, "Almuerzo y Cena")}
                             disabled={disable24h || isDraft24h}
-                            className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable24h || isDraft24h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300'}`}
-                            title="Asignar 2 Raciones (Almuerzo y Cena)"
+                            className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable24h || isDraft24h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300 cursor-pointer'}`}
+                            title="Asignar 2 Raciones (Almuerzo y Cena - Guardia 24h)"
                           >
                             {isDraft24h ? '✓ 2 Raciones' : '2 Raciones'}
                           </button>
@@ -3153,7 +3467,7 @@ function JefePanel({
                             <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">DNI: {p.DNI}</span>
                             <button 
                               type="button"
-                              onClick={() => removeAgent(p.DNI)}
+                              onClick={() => handleRemoveAgent(p.DNI, p.NombreCompleto)}
                               className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/40 rounded-lg transition-colors cursor-pointer border border-transparent"
                               title="Quitar / Eliminar del plantel"
                             >
@@ -4472,27 +4786,78 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
   };
 
   const cambiarServicioAgenteModal = async (agenteId: number, nombreAgente: string, servicioActualId: number) => {
-    const optionsHtml = servicios.map((s: any) => 
-      `<option value="${s.Id}" ${s.Id === servicioActualId ? 'selected' : ''}>${s.Nombre}</option>`
-    ).join('');
+    const sortedServicios = [...servicios].sort((a, b) => 
+      (a.Nombre || '').localeCompare(b.Nombre || '', 'es', { sensitivity: 'base' })
+    );
+
+    const swalBg = theme === 'dark' ? '#1f2937' : '#ffffff';
+    const swalText = theme === 'dark' ? '#ffffff' : '#111827';
+    const swalBorder = theme === 'dark' ? '#374151' : '#d1d5db';
+    const swalInputBg = theme === 'dark' ? '#111827' : '#f9fafb';
+
+    const renderOptions = (filterText = '') => {
+      const q = filterText.trim().toLowerCase();
+      const filtered = sortedServicios.filter(s => (s.Nombre || '').toLowerCase().includes(q));
+      if (filtered.length === 0) {
+        return `<option value="" disabled style="font-size: 11px; padding: 4px;">No se encontraron servicios</option>`;
+      }
+      return filtered.map(s => 
+        `<option value="${s.Id}" ${s.Id === servicioActualId ? 'selected' : ''} style="font-size: 11px; padding: 5px 8px; border-radius: 4px;">${s.Nombre}</option>`
+      ).join('');
+    };
 
     const { value: nuevoServicioId } = await Swal.fire({
       title: `Cambiar Servicio de Agente`,
-      html:
-        `<p style="font-size:13px; font-weight:bold; margin-bottom:10px; color:${theme === 'dark' ? '#d1d5db' : '#374151'}; font-family:sans-serif;">Agente: ${nombreAgente}</p>` +
-        `<label style="display:block; text-align:left; font-size:12px; font-weight:bold; margin-bottom:4px; color:${theme === 'dark' ? '#9ca3af' : '#6b7280'};">Seleccione el servicio destino:</label>` +
-        `<select id="swal-select-servicio" class="swal2-select" style="display:flex; width:100%; margin: 8px 0 16px 0; background-color:${theme === 'dark' ? '#374151' : '#fff'}; color:${theme === 'dark' ? '#fff' : '#000'}; border-color:${theme === 'dark' ? '#4b5563' : '#d1d5db'};">${optionsHtml}</select>`,
+      html: `
+        <div style="text-align: left; margin-top: 6px;">
+          <p style="font-size: 12px; font-weight: bold; margin-bottom: 10px; color: ${theme === 'dark' ? '#e5e7eb' : '#1f2937'};">
+            Agente: <span style="color: #4f46e5; font-weight: 800;">${nombreAgente}</span>
+          </p>
+          <label style="display: block; font-size: 11px; font-weight: bold; margin-bottom: 4px; color: ${theme === 'dark' ? '#9ca3af' : '#4b5563'}; text-transform: uppercase; letter-spacing: 0.5px;">
+            Buscar y Seleccionar Servicio Destino:
+          </label>
+          <input 
+            id="swal-search-servicio" 
+            type="text" 
+            placeholder="🔍 Escriba aquí para buscar servicio..." 
+            style="width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 11px; font-weight: 600; border: 1px solid ${swalBorder}; border-radius: 8px; background-color: ${swalInputBg}; color: ${swalText}; margin-bottom: 8px;" 
+          />
+          <select 
+            id="swal-select-servicio" 
+            size="7" 
+            style="width: 100%; box-sizing: border-box; padding: 4px; font-size: 11px; border: 1px solid ${swalBorder}; border-radius: 8px; background-color: ${swalInputBg}; color: ${swalText}; outline: none; overflow-y: auto;"
+          >
+            ${renderOptions()}
+          </select>
+        </div>
+      `,
+      didOpen: () => {
+        const searchInput = document.getElementById('swal-search-servicio') as HTMLInputElement;
+        const selectEl = document.getElementById('swal-select-servicio') as HTMLSelectElement;
+        if (searchInput && selectEl) {
+          searchInput.focus();
+          searchInput.addEventListener('input', (e: any) => {
+            selectEl.innerHTML = renderOptions(e.target.value);
+          });
+          selectEl.addEventListener('dblclick', () => {
+            if (selectEl.value) {
+              Swal.clickConfirm();
+            }
+          });
+        }
+      },
       focusConfirm: false,
       showCancelButton: true,
       confirmButtonText: 'Transferir Agente',
       cancelButtonText: 'Cancelar',
-      background: theme === 'dark' ? '#1f2937' : '#fff',
-      color: theme === 'dark' ? '#fff' : '#000',
+      confirmButtonColor: '#4f46e5',
+      background: swalBg,
+      color: swalText,
       preConfirm: () => {
         const selectEl = document.getElementById('swal-select-servicio') as HTMLSelectElement;
         const val = selectEl ? selectEl.value : '';
         if (!val) {
-          Swal.showValidationMessage('Debes seleccionar un servicio');
+          Swal.showValidationMessage('Debes seleccionar un servicio destino');
           return false;
         }
         return Number(val);
@@ -6484,17 +6849,6 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                           >
                             <UserPlus className="w-4 h-4 mr-1.5" /> Asignar Jefe
                           </button>
-                          <button
-                            onClick={() => toggleVoucherIndividual(s.Id, s.Nombre)}
-                            className={`w-full px-3 py-1.5 rounded-lg transition-colors flex items-center justify-center text-xs font-bold shadow-sm border ${
-                              s.VoucherIndividual 
-                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/30' 
-                                : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/30'
-                            }`}
-                            title={s.VoucherIndividual ? 'Cambiar a voucher consolidado para todo el servicio' : 'Cambiar a vouchers individuales por agente'}
-                          >
-                            Configurar Voucher
-                          </button>
                         </div>
                       </div>
                     );
@@ -8418,8 +8772,72 @@ function RRHHPanel({ token }: { token: string }) {
 }
 
 function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }: { token: string | null; hospitalName: string | null; username: string | null; dietasHabilitadasProp: string[] }) {
-  const [activeTab, setActiveTab] = useState<"Entregas" | "CrearEmergencia" | "Reportes">("Entregas");
+  const [activeTab, setActiveTab] = useState<"Entregas" | "CrearEmergencia" | "Reportes" | "MenuDia">("Entregas");
   const { theme } = useTheme();
+
+  // Estado Menú del Día
+  const [nutriMenuFecha, setNutriMenuFecha] = useState(getTodayStr());
+  const [nutriMenuAlmuerzo, setNutriMenuAlmuerzo] = useState("");
+  const [nutriMenuCena, setNutriMenuCena] = useState("");
+  const [cargandoNutriMenu, setCargandoNutriMenu] = useState(false);
+
+  const fetchNutriMenu = async (fSel: string) => {
+    try {
+      const res = await fetch(`${API_URL}/api/menu?fecha=${fSel}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          setNutriMenuAlmuerzo(data.menuAlmuerzo || "");
+          setNutriMenuCena(data.menuCena || "");
+        } else {
+          setNutriMenuAlmuerzo("");
+          setNutriMenuCena("");
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const submitNutriMenu = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCargandoNutriMenu(true);
+    try {
+      const res = await fetch(`${API_URL}/api/menu`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          fecha: nutriMenuFecha,
+          menuAlmuerzo: nutriMenuAlmuerzo,
+          menuCena: nutriMenuCena
+        })
+      });
+      const data = await res.json();
+      setCargandoNutriMenu(false);
+      if (res.ok) {
+        Swal.fire({
+          title: "¡Menú Publicado!",
+          text: "El menú del día ha sido guardado exitosamente y ya se encuentra visible para los Jefes de Servicio.",
+          icon: "success",
+          timer: 2500,
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+      } else {
+        Swal.fire({ title: "Error", text: data.error || "No se pudo guardar el menú", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      }
+    } catch (err) {
+      setCargandoNutriMenu(false);
+      console.error(err);
+      Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+    }
+  };
+
+  useEffect(() => {
+    fetchNutriMenu(nutriMenuFecha);
+  }, [token]);
 
   // Estados Módulo de Entrega
   const [scanFecha, setScanFecha] = useState(getTodayStr());
@@ -8968,11 +9386,16 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
       setScanInput("");
 
       if (data.error || !data.pedidos || data.pedidos.length === 0) {
-        // REQUISITO 3: Sin ración asignada -> Sonido advertencia + SweetAlert que NO se cierra con ENTER ni timer
+        // REQUISITO 3: Sin ración asignada -> Sonido advertencia + SweetAlert con DNI/Nombre limpio
+        const displayDni = data?.agenteScanned?.DNI || data?.dniScanned || queryValue.trim();
+        const displayNombre = data?.agenteScanned?.NombreCompleto 
+          ? `<strong>${data.agenteScanned.NombreCompleto}</strong> (DNI: ${displayDni})` 
+          : `DNI/Código <strong>${displayDni}</strong>`;
+
         playWarningBeep();
         await Swal.fire({
           title: "❌ SIN RACIÓN SOLICITADA",
-          html: `<div style="font-size:15px; margin-top:8px; line-height:1.5;">El DNI/Código <strong>${queryValue.trim()}</strong> NO tiene ración solicitada ni aprobada para el turno de <strong>${scanTipoComida}</strong> (${scanFecha.split('-').reverse().join('/')}).</div>`,
+          html: `<div style="font-size:15px; margin-top:8px; line-height:1.5;">El agente ${displayNombre} NO tiene ración solicitada ni aprobada para el turno de <strong>${scanTipoComida}</strong> en la fecha <strong>${scanFecha.split('-').reverse().join('/')}</strong>.<br/><br/><span style="font-size:12px; opacity:0.8;">💡 Verifique si el pedido corresponde al otro turno (Almuerzo/Cena), la fecha seleccionada en pantalla o si aún no fue guardado por el Jefe de Servicio.</span></div>`,
           icon: "error",
           confirmButtonText: "OK, Entendido",
           confirmButtonColor: "#dc2626",
@@ -9196,6 +9619,17 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
         >
           <QrCode className="w-4 h-4 mr-2 text-indigo-500" />
           Estación de Entrega (DNI / QR)
+        </button>
+        <button
+          onClick={() => setActiveTab("MenuDia")}
+          className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === "MenuDia"
+              ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+          }`}
+        >
+          <Utensils className="w-4 h-4 mr-2 text-amber-500" />
+          Cargar Menú del Día
         </button>
         <button
           onClick={() => setActiveTab("CrearEmergencia")}
@@ -9618,6 +10052,97 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
         </div>
       )}
 
+      {/* PESTAÑA: CARGAR MENÚ DEL DÍA */}
+      {activeTab === "MenuDia" && (
+        <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 space-y-6 animate-in fade-in duration-300">
+          <div className="border-b border-gray-200 dark:border-gray-800 pb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 flex items-center">
+                <Utensils className="w-6 h-6 mr-2.5 text-amber-500" /> Cargar Menú del Día (Almuerzo y Cena)
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Publica el nombre de los platos del día para que los Jefes de Servicio puedan informar a su personal antes de solicitar las raciones.
+              </p>
+            </div>
+            <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 px-3.5 py-1.5 rounded-xl">
+              <span className="text-xs font-bold text-gray-500 dark:text-gray-400">Fecha del Menú:</span>
+              <input
+                type="date"
+                value={nutriMenuFecha}
+                onChange={e => {
+                  const f = e.target.value;
+                  setNutriMenuFecha(f);
+                  fetchNutriMenu(f);
+                }}
+                className="bg-transparent text-xs font-bold text-gray-900 dark:text-white focus:outline-none"
+              />
+            </div>
+          </div>
+
+          <form onSubmit={submitNutriMenu} className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* PLATO ALMUERZO */}
+              <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-5 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-sm text-amber-900 dark:text-amber-300 flex items-center">
+                    ☀️ Plato de Almuerzo
+                  </h3>
+                  <span className="text-[10px] font-bold bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded-md">
+                    Opcional
+                  </span>
+                </div>
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  Nombre del plato principal de almuerzo (ej. Milanesas de pollo con ensalada rusa).
+                </p>
+                <input
+                  type="text"
+                  value={nutriMenuAlmuerzo}
+                  onChange={e => setNutriMenuAlmuerzo(e.target.value)}
+                  placeholder="Ej. Milanesa de pollo con puré de papas..."
+                  className="w-full text-sm border-amber-300 dark:border-amber-800/60 rounded-xl shadow-sm focus:border-amber-500 focus:ring-amber-500/50 px-4 py-3 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold"
+                />
+              </div>
+
+              {/* PLATO CENA */}
+              <div className="bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-200 dark:border-indigo-900/40 p-5 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-sm text-indigo-900 dark:text-indigo-300 flex items-center">
+                    🌙 Plato de Cena
+                  </h3>
+                  <span className="text-[10px] font-bold bg-indigo-200 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-200 px-2 py-0.5 rounded-md">
+                    Opcional
+                  </span>
+                </div>
+                <p className="text-xs text-indigo-700 dark:text-indigo-400">
+                  Nombre del plato principal de cena (ej. Pastel de papas con carne).
+                </p>
+                <input
+                  type="text"
+                  value={nutriMenuCena}
+                  onChange={e => setNutriMenuCena(e.target.value)}
+                  placeholder="Ej. Pastel de papa y carne picada..."
+                  className="w-full text-sm border-indigo-300 dark:border-indigo-800/60 rounded-xl shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-4 py-3 border bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-semibold"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-gray-200 dark:border-gray-800">
+              <p className="text-xs text-gray-500 dark:text-gray-400 font-medium italic">
+                💡 La información del menú vencerá automáticamente al concluir el horario de cada comida.
+              </p>
+              <button
+                type="submit"
+                disabled={cargandoNutriMenu}
+                className="px-6 py-3 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center cursor-pointer disabled:opacity-50"
+              >
+                {cargandoNutriMenu ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                Guardar Menú del Día
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {/* PESTAÑA 2: EMERGENCIA AUTOAUTORIZADA */}
       {activeTab === "CrearEmergencia" && (
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 animate-in fade-in duration-300">
@@ -9737,6 +10262,7 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                 </thead>
                 <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
                   {sortedReportes.filter(r => {
+                    if (r.Estado !== 'Aprobado') return false;
                     if (!repFiltroEmpleado) return true;
                     const term = repFiltroEmpleado.toLowerCase();
                     const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
