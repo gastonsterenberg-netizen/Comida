@@ -16,6 +16,7 @@ model Hospitales {
   LimiteAutorizacionAlmuerzo String?     @default("11:00") @db.NVarChar(10)
   LimiteAutorizacionCena     String?     @default("18:00") @db.NVarChar(10)
   DietasHabilitadas          String?     @default("Normal,Gastrica,Diabetica,Hepatico,Vegetariano,Celiaca") @db.NVarChar(500)
+  RolCambioVoucher           String      @default("JEFE") @db.NVarChar(20)
   Servicios         Servicios[]
   Personal          Personal[]
   Usuarios          Usuarios[]
@@ -41,7 +42,7 @@ model Servicios {
 
 model Personal {
   Id                  Int             @id @default(autoincrement())
-  DNI                 String          @unique @db.NVarChar(20)
+  DNI                 String          @db.NVarChar(20)
   NombreCompleto      String          @db.NVarChar(200)
   HospitalId          Int
   ServicioId          Int
@@ -64,6 +65,7 @@ model Personal {
   PedidosComida             PedidosComida[] @relation("PedidosPersonales")
   EmergenciasReemplazadas   PedidosComida[] @relation("Reemplazos")
 
+  @@unique([HospitalId, ServicioId, DNI])
   @@index([HospitalId, DNI])
 }
 
