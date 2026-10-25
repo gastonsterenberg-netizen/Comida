@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Manual OCOM OCBS</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    body { font-family: sans-serif; background: #333; color: white; margin: 0; padding: 20px; text-align: center; }
+    .page-box { display: inline-block; margin: 15px; background: white; color: black; padding: 10px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <h1>Manual de Configuración OCOM 2D</h1>
+  <div id="container"></div>
+
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    
+    async function renderPDF() {
+      const loadingTask = pdfjsLib.getDocument('/ocbs_manual.pdf');
+      const pdf = await loadingTask.promise;
+      const container = document.getElementById('container');
+
+      for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.5 });
+        
+        const box = document.createElement('div');
+        box.className = 'page-box';
+        box.id = 'page-' + pageNum;
+
+        const title = document.createElement('h3');
+        title.innerText = 'Página ' + pageNum;
+        box.appendChild(title);
+
+        const canvas = document.createElement('canvas');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        box.appendChild(canvas);
+
+        container.appendChild(box);
+
+        const context = canvas.getContext('2d');
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+      }
+    }
+
+    renderPDF();
+  </script>
+</body>
+</html>

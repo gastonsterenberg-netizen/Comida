@@ -12,6 +12,7 @@ declare global {
         roleId: number;
         hospitalId?: number | null;
         servicioId?: number | null;
+        terminalId?: number | null;
       };
     }
   }
@@ -44,6 +45,18 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
       if (!dbUser || dbUser.Activo === false) {
         res.status(401).json({ error: 'Usuario inhabilitado. Sesión rechazada.' });
         return;
+      }
+
+      // Si el token pertenece a una terminal física tótem, verificar que no esté revocada
+      if (decodedUser.terminalId) {
+        const terminal = await prisma.terminalesTotem.findUnique({
+          where: { Id: decodedUser.terminalId },
+          select: { Activo: true }
+        });
+        if (!terminal || terminal.Activo === false) {
+          res.status(403).json({ error: 'Terminal de autoservicio desactivada o revocada por Nutrición.' });
+          return;
+        }
       }
 
       req.user = decodedUser;
@@ -81,3 +94,13 @@ export const isNutricion = (req: Request, res: Response, next: NextFunction): vo
     res.status(403).json({ error: 'Acceso denegado: Requiere rol de NUTRICIÓN' });
   }
 };
+
+export const isTotem = (req: Request, res: Response, next: NextFunction): void => {
+  // roleId 6: TOTEM, roleId 5: NUTRICION, roleId 2: GERENTE, roleId 1: ADMIN/RRHH
+  if (req.user && (req.user.roleId === 6 || req.user.roleId === 5 || req.user.roleId === 2 || req.user.roleId === 1)) {
+    next();
+  } else {
+    res.status(403).json({ error: 'Acceso denegado: Requiere rol de TÓTEM o Administrador' });
+  }
+};
+

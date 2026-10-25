@@ -10,7 +10,8 @@ async function main() {
     { Id: 2, Nombre: 'GERENTE' },
     { Id: 3, Nombre: 'JEFE_SERVICIO' },
     { Id: 4, Nombre: 'RRHH' },
-    { Id: 5, Nombre: 'NUTRICION' }
+    { Id: 5, Nombre: 'NUTRICION' },
+    { Id: 6, Nombre: 'TOTEM' }
   ];
 
   for (const role of roles) {

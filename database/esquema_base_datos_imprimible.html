@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Esquema de Base de Datos - Sistema Comida (Versión Imprimible)</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        darkMode: false,
+        background: '#ffffff',
+        primaryColor: '#ffffff',
+        primaryTextColor: '#111827',
+        primaryBorderColor: '#1f2937',
+        lineColor: '#1f2937',
+        secondaryColor: '#f3f4f6',
+        tertiaryColor: '#ffffff',
+        fontFamily: 'Segoe UI, Helvetica, Arial, sans-serif',
+        fontSize: '13px'
+      }
+    });
+  </script>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 1.2cm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      background-color: #ffffff;
+      color: #111827;
+      margin: 0;
+      padding: 24px;
+      line-height: 1.45;
+    }
+
+    .header {
+      border-bottom: 2px solid #111827;
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    .title {
+      font-size: 22px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 0;
+      color: #000000;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: #374151;
+      margin-top: 4px;
+    }
+
+    .badge-print {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid #111827;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .btn-print {
+      background-color: #111827;
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background-color 0.2s;
+    }
+
+    .btn-print:hover {
+      background-color: #374151;
+    }
+
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-bottom: 1.5px solid #374151;
+      padding-bottom: 4px;
+      margin-top: 24px;
+      margin-bottom: 12px;
+      color: #000000;
+    }
+
+    .diagram-container {
+      background-color: #ffffff;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: center;
+      overflow-x: auto;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .table-card {
+      border: 1.5px solid #111827;
+      border-radius: 6px;
+      background: #ffffff;
+      page-break-inside: avoid;
+    }
+
+    .table-header {
+      background-color: #f3f4f6;
+      border-bottom: 1.5px solid #111827;
+      padding: 6px 12px;
+      font-weight: 700;
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      color: #000000;
+    }
+
+    .table-body {
+      padding: 8px 12px;
+      font-size: 11px;
+    }
+
+    .table-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2.5px 0;
+      border-bottom: 1px dashed #e5e7eb;
+    }
+
+    .table-row:last-child {
+      border-bottom: none;
+    }
+
+    .col-name {
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .col-pk {
+      color: #b91c1c;
+      font-weight: 700;
+      margin-right: 4px;
+    }
+
+    .col-fk {
+      color: #1d4ed8;
+      font-weight: 700;
+      margin-right: 4px;
+    }
+
+    .col-new {
+      background-color: #e5e7eb;
+      color: #000000;
+      font-size: 9px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 700;
+      margin-left: 6px;
+      border: 1px solid #9ca3af;
+    }
+
+    .col-type {
+      color: #4b5563;
+      font-family: Consolas, monospace;
+      font-size: 10px;
+    }
+
+    .rules-box {
+      border: 1.5px solid #111827;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-top: 16px;
+      background-color: #f9fafb;
+      font-size: 11.5px;
+      page-break-inside: avoid;
+    }
+
+    .rules-box ul {
+      margin: 6px 0 0 0;
+      padding-left: 18px;
+    }
+
+    .rules-box li {
+      margin-bottom: 4px;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .diagram-container {
+        border: 1px solid #6b7280;
+      }
+      .table-card {
+        border: 1.5px solid #000000;
+      }
+      .table-header {
+        background-color: #e5e7eb !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1 class="title">Esquema Relacional Normalizado</h1>
+      <div class="subtitle">Base de Datos: <strong>ComidaDB</strong> — Sistema Hospitalario de Gestión de Raciones</div>
+    </div>
+    <div style="text-align: right;">
+      <span class="badge-print">Versión Imprimible (Alto Contraste)</span>
+      <div style="margin-top: 8px;" class="no-print">
+        <button class="btn-print" onclick="window.print()">🖨️ Imprimir Esquema (Ctrl + P)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">1. Diagrama de Relaciones de Entidades (ERD Normalizado)</div>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+erDiagram
+    HOSPITALES ||--o{ SERVICIOS : "contiene"
+    HOSPITALES ||--o{ PADRON_HABILITADOS : "pertenece"
+    HOSPITALES ||--o{ PERSONAL : "HospitalId"
+    HOSPITALES ||--o{ USUARIOS : "HospitalId"
+    HOSPITALES ||--o{ SOLICITUDES_PLANTEL : "HospitalId"
+    HOSPITALES ||--o{ OBSERVACIONES_SERVICIO : "HospitalId"
+    HOSPITALES ||--o{ MENU_DIA : "HospitalId"
+    HOSPITALES ||--o{ FECHAS_ANTICIPADAS : "HospitalId"
+    HOSPITALES ||--o{ IMPRESIONES_VOUCHER : "HospitalId"
+    
+    SERVICIOS ||--o{ PADRON_HABILITADOS : "servicio activo"
+    SERVICIOS ||--o{ PERSONAL : "ServicioId"
+    SERVICIOS ||--o{ USUARIOS : "ServicioId"
+    SERVICIOS ||--o{ SOLICITUDES_PLANTEL : "ServicioId"
+    SERVICIOS ||--o{ OBSERVACIONES_SERVICIO : "ServicioId"
+    SERVICIOS ||--o{ IMPRESIONES_VOUCHER : "ServicioId"
+    
+    PADRON_HABILITADOS ||--o{ PERSONAL : "1 a N (AgenteId - Historial planteles)"
+    PADRON_HABILITADOS ||--o{ PEDIDOS_COMIDA : "1 a N (AgenteId - Quien consume)"
+    PADRON_HABILITADOS ||--o{ PEDIDOS_COMIDA : "0 a N (ReemplazaAgenteId)"
+    
+    USUARIOS ||--o{ PEDIDOS_COMIDA : "SolicitadoPorUsuarioId"
+    USUARIOS ||--o{ SOLICITUDES_PLANTEL : "SolicitadoPorId"
+    USUARIOS ||--o{ OBSERVACIONES_SERVICIO : "UsuarioId"
+    USUARIOS ||--o{ MENU_DIA : "CreadoPorUsuarioId"
+    USUARIOS ||--o{ FECHAS_ANTICIPADAS : "CreadoPorUsuarioId"
+    USUARIOS ||--o{ IMPRESIONES_VOUCHER : "ImpresoPorUsuarioId"
+    USUARIOS ||--o{ AUDITORIA : "UsuarioId"
+    ROLES ||--o{ USUARIOS : "RolId"
+
+    HOSPITALES {
+        int Id PK
+        string Nombre "Efector de Salud"
+        string Codigo UK "Identificador único"
+        string LimiteAlmuerzo "Cierre pedidos almuerzo"
+        string LimiteCena "Cierre pedidos cena"
+        string LimiteAutorizacionAlmuerzo "Cierre autorizaciones"
+        string LimiteAutorizacionCena "Cierre autorizaciones"
+        string DietasHabilitadas "Lista dietas autorizadas"
+    }
+
+    SERVICIOS {
+        int Id PK
+        int HospitalId FK "Hospital pertenencia"
+        string Nombre "Nombre Servicio o Sala"
+        boolean VoucherIndividual "Emisión individual"
+    }
+
+    PADRON_HABILITADOS {
+        int Id PK "Clave Primaria Agente"
+        string DNI UK "Documento Único"
+        string NombreCompleto "Apellido y Nombre"
+        int RacionesMaximasDia "NUEVA: Cupo (1 o 2)"
+        string OrigenAlta "NUEVA: PADRON_RRHH o EMERGENCIA"
+        boolean EsGuardia24h "Flag Guardia 24h"
+        boolean Activo "Habilitado para comer"
+        int HospitalId FK "Hospital origen"
+        int ServicioId FK "Servicio asignado"
+    }
+
+    PEDIDOS_COMIDA {
+        int Id PK "Identificador Pedido"
+        date FechaPedido "Día de la vianda"
+        string TipoComida "'Almuerzo' | 'Cena'"
+        string TipoDieta "'Normal','Gastrica',etc"
+        int AgenteId FK "NUEVA: FK a PadronHabilitados"
+        int ReemplazaAgenteId FK "NUEVA: FK Titular reemplazado"
+        int PersonalId FK "Retrocompatibilidad (Plantel)"
+        string Estado "'Pendiente' | 'Aprobado'"
+        boolean EsExcepcional "Reemplazo última hora"
+        string JustificacionSolicitud "Motivo o [NUTRICIÓN]"
+    }
+
+    PERSONAL {
+        int Id PK "Fila de asignación"
+        int AgenteId FK "NUEVA: FK a PadronHabilitados"
+        string DNI "DNI del agente"
+        string NombreCompleto "Nombre del agente"
+        int HospitalId FK "Hospital"
+        int ServicioId FK "Servicio donde figura"
+        string Horario "Texto de turno"
+        boolean EsGuardia24 "Guardia 24h"
+        boolean ConVianda "Tiene vianda autorizada"
+        boolean Activo "Estado en el servicio"
+    }
+
+    SOLICITUDES_PLANTEL {
+        int Id PK "Solicitud cambio dotación"
+        int HospitalId FK "Hospital"
+        int ServicioId FK "Servicio solicitante"
+        int SolicitadoPorId FK "Jefe solicitante"
+        string Estado "'Pendiente'|'Aprobado'|'Rechazado'"
+        string DatosJson "Detalle altas/bajas"
+        datetime FechaSolicitud "Fecha emisión"
+        datetime FechaRespuesta "Fecha resolución"
+        int RespuestaPorId "Gerente que resolvió"
+    }
+
+    OBSERVACIONES_SERVICIO {
+        int Id PK "Novedad o reclamo"
+        int HospitalId FK "Hospital"
+        int ServicioId FK "Servicio"
+        int UsuarioId FK "Usuario emisor"
+        string Tipo "Tipo observación"
+        string Observacion "Texto novedad"
+        datetime Fecha "Fecha emisión"
+        boolean VisibleGerencia "Visibilidad Gerencia"
+        string RespuestaNutricion "Descargo nutrición"
+        int EvaluadoPorUsuarioId FK "Nutricionista que evalúa"
+    }
+
+    MENU_DIA {
+        int Id PK "Menú diario efector"
+        int HospitalId FK "Hospital"
+        date Fecha "Día de la comida"
+        string MenuAlmuerzo "Plato almuerzo"
+        string MenuCena "Plato cena"
+        int CreadoPorUsuarioId FK "Nutricionista emisor"
+        datetime FechaCreacion "Momento de publicación"
+    }
+
+    FECHAS_ANTICIPADAS {
+        int Id PK "Habilitación carga futura"
+        int HospitalId FK "Hospital"
+        date FechaHabilitada "Día permitido"
+        string Descripcion "Motivo (Feriado, etc)"
+        boolean Activo "Estado habilitado"
+        int CreadoPorUsuarioId FK "Gerente autorizante"
+    }
+
+    AUDITORIA {
+        int Id PK "Log de eventos"
+        datetime Fecha "Momento del evento"
+        int UsuarioId FK "Actor del evento"
+        string Accion "Operación realizada"
+        string Detalles "Detalle del cambio"
+        string IpAddress "IP de origen"
+    }
+
+    USUARIOS {
+        int Id PK "Identificador Usuario"
+        string NombreUsuario UK "Login"
+        int RolId FK "1:Admin, 2:Gerente, 3:Jefe, 5:Nutricion"
+        int HospitalId FK "Efector"
+        int ServicioId FK "Servicio"
+        boolean Activo "Habilitado"
+    }
+
+    IMPRESIONES_VOUCHER {
+        int Id PK "Registro emisión única"
+        int HospitalId FK "Hospital"
+        int ServicioId FK "Servicio"
+        date FechaPedido "Fecha de consumo"
+        string TipoComida "Almuerzo o Cena"
+        datetime FechaImpresion "Momento de emisión"
+        int ImpresoPorUsuarioId FK "Jefe que imprimió"
+    }
+    </pre>
+  </div>
+
+  <div class="section-title">2. Diccionario de Datos: Estructura Completa de Tablas y Relaciones</div>
+
+  <div class="cards-grid">
+    
+    <!-- Hospitales y Servicios -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>Hospitales & Servicios (Efectores y Salas)</span>
+        <span style="font-size: 10px; font-weight: normal; color: #4b5563;">Infraestructura</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><strong>Hospitales</strong></span>
+          <span class="col-type">Efector de Salud</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ <span class="col-pk">PK</span> Id | Codigo (UK) | Nombre</span>
+          <span class="col-type">INT | NVARCHAR(20) | NVARCHAR(100)</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ LimiteAlmuerzo ("09:00") | LimiteCena ("17:00")</span>
+          <span class="col-type">NVARCHAR(10)</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ LimiteAutorizacionAlmuerzo ("11:00") | Cena ("18:00")</span>
+          <span class="col-type">NVARCHAR(10)</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ DietasHabilitadas</span>
+          <span class="col-type">NVARCHAR(500)</span>
+        </div>
+        <div class="table-row" style="margin-top: 6px;">
+          <span><strong>Servicios</strong></span>
+          <span class="col-type">Salas / Sectores</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ <span class="col-pk">PK</span> Id | <span class="col-fk">FK</span> HospitalId</span>
+          <span class="col-type">INT | INT ➔ Hospitales(Id)</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ Nombre | VoucherIndividual (BIT)</span>
+          <span class="col-type">NVARCHAR(100) (UK Hospital+Nombre)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PadronHabilitados -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>PadronHabilitados (Agentes Físicos)</span>
+        <span style="font-size: 10px; font-weight: normal; color: #4b5563;">Única Fuente de Verdad</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span></span>
+          <span class="col-type">INT IDENTITY(1,1)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">DNI</span> (Único Provincial)</span>
+          <span class="col-type">NVARCHAR(20)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">NombreCompleto</span></span>
+          <span class="col-type">NVARCHAR(200)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-name">RacionesMaximasDia</span> <span class="col-new">NUEVA</span></span>
+          <span class="col-type">INT DEFAULT 1 (Cupo: 1 o 2)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-name">OrigenAlta</span> <span class="col-new">NUEVA</span></span>
+          <span class="col-type">NVARCHAR(50) DEFAULT 'PADRON_RRHH'</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">EsGuardia24h</span> | <span class="col-name">Activo</span></span>
+          <span class="col-type">BIT | BIT DEFAULT 1</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">HospitalId</span></span>
+          <span class="col-type">INT NULL ➔ Hospitales(Id) [Origen]</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">ServicioId</span></span>
+          <span class="col-type">INT NULL ➔ Servicios(Id)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Personal -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>Personal (Historial y Plantel de Servicio)</span>
+        <span style="font-size: 10px; font-weight: normal; color: #4b5563;">Puesto / Asignación</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span></span>
+          <span class="col-type">INT IDENTITY(1,1)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-fk">FK</span><span class="col-name">AgenteId</span> <span class="col-new">NUEVA</span></span>
+          <span class="col-type">INT NULL ➔ PadronHabilitados(Id)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">DNI</span> | <span class="col-name">NombreCompleto</span></span>
+          <span class="col-type">NVARCHAR(20) | NVARCHAR(200)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">HospitalId</span> | <span class="col-fk">FK</span><span class="col-name">ServicioId</span></span>
+          <span class="col-type">INT ➔ Hospitales | INT ➔ Servicios</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Horario</span></span>
+          <span class="col-type">NVARCHAR(50)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">ConVianda</span> | <span class="col-name">EsGuardia12</span> | <span class="col-name">EsGuardia24</span></span>
+          <span class="col-type">BIT | BIT | BIT</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">PeriodoInicio</span> | <span class="col-name">PeriodoFin</span></span>
+          <span class="col-type">DATE | DATE</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Activo</span></span>
+          <span class="col-type">BIT DEFAULT 1 (Estado en Servicio)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PedidosComida -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>PedidosComida (Transacciones de Ración)</span>
+        <span style="font-size: 10px; font-weight: normal; color: #4b5563;">Normalizada</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span> | <span class="col-name">FechaPedido</span></span>
+          <span class="col-type">INT | DATE</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">TipoComida</span> | <span class="col-name">TipoDieta</span></span>
+          <span class="col-type">NVARCHAR(20) | NVARCHAR(50)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-fk">FK</span><span class="col-name">AgenteId</span> <span class="col-new">NUEVA</span></span>
+          <span class="col-type">INT NULL ➔ PadronHabilitados(Id)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-fk">FK</span><span class="col-name">ReemplazaAgenteId</span> <span class="col-new">NUEVA</span></span>
+          <span class="col-type">INT NULL ➔ PadronHabilitados(Id)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">PersonalId</span></span>
+          <span class="col-type">INT NULL ➔ Personal(Id) [Legado]</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">SolicitadoPorUsuarioId</span></span>
+          <span class="col-type">INT ➔ Usuarios(Id)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Estado</span> | <span class="col-name">EsExcepcional</span></span>
+          <span class="col-type">NVARCHAR(20) ('Aprobado'|'Pendiente') | BIT</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">JustificacionSolicitud</span></span>
+          <span class="col-type">NVARCHAR(MAX) (Auditoría / Motivo)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- SolicitudesPlantel -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>SolicitudesPlantel (Cambios de Dotación)</span>
+        <span style="font-size: 10px; font-weight: normal; color: #4b5563;">Flujo Gerencial</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span></span>
+          <span class="col-type">INT IDENTITY(1,1)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">HospitalId</span></span>
+          <span class="col-type">INT ➔ Hospitales(Id)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">ServicioId</span></span>
+          <span class="col-type">INT ➔ Servicios(Id)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">SolicitadoPorId</span></span>
+          <span class="col-type">INT ➔ Usuarios(Id) [Jefe de Servicio]</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Estado</span></span>
+          <span class="col-type">NVARCHAR(20) DEFAULT 'Pendiente'</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">DatosJson</span></span>
+          <span class="col-type">NVARCHAR(MAX) (Altas/bajas propuestas)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">FechaSolicitud</span> | <span class="col-name">FechaRespuesta</span></span>
+          <span class="col-type">DATETIME | DATETIME NULL</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">RespuestaPorId</span></span>
+          <span class="col-type">INT NULL (Usuario Gerente)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ObservacionesServicio -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>ObservacionesServicio (Novedades y Reclamos)</span>
+        <span style="font-size: 10px; font-weight: normal; color: #4b5563;">Calidad / Nutrición</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span></span>
+          <span class="col-type">INT IDENTITY(1,1)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">HospitalId</span> | <span class="col-fk">FK</span><span class="col-name">ServicioId</span></span>
+          <span class="col-type">INT ➔ Hospitales | INT ➔ Servicios</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">UsuarioId</span></span>
+          <span class="col-type">INT ➔ Usuarios(Id) [Emisor]</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Tipo</span></span>
+          <span class="col-type">NVARCHAR(50) DEFAULT 'Observación'</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Observacion</span></span>
+          <span class="col-type">NVARCHAR(1000) (Texto de novedad)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Fecha</span> | <span class="col-name">VisibleGerencia</span></span>
+          <span class="col-type">DATETIME | BIT DEFAULT 0</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">RespuestaNutricion</span></span>
+          <span class="col-type">NVARCHAR(1000) NULL</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">EvaluadoPorUsuarioId</span></span>
+          <span class="col-type">INT NULL ➔ Usuarios(Id) [Nutricionista]</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MenuDia & FechasAnticipadasHabilitadas -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>Planificación: MenuDia & FechasAnticipadas</span>
+        <span style="font-size: 10px; font-weight: normal; color: #4b5563;">Operación Diaria</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><strong>MenuDia</strong> (Publicación de Menús)</span>
+          <span class="col-type">Comidas publicadas</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ <span class="col-pk">PK</span> Id | <span class="col-fk">FK</span> HospitalId | Fecha (DATE)</span>
+          <span class="col-type">INT | INT | DATE (UK Hosp+Fecha)</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ MenuAlmuerzo | MenuCena</span>
+          <span class="col-type">NVARCHAR(500) | NVARCHAR(500)</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ <span class="col-fk">FK</span> CreadoPorUsuarioId</span>
+          <span class="col-type">INT ➔ Usuarios(Id) [Nutrición]</span>
+        </div>
+        <div class="table-row" style="margin-top: 6px;">
+          <span><strong>FechasAnticipadasHabilitadas</strong></span>
+          <span class="col-type">Excepciones Feriados</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ <span class="col-pk">PK</span> Id | <span class="col-fk">FK</span> HospitalId | FechaHabilitada</span>
+          <span class="col-type">INT | INT ➔ Hospitales | DATE</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ Descripcion | Activo</span>
+          <span class="col-type">NVARCHAR(100) | BIT DEFAULT 1</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ <span class="col-fk">FK</span> CreadoPorUsuarioId</span>
+          <span class="col-type">INT ➔ Usuarios(Id) [Gerencia]</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Auditoria, ImpresionesVoucher & Usuarios -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>Seguridad, Auditoría & ImpresionesVoucher</span>
+        <span style="font-size: 10px; font-weight: normal; color: #4b5563;">Trazabilidad</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><strong>Auditoria</strong> (Registro Inmutable)</span>
+          <span class="col-type">Log del sistema</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ <span class="col-pk">PK</span> Id | Fecha (DATETIME)</span>
+          <span class="col-type">INT | GETDATE()</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ <span class="col-fk">FK</span> UsuarioId | IpAddress</span>
+          <span class="col-type">INT NULL ➔ Usuarios | NVARCHAR(50)</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ Accion | Detalles</span>
+          <span class="col-type">NVARCHAR(100) | NVARCHAR(1000)</span>
+        </div>
+        <div class="table-row" style="margin-top: 6px;">
+          <span><strong>ImpresionesVoucher</strong></span>
+          <span class="col-type">Emisión única de ticket</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ <span class="col-pk">PK</span> Id | <span class="col-fk">FK</span> HospitalId | <span class="col-fk">FK</span> ServicioId</span>
+          <span class="col-type">INT | INT | INT</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ FechaPedido (DATE) | TipoComida | <span class="col-fk">FK</span> ImpresoPor</span>
+          <span class="col-type">DATE | NVARCHAR(20) | INT</span>
+        </div>
+        <div class="table-row" style="margin-top: 6px;">
+          <span><strong>Usuarios & Roles</strong></span>
+          <span class="col-type">Acceso & Roles</span>
+        </div>
+        <div class="table-row">
+          <span>&nbsp; ➔ Roles: 1:Admin, 2:Gerente, 3:Jefe, 4:RRHH, 5:Nutricion</span>
+          <span class="col-type">Roles del sistema</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rules-box">
+    <strong>Principios de Normalización Aplicados (Zero-Downtime):</strong>
+    <ul>
+      <li><strong>Fuente de Verdad Única:</strong> <code>PadronHabilitados</code> representa a la persona física comensal con su <code>DNI</code> y su cupo diario exacto (<code>RacionesMaximasDia: 1 o 2</code>).</li>
+      <li><strong>Relación Directa en Pedidos:</strong> <code>PedidosComida.AgenteId</code> vincula tanto los pedidos regulares de planilla como las 4 variantes de emergencia, cerrando fugas de raciones cruzadas.</li>
+      <li><strong>Arquitectura Dual-Write:</strong> Las columnas legadas (<code>PersonalId</code>, <code>EmergenciaNombreCompleto</code>, <code>EmergenciaDNI</code>) se conservan y se siguen completando en paralelo para que el frontend actual no sufra modificaciones ni quiebres.</li>
+      <li><strong>Consolidación MAX(Padrón, Personal):</strong> Si un jefe de servicio corrigió en su plantel a un agente a Guardia 24h, el sistema promueve automáticamente al agente a 2 raciones sin degradar correcciones del personal de salud.</li>
+    </ul>
+  </div>
+
+</body>
+</html>

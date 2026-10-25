@@ -12,12 +12,18 @@ import {
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import EncargadoPanel from "./oficinas/gestion/EncargadoPanel";
 
-type Role = "Jefe" | "Gerente" | "RRHH" | "Admin" | "Nutricion";
+type Role = "Jefe" | "Gerente" | "RRHH" | "Admin" | "Nutricion" | "Encargado";
 
-const DIETAS_DISPONIBLES = ["Normal", "Gastrica", "Diabetica", "Hepatico", "Vegetariano", "Celiaca"];
+const DIETAS_DISPONIBLES = ["Normal", "Hiposódica", "Diabetica", "Hepatico", "Vegetariano", "Celiaca", "Especial"];
 
-const getRacionLabel = (horario: string) => {
+const getRacionLabel = (horario: string, conVianda?: boolean | number, maxRaciones?: number) => {
+  if (conVianda === false || conVianda === 0 || maxRaciones === 0) {
+    return "Sin Ración (Ración 0)";
+  }
+  if (maxRaciones === 2) return "2 Raciones";
+  if (maxRaciones === 1) return "1 Ración";
   if (!horario) return "1 Ración";
   const h = horario.toLowerCase();
   if (h.includes("24") || h.includes("y cena") || h === "almuerzo y cena" || h.includes("2 racion")) {
@@ -36,6 +42,17 @@ const formatIp = (ip?: string | null) => {
   if (!ip) return '-';
   if (ip === '::1' || ip === '127.0.0.1' || ip.includes('::ffff:127.0.0.1')) return 'Localhost';
   return ip.replace(/^::ffff:/, '');
+};
+
+const formatAuditDate = (fecha?: string | Date | null) => {
+  if (!fecha) return '-';
+  try {
+    return new Date(fecha).toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires'
+    });
+  } catch {
+    return String(fecha);
+  }
 };
 
 export default function Home() {
@@ -146,7 +163,11 @@ export default function Home() {
         if (d && d.LimiteAutorizacionAlmuerzo) setLimiteAuthAlmuerzo(d.LimiteAutorizacionAlmuerzo);
         if (d && d.LimiteAutorizacionCena) setLimiteAuthCena(d.LimiteAutorizacionCena);
         if (d && d.DietasHabilitadas) {
-          const arr = d.DietasHabilitadas.split(',').map((x: string) => x.trim()).filter(Boolean);
+          const arr = d.DietasHabilitadas.split(',').map((x: string) => {
+            const trimmed = x.trim();
+            if (trimmed === 'Gastrica' || trimmed === 'Gástrica' || trimmed === 'Hiposodica') return 'Hiposódica';
+            return trimmed;
+          }).filter(Boolean);
           if (arr.length > 0) setDietasHabilitadas(arr);
         }
       }).catch(console.error);
@@ -170,7 +191,8 @@ export default function Home() {
     setHospitalName(hospName);
     setServicioName(servName);
     setUsername(userLoginName);
-    if (userRole === 1 || userRole === 4) setRole("Admin");
+    if (userRole === 1) setRole("Admin");
+    else if (userRole === 4) setRole("Encargado");
     else if (userRole === 2) setRole("Gerente");
     else if (userRole === 3) setRole("Jefe");
     else if (userRole === 5) setRole("Nutricion");
@@ -193,6 +215,7 @@ export default function Home() {
   };
 
   const logoutGuardRef = useRef<(() => Promise<{ canLogout: boolean; skipPrompt?: boolean } | boolean>) | null>(null);
+  const lastFocusFetchRef = useRef<number>(0);
 
   const handleLogout = async () => {
     if (logoutGuardRef.current) {
@@ -264,7 +287,7 @@ export default function Home() {
           </div>
           
           <div className="flex items-center space-x-4">
-            {role !== "Admin" && role !== "Nutricion" && (
+            {role !== "Admin" && role !== "Nutricion" && role !== "Encargado" && (
               <div className={`hidden md:flex flex-col text-xs border-l-4 ${isPastAlmuerzo && isPastCena ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400' : 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'} px-3 py-1.5 rounded-r-lg`}>
                 <div className="font-bold mb-0.5">Límites Pedido</div>
                 <div>Alm: {limiteAlmuerzo} {isPastAlmuerzo && <span className="font-bold text-red-600 dark:text-red-400">(!)</span>}</div>
@@ -283,10 +306,15 @@ export default function Home() {
                     {servicioName}
                   </span>
                 )}
+                {role === "Encargado" && (
+                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 leading-tight mt-0.5" title="Sector">
+                    Oficina Administrativa
+                  </span>
+                )}
               </div>
               <User className="w-4 h-4 text-gray-500 dark:text-gray-400 ml-2" />
               <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                {username ? `${username} (${role})` : role}
+                {username ? `${username} (${role === "Encargado" ? "Encargado" : role})` : role}
               </span>
               
               <div className="w-px h-4 bg-gray-300 dark:bg-gray-600 mx-2"></div>
@@ -314,7 +342,7 @@ export default function Home() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-        {(isPastAlmuerzo || isPastCena) && role !== "Nutricion" && (
+        {(isPastAlmuerzo || isPastCena) && role !== "Nutricion" && role !== "Encargado" && (
           <div className="mb-6 bg-red-50 dark:bg-red-900/10 border-l-4 border-red-500 p-4 rounded-r-xl shadow-sm flex items-start">
             <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 mr-3 flex-shrink-0" />
             <div>
@@ -358,6 +386,7 @@ export default function Home() {
         )}
         {role === "Admin" && <RRHHPanel token={token} />}
         {role === "Nutricion" && <NutricionPanel token={token} hospitalName={hospitalName} username={username} dietasHabilitadasProp={dietasHabilitadas} />}
+        {role === "Encargado" && <EncargadoPanel token={token} hospitalName={hospitalName} username={username} />}
       </main>
     </div>
   );
@@ -817,12 +846,93 @@ function JefePanel({
   dietasProp?: string[],
   onRegisterLogoutGuard?: (guardFn: () => Promise<{ canLogout: boolean; skipPrompt?: boolean } | boolean>) => void
 }) {
+  const lastFocusFetchRef = useRef<number>(0);
   const [activeTab, setActiveTab] = useState("Planilla");
   const [planillaTab, setPlanillaTab] = useState<"almuerzo" | "cena">("almuerzo");
   const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [myServiceInfo, setMyServiceInfo] = useState<any | null>(null);
   const [menuDelDia, setMenuDelDia] = useState<any | null>(null);
+
+  // Estado Observaciones / Sugerencias (Jefe)
+  const [observaciones, setObservaciones] = useState<any[]>([]);
+  const [obsTipo, setObsTipo] = useState<string>("Observación");
+  const [obsTexto, setObsTexto] = useState<string>("");
+  const [loadingObs, setLoadingObs] = useState<boolean>(false);
+
+  const fetchObservaciones = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/observaciones`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setObservaciones(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleCrearObservacion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!obsTexto.trim()) {
+      return Swal.fire({
+        title: "Campo requerido",
+        text: "Por favor escribe el detalle de la observación o sugerencia.",
+        icon: "warning",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+    }
+
+    setLoadingObs(true);
+    try {
+      const res = await fetch(`${API_URL}/api/observaciones`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          tipo: obsTipo,
+          observacion: obsTexto.trim()
+        })
+      });
+      const data = await res.json();
+      setLoadingObs(false);
+      if (res.ok) {
+        Swal.fire({
+          title: "¡Observación Enviada!",
+          text: "Tu observación/sugerencia fue enviada exitosamente al área de Nutrición.",
+          icon: "success",
+          timer: 2500,
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+        setObsTexto("");
+        fetchObservaciones();
+      } else {
+        Swal.fire({
+          title: "Error",
+          text: data.error || "No se pudo registrar la observación",
+          icon: "error",
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+      }
+    } catch (e) {
+      setLoadingObs(false);
+      console.error(e);
+      Swal.fire({
+        title: "Error",
+        text: "Error de conexión al enviar la observación",
+        icon: "error",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+    }
+  };
 
   const fetchMenuDelDia = async (targetFecha?: string) => {
     try {
@@ -1113,12 +1223,78 @@ function JefePanel({
           if (res.ok) {
             Swal.fire({ title: "Eliminada", text: "Solicitud de emergencia eliminada con éxito.", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
             fetchHistorialEmergencias();
+            fetchStaff();
           } else {
             const data = await res.json();
             Swal.fire({ title: "Error", text: data.error || "No se pudo eliminar la solicitud", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
           }
         } catch (e) {
           Swal.fire({ title: "Error", text: "Error de conexión al eliminar la solicitud.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
+      }
+    });
+  };
+
+  const revertirReemplazoExcepcional = async (h: any) => {
+    const titularNombre = h.PersonalReemplazado?.NombreCompleto 
+      || `${h.PersonalReemplazado?.Nombre || ''} ${h.PersonalReemplazado?.Apellido || ''}`.trim() 
+      || 'el agente titular';
+
+    Swal.fire({
+      title: '¿Revertir reemplazo excepcional?',
+      html: `
+        <div class="text-left text-sm space-y-2 mt-2">
+          <p>Esta acción cancelará el reemplazo excepcional de última hora.</p>
+          <div class="p-3 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-900 dark:text-purple-200 border border-purple-200 dark:border-purple-800">
+            <strong>Restauración automática:</strong> Se le volverá a asignar la vianda original en la planilla al agente titular <strong>"${titularNombre}"</strong>.
+          </div>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#9333ea',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Sí, revertir y restaurar vianda',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`${API_URL}/api/emergencies/${h.Id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            Swal.fire({
+              title: "Revertido con éxito",
+              text: data.message || `Reemplazo revertido. La vianda de "${titularNombre}" fue restaurada.`,
+              icon: "success",
+              timer: 2500,
+              background: theme === 'dark' ? '#1f2937' : '#fff',
+              color: theme === 'dark' ? '#fff' : '#000'
+            });
+            fetchHistorialEmergencias();
+            fetchStaff();
+          } else {
+            const data = await res.json();
+            Swal.fire({
+              title: "Error",
+              text: data.error || "No se pudo revertir el reemplazo excepcional.",
+              icon: "error",
+              background: theme === 'dark' ? '#1f2937' : '#fff',
+              color: theme === 'dark' ? '#fff' : '#000'
+            });
+          }
+        } catch (e) {
+          Swal.fire({
+            title: "Error",
+            text: "Error de red al intentar revertir el reemplazo.",
+            icon: "error",
+            background: theme === 'dark' ? '#1f2937' : '#fff',
+            color: theme === 'dark' ? '#fff' : '#000'
+          });
         }
       }
     });
@@ -1150,6 +1326,7 @@ function JefePanel({
 
   useEffect(() => {
     fetchStaff(fechaPlanilla);
+    fetchPadron();
     setSelections({});
     setSavedSelections({});
     loadOrdersForDate(fechaPlanilla);
@@ -1167,31 +1344,43 @@ function JefePanel({
   );
 
   const miServicioAgents = filteredPadron
-    .filter(p => (p.Servicio?.Nombre || "").trim().toLowerCase() === miServicioNombre.trim().toLowerCase())
+    .filter(p => 
+      (p.Servicio?.Nombre || "").trim().toLowerCase() === miServicioNombre.trim().toLowerCase() ||
+      staff.some(s => s.DNI === p.DNI)
+    )
     .sort((a, b) => a.NombreCompleto.localeCompare(b.NombreCompleto));
 
   const otrosServiciosAgents = filteredPadron
-    .filter(p => (p.Servicio?.Nombre || "").trim().toLowerCase() !== miServicioNombre.trim().toLowerCase())
+    .filter(p => 
+      (p.Servicio?.Nombre || "").trim().toLowerCase() !== miServicioNombre.trim().toLowerCase() &&
+      !staff.some(s => s.DNI === p.DNI)
+    )
     .sort((a, b) => a.NombreCompleto.localeCompare(b.NombreCompleto));
 
   const toggleGroup = (group: "mi_servicio" | "otros") => {
     setOpenGroup(prev => prev === group ? (group === "mi_servicio" ? "otros" : "mi_servicio") : group);
   };
 
-  const addAgent = (p: any, horario: string) => {
+  const addAgent = (p: any, horario: string, conVianda?: boolean) => {
+    const isConVianda = conVianda !== undefined ? conVianda : (horario !== "Sin Ración");
+    const isGuardia24 = Boolean(p.EsGuardia24h || p.RacionesMaximasDia === 2 || p.maxRaciones === 2 || (horario || "").toLowerCase().includes("24") || (horario || "").toLowerCase().includes("y cena") || (horario || "").toLowerCase().includes("2 racion"));
+    const isGuardia12 = !isGuardia24;
     const existing = plantelDraft.find(x => x.DNI === p.DNI);
     if (existing) {
-      if (existing.Horario !== horario || existing.ConVianda === false) {
-        setPlantelDraft(prev => prev.map(x => x.DNI === p.DNI ? { ...x, Horario: horario, ConVianda: true, isModificado: true } : x));
+      if (existing.Horario !== horario || existing.ConVianda !== isConVianda) {
+        setPlantelDraft(prev => prev.map(x => x.DNI === p.DNI ? { ...x, Horario: horario, ConVianda: isConVianda, EsGuardia12: isGuardia12, EsGuardia24: isGuardia24, isModificado: true } : x));
       }
     } else {
       setPlantelDraft(prev => [...prev, { 
         DNI: p.DNI, 
         NombreCompleto: p.NombreCompleto, 
         Horario: horario,
-        ConVianda: true,
-        isNuevo: true,
-        isModificado: true
+        ConVianda: isConVianda,
+        EsGuardia12: isGuardia12,
+        EsGuardia24: isGuardia24,
+        isNuevo: false,
+        isModificado: true,
+        alreadyInHospital: true
       }]);
     }
   };
@@ -1223,7 +1412,20 @@ function JefePanel({
   const [newAgentDni, setNewAgentDni] = useState("");
   const [newAgentNombre, setNewAgentNombre] = useState("");
   const [newAgentHorario, setNewAgentHorario] = useState("Almuerzo o Cena");
-  const [dniCheckStatus, setDniCheckStatus] = useState<{ loading: boolean, exists: boolean, message: string | null }>({ loading: false, exists: false, message: null });
+  const [dniCheckStatus, setDniCheckStatus] = useState<{
+    loading: boolean;
+    exists: boolean;
+    alreadyInHospital?: boolean;
+    globalMatch?: {
+      NombreCompleto: string;
+      HospitalNombre: string;
+      HospitalId: number;
+      ServicioNombre: string;
+      RacionesMaximasDia: number;
+      EsGuardia24h: boolean;
+    } | null;
+    message: string | null;
+  }>({ loading: false, exists: false, alreadyInHospital: false, globalMatch: null, message: null });
   const [pendingDnisInDB, setPendingDnisInDB] = useState<string[]>([]);
   const [openMenuDni, setOpenMenuDni] = useState<string | null>(null);
   const newAgentDniRef = useRef<HTMLInputElement>(null);
@@ -1240,9 +1442,10 @@ function JefePanel({
   useEffect(() => {
     const clean = newAgentDni.replace(/\D/g, '');
     if (clean.length >= 7) {
-      setDniCheckStatus({ loading: true, exists: false, message: null });
+      setDniCheckStatus({ loading: true, exists: false, alreadyInHospital: false, globalMatch: null, message: null });
       const timer = setTimeout(() => {
-        fetch(`${API_URL}/api/staff/check-dni?dni=${clean}`, {
+        const sQuery = myServiceInfo?.Id ? `&servicioId=${myServiceInfo.Id}` : '';
+        fetch(`${API_URL}/api/staff/check-dni?dni=${clean}${sQuery}`, {
           headers: { Authorization: `Bearer ${token}` }
         })
         .then(r => r.json())
@@ -1251,25 +1454,43 @@ function JefePanel({
             setDniCheckStatus({
               loading: false,
               exists: true,
-              message: `⚠️ El DNI ${clean} ya se encuentra registrado en el hospital para ${data.agente?.NombreCompleto || 'otro agente'} (${data.agente?.Servicio || 'Servicio'}). No se puede duplicar.`
+              alreadyInHospital: false,
+              globalMatch: null,
+              message: data.message || `⚠️ El DNI ${clean} ya se encuentra activo en el plantel de este servicio.`
+            });
+          } else if (data.globalMatch) {
+            setNewAgentNombre(data.globalMatch.NombreCompleto);
+            const is24 = Boolean(data.globalMatch.RacionesMaximasDia === 2 || data.globalMatch.EsGuardia24h);
+            setNewAgentHorario(is24 ? "Almuerzo y Cena" : "Almuerzo o Cena");
+            const isHospital = Boolean(data.alreadyInHospital);
+            setDniCheckStatus({
+              loading: false,
+              exists: false,
+              alreadyInHospital: isHospital,
+              globalMatch: data.globalMatch,
+              message: isHospital
+                ? `✓ Agente identificado en este hospital (${data.globalMatch.HospitalNombre}). Se reincorporará directamente a tu servicio.`
+                : `✓ Agente identificado en el Padrón Central: ${data.globalMatch.NombreCompleto} (${data.globalMatch.HospitalNombre}). Datos protegidos.`
             });
           } else {
             setDniCheckStatus({
               loading: false,
               exists: false,
+              alreadyInHospital: false,
+              globalMatch: null,
               message: `✓ DNI disponible para registrar nuevo agente.`
             });
           }
         })
         .catch(() => {
-          setDniCheckStatus({ loading: false, exists: false, message: null });
+          setDniCheckStatus({ loading: false, exists: false, alreadyInHospital: false, globalMatch: null, message: null });
         });
       }, 300);
       return () => clearTimeout(timer);
     } else {
-      setDniCheckStatus({ loading: false, exists: false, message: null });
+      setDniCheckStatus({ loading: false, exists: false, alreadyInHospital: false, globalMatch: null, message: null });
     }
-  }, [newAgentDni, token]);
+  }, [newAgentDni, token, myServiceInfo?.Id]);
 
   const handleAddNewAgentSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1282,7 +1503,7 @@ function JefePanel({
     }
 
     if (dniCheckStatus.exists) {
-      Swal.fire({ title: "DNI Existente", text: dniCheckStatus.message || "El DNI ya existe en el hospital.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      Swal.fire({ title: "DNI Existente", text: dniCheckStatus.message || "El DNI ya está activo en el servicio.", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
 
@@ -1303,17 +1524,23 @@ function JefePanel({
       return;
     }
 
-    const isGuardia24 = newAgentHorario === "Almuerzo y Cena";
-    const isGuardia12 = newAgentHorario === "Almuerzo o Cena";
+    const isGuardia24 = dniCheckStatus.globalMatch
+      ? Boolean(dniCheckStatus.globalMatch.RacionesMaximasDia === 2 || dniCheckStatus.globalMatch.EsGuardia24h)
+      : newAgentHorario === "Almuerzo y Cena";
+    const isGuardia12 = !isGuardia24;
+    const finalHorario = isGuardia24 ? "Almuerzo y Cena" : "Almuerzo o Cena";
+    const finalNombre = dniCheckStatus.globalMatch?.NombreCompleto || nombre;
+    const isAlreadyInHospital = Boolean(dniCheckStatus.alreadyInHospital);
 
     const newEntry = {
       DNI: clean,
-      NombreCompleto: nombre,
-      Horario: newAgentHorario,
+      NombreCompleto: finalNombre,
+      Horario: finalHorario,
       EsGuardia12: isGuardia12,
       EsGuardia24: isGuardia24,
       ConVianda: true,
-      isNuevo: true
+      isNuevo: !isAlreadyInHospital,
+      alreadyInHospital: isAlreadyInHospital
     };
 
     setPlantelDraft(prev => {
@@ -1329,16 +1556,28 @@ function JefePanel({
     setNewAgentDni("");
     setNewAgentNombre("");
     setNewAgentHorario("Almuerzo o Cena");
+    setDniCheckStatus({ loading: false, exists: false, alreadyInHospital: false, globalMatch: null, message: null });
     setShowNewAgentModal(false);
 
-    Swal.fire({
-      title: "Agente Incorporado al Plantel",
-      text: `${nombre} fue agregado a la lista del plantel. Haga clic en 'Guardar Plantel' para enviar la solicitud a Gerencia.`,
-      icon: "success",
-      timer: 2500,
-      background: theme === 'dark' ? '#1f2937' : '#fff',
-      color: theme === 'dark' ? '#fff' : '#000'
-    });
+    if (isAlreadyInHospital) {
+      Swal.fire({
+        title: "Agente Asignado al Plantel",
+        text: `${finalNombre} ya pertenece al hospital y fue incorporado a la lista del plantel de este servicio. Haga clic en 'Guardar Plantel' para confirmar su asignación directa.`,
+        icon: "success",
+        timer: 2500,
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+    } else {
+      Swal.fire({
+        title: "Agente Incorporado al Plantel",
+        text: `${finalNombre} fue agregado a la lista del plantel. Haga clic en 'Guardar Plantel' para enviar la solicitud a Gerencia.`,
+        icon: "success",
+        timer: 2500,
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+    }
   };
 
   const handleGuardarPlantel = async (): Promise<boolean> => {
@@ -1358,12 +1597,16 @@ function JefePanel({
         return 1;
       };
 
-      const requestedRacion = getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
-      const esNuevoSinDB = !existsInPadron && !originalInStaff;
+      const requestedRacion = p.racion !== undefined ? Number(p.racion) : getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
+      const esNuevoSinDB = !existsInPadron && !originalInStaff && !p.alreadyInHospital;
 
       if (originalInStaff) {
         // Agente que ya pertenece al plantel del servicio
-        const originalRacion = getRacionNum(originalInStaff.Horario, originalInStaff.ConVianda !== false, originalInStaff.Activo !== false);
+        const originalRacion = originalInStaff.maxRaciones !== undefined 
+          ? originalInStaff.maxRaciones 
+          : (originalInStaff.RacionesMaximasDia !== undefined 
+            ? originalInStaff.RacionesMaximasDia 
+            : getRacionNum(originalInStaff.Horario, originalInStaff.ConVianda !== false, originalInStaff.Activo !== false));
         const cambioDeRaciones = originalRacion !== requestedRacion;
 
         if (cambioDeRaciones) {
@@ -1379,13 +1622,15 @@ function JefePanel({
             racionAnterior: originalRacion,
             racionNueva: requestedRacion
           });
-        } else if (p.isModificado) {
-          // Misma cantidad de raciones con ajuste menor (ej. vianda): Directo a la BD
+        } else if (p.isModificado || p.isNuevo) {
+          // Misma cantidad de raciones con ajuste menor (ej. vianda) o reincorporación: Directo a la BD
           directosParaBD.push({
             DNI: p.DNI,
             NombreCompleto: p.NombreCompleto,
+            racion: requestedRacion,
             Horario: p.Horario,
-            ConVianda: p.ConVianda !== false && requestedRacion > 0
+            ConVianda: p.ConVianda !== false && requestedRacion > 0,
+            remove: false
           });
         }
       } else if (esNuevoSinDB) {
@@ -1406,8 +1651,10 @@ function JefePanel({
         directosParaBD.push({
           DNI: p.DNI,
           NombreCompleto: p.NombreCompleto,
+          racion: requestedRacion,
           Horario: p.Horario,
-          ConVianda: p.ConVianda !== false && requestedRacion > 0
+          ConVianda: p.ConVianda !== false && requestedRacion > 0,
+          remove: false
         });
       }
     });
@@ -1415,23 +1662,14 @@ function JefePanel({
     staff.forEach(s => {
       const inDraft = plantelDraft.find(p => p.DNI === s.DNI);
       if (!inDraft) {
-        const getRacionNum = (h: string, conV?: boolean, active?: boolean) => {
-          if (conV === false || active === false || !h || h === "Sin Ración") return 0;
-          const hLower = h.toLowerCase();
-          if (hLower.includes("24") || hLower.includes("y cena") || hLower.includes("2 racion")) return 2;
-          return 1;
-        };
-
-        const originalRacion = getRacionNum(s.Horario, s.ConVianda !== false, s.Activo !== false);
-        if (originalRacion > 0) {
-          // Sacar del plantel es potestad exclusiva del Jefe de Servicio: se aplica directamente a la BD sin enviar a Gerencia
-          directosParaBD.push({
-            DNI: s.DNI,
-            NombreCompleto: s.NombreCompleto,
-            Horario: "Sin Ración",
-            ConVianda: false
-          });
-        }
+        // Sacar del plantel es potestad exclusiva del Jefe de Servicio: se aplica directamente a la BD
+        directosParaBD.push({
+          DNI: s.DNI,
+          NombreCompleto: s.NombreCompleto,
+          Horario: "Sin Ración",
+          ConVianda: false,
+          remove: true
+        });
       }
     });
 
@@ -1495,6 +1733,7 @@ function JefePanel({
       }
 
       await fetchStaff(fechaPlanilla);
+      await fetchPadron();
 
       Swal.fire({
         title: "Plantel Actualizado 🚀",
@@ -1565,7 +1804,14 @@ function JefePanel({
 
   useEffect(() => {
     const handleFocus = () => {
+      if (typeof document !== 'undefined' && document.visibilityState && document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      // Throttling de 3 segundos para proteger la base de datos en alta concurrencia masiva
+      if (now - lastFocusFetchRef.current < 3000) return;
+      lastFocusFetchRef.current = now;
+
       loadOrdersForDate(fechaPlanilla);
+      fetchStaff(fechaPlanilla);
     };
 
     window.addEventListener('focus', handleFocus);
@@ -1581,8 +1827,46 @@ function JefePanel({
     const isDeadline = fechaPlanilla === getTodayStr() ? (tipoComida === "almuerzo" ? isPastAlmuerzo : isPastCena) : false;
     if (isDeadline) return;
 
+    const isDelivered = allOrdersForDate.some((r: any) => {
+      const pId = r.PersonalId || (r.Personal ? r.Personal.Id : null) || (r.EmergenciaReemplazaId ? Number(r.EmergenciaReemplazaId) : null);
+      const matches = pId === personalId;
+      return matches && r.TipoComida?.toLowerCase() === tipoComida && Boolean(r.FechaEntregado);
+    });
+    if (isDelivered) {
+      Swal.fire({
+        title: "Vianda ya entregada",
+        text: `La vianda de ${tipoComida} ya fue retirada en comedor y no puede ser modificada ni cancelada.`,
+        icon: "info",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+      return;
+    }
+
     const p = staff.find(s => s.Id === personalId);
-    const is1Racion = p ? (getRacionLabel(p.Horario) === "1 Ración") : false;
+    if (p && (p.ConVianda === false || p.ConVianda === 0 || p.maxRaciones === 0)) {
+      Swal.fire({
+        title: "Agente Sin Ración Habilitada",
+        html: `
+          <div style="text-align: left; font-size: 13px;">
+            <p style="margin-bottom: 8px;">El agente <strong>${p.NombreCompleto || p.Nombre}</strong> (DNI: ${p.DNI}) tiene asignada <strong>Ración 0 (Sin ración)</strong>.</p>
+            <p style="color: #6b7280; font-size: 12px; margin-bottom: 10px;">No es posible solicitarle comida en la planilla.</p>
+            <div style="background: ${theme === 'dark' ? '#1e3a8a' : '#eff6ff'}; border: 1px solid ${theme === 'dark' ? '#3b82f6' : '#bfdbfe'}; padding: 10px; border-radius: 8px; font-size: 12px; color: ${theme === 'dark' ? '#93c5fd' : '#1e40af'};">
+              <strong>¿Cómo habilitarlo?</strong><br/>
+              El Jefe de Servicio debe ingresar a la pestaña <em>"Plantel"</em>, asignarle la ración correspondiente (1 Ración / Guardia 12h o 2 Raciones / Guardia 24h) y enviar la solicitud a Gerencia para su aprobación.
+            </div>
+          </div>
+        `,
+        icon: "info",
+        confirmButtonText: "Entendido",
+        confirmButtonColor: "#2563eb",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+      return;
+    }
+
+    const is1Racion = p ? (getRacionLabel(p.Horario, p.ConVianda, p.maxRaciones) === "1 Ración") : false;
 
     const current = selections[personalId] || { almuerzo: null, cena: null };
     const isSame = current[tipoComida] === tipoDieta;
@@ -1674,11 +1958,11 @@ function JefePanel({
           return false;
         }
 
-        const isGuardia24 = Boolean(p.EsGuardia24) || 
-          (p.Horario || '').toLowerCase().includes('24') || 
-          (p.Horario || '').toLowerCase().includes('y cena') ||
-          (p.Horario || '').toLowerCase().includes('2 racion');
-        const maxQuota = isGuardia24 ? 2 : 1;
+        const maxQuota = p.maxRaciones !== undefined 
+          ? p.maxRaciones 
+          : (p.RacionesMaximasDia !== undefined 
+            ? p.RacionesMaximasDia 
+            : (Boolean(p.EsGuardia24h) ? 2 : 1));
 
         const externalCount = allOrdersForDate.filter(r => {
           const rDni = r.EmergenciaDNI || (r.Personal ? r.Personal.DNI : null);
@@ -1752,7 +2036,28 @@ function JefePanel({
         })
       });
       if (res.ok) {
-        Swal.fire({ title: "Guardado", text: "Todos los pedidos de la planilla se guardaron exitosamente.", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        const respData = await parseJsonResponse(res);
+        if (respData?.sinRacionOmitidos && respData.sinRacionOmitidos.length > 0) {
+          const nombres = respData.sinRacionOmitidos.map((a: any) => `• <strong>${a.nombre}</strong> (DNI: ${a.dni}) - ${a.motivo}`).join('<br/>');
+          Swal.fire({
+            title: "Pedidos Guardados con Advertencia",
+            html: `
+              <div style="text-align: left; font-size: 13px;">
+                <p style="color: #16a34a; font-weight: bold; margin-bottom: 6px;">Los pedidos de los agentes habilitados se guardaron correctamente.</p>
+                <p style="color: #d97706; margin-bottom: 6px;">Sin embargo, <strong>no se registraron pedidos</strong> para los siguientes agentes porque tienen <strong>Ración 0</strong>:</p>
+                <div style="background: ${theme === 'dark' ? '#374151' : '#fef3c7'}; color: ${theme === 'dark' ? '#fde68a' : '#92400e'}; border: 1px solid #f59e0b; padding: 8px; border-radius: 6px; max-height: 120px; overflow-y: auto;">
+                  ${nombres}
+                </div>
+                <p style="font-size: 11px; color: #6b7280; margin-top: 8px;">Para asignarles ración, el Jefe de Servicio debe solicitar la modificación de plantel a Gerencia.</p>
+              </div>
+            `,
+            icon: "warning",
+            background: theme === 'dark' ? '#1f2937' : '#fff',
+            color: theme === 'dark' ? '#fff' : '#000'
+          });
+        } else {
+          Swal.fire({ title: "Guardado", text: "Todos los pedidos de la planilla se guardaron exitosamente.", icon: "success", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        }
         loadOrdersForDate(fechaPlanilla);
         return true;
       } else {
@@ -1930,7 +2235,7 @@ function JefePanel({
   const handleRevertir = async (p: any) => {
     const { isConfirmed } = await Swal.fire({
       title: '¿Revertir Inhabilitación?',
-      text: `¿Estás seguro de que deseas habilitar nuevamente a ${p.Nombre} ${p.Apellido}?`,
+      text: `¿Estás seguro de que deseas habilitar nuevamente a ${p.NombreCompleto || (p.Nombre ? p.Nombre + ' ' + (p.Apellido || '') : 'este agente')}?`,
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Sí, revertir',
@@ -1946,14 +2251,15 @@ function JefePanel({
           method: "POST",
           headers: { Authorization: `Bearer ${token}` }
         });
+        const data = await parseJsonResponse(res);
         if (res.ok) {
           Swal.fire({ title: "Revertido", text: "El agente vuelve a estar habilitado.", icon: "success", timer: 2000, showConfirmButton: false, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
           fetchStaff();
         } else {
-          Swal.fire({ title: "Error", text: "No se pudo revertir", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          Swal.fire({ title: "No se pudo revertir", text: data?.error || "Error al revertir la inhabilitación del agente", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         }
       } catch (e) {
-        Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+        Swal.fire({ title: "Error", text: "Error de conexión al revertir inhabilitación", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     }
   };
@@ -1994,8 +2300,10 @@ function JefePanel({
       'Tipo': r.TipoComida,
       'Personal / Paciente': r.Personal ? r.Personal.NombreCompleto : r.EmergenciaNombreCompleto,
       'DNI': r.Personal ? r.Personal.DNI : r.EmergenciaDNI,
+      'Origen': r.Origen || 'Planilla',
       'Dieta': r.TipoDieta,
-      'Estado': r.Estado
+      'Estado': r.Estado,
+      'Motivo Rechazo': r.Estado === 'Rechazado' ? (r.JustificacionResolucion || r.JustificacionSolicitud || '-') : '-'
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
@@ -2027,12 +2335,13 @@ function JefePanel({
       r.TipoComida,
       r.Personal ? r.Personal.NombreCompleto : r.EmergenciaNombreCompleto,
       r.Personal ? r.Personal.DNI : (r.EmergenciaDNI || "-"),
+      r.Origen || "Planilla",
       r.TipoDieta,
       r.Estado
     ]);
 
     autoTable(doc, {
-      head: [['Fecha', 'Tipo', 'Personal / Paciente', 'DNI', 'Dieta', 'Estado']],
+      head: [['Fecha', 'Tipo', 'Personal / Paciente', 'DNI', 'Origen', 'Dieta', 'Estado']],
       body: tableData,
       startY: 22,
       styles: { fontSize: 8 },
@@ -2058,17 +2367,28 @@ function JefePanel({
     return false;
   };
 
-  const handleImprimirVouchers = (tipo: 'Almuerzo' | 'Cena') => {
+  const handleImprimirVouchers = async (tipo: 'Almuerzo' | 'Cena') => {
     const isPastAuth = tipo === 'Almuerzo' ? isPastAuthAlmuerzo : isPastAuthCena;
+
+    // Si NO ha vencido el horario de autorización, requerir confirmación explícita de emisión anticipada única
     if (!isPastAuth) {
-      Swal.fire({
-        title: "Horario de Autorización Pendiente",
-        text: `Los Vouchers de ${tipo} solo pueden ser impresos por el Jefe de Servicio una vez finalizado el horario límite de autorización (${tipo === 'Almuerzo' ? (limiteAuthAlmuerzo || '11:00') : (limiteAuthCena || '18:00')} hs).`,
+      const confirmResult = await Swal.fire({
+        title: `Emisión Anticipada - Vouchers de ${tipo}`,
+        html: `<div style="text-align:left; font-size:13px; line-height:1.5;">
+          <p style="margin-bottom:8px;"><strong>⚠️ Atención:</strong> Aún no ha vencido el horario tope de autorización (${tipo === 'Almuerzo' ? (limiteAuthAlmuerzo || '11:00') : (limiteAuthCena || '18:00')} hs).</p>
+          <p style="margin-bottom:8px;">Como <strong>Jefe de Servicio</strong>, puede emitir los vouchers anticipados para turnos de noche, fines de semana o feriados, pero <strong>únicamente 1 sola vez</strong> por turno y fecha.</p>
+          <p style="color:#d97706; font-weight:bold;">En caso de fallas de la impresora o falta de papel, deberá solicitar la reimpresión al Usuario Gerente.</p>
+        </div>`,
         icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Sí, emitir e imprimir",
+        cancelButtonText: "Cancelar",
+        confirmButtonColor: "#f59e0b",
         background: theme === 'dark' ? '#1f2937' : '#fff',
         color: theme === 'dark' ? '#fff' : '#000'
       });
-      return;
+
+      if (!confirmResult.isConfirmed) return;
     }
 
     if (reportes.length === 0) {
@@ -2088,6 +2408,29 @@ function JefePanel({
 
     if (filtered.length === 0) {
       Swal.fire({ title: "Aviso", text: `No hay reportes aprobados de ${tipo} que coincidan con el filtro.`, icon: "info", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+      return;
+    }
+
+    // Registrar/Validar la impresión en el servidor antes de abrir la ventana de impresión
+    try {
+      const resPrint = await fetch(`${API_URL}/api/vouchers/print`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ fecha: repDesde, tipoComida: tipo })
+      });
+      const dataPrint = await parseJsonResponse(resPrint);
+      if (!resPrint.ok) {
+        Swal.fire({
+          title: "Emisión No Permitida",
+          text: dataPrint?.error || `El voucher de ${tipo} ya fue impreso anteriormente. Contacte a Gerencia para reimprimir.`,
+          icon: "warning",
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+        return;
+      }
+    } catch (e) {
+      Swal.fire({ title: "Error", text: "Error de red al registrar la impresión del voucher", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
 
@@ -2124,12 +2467,13 @@ function JefePanel({
 
       if (consolidados.length > 0) {
         const date = consolidados[0].FechaPedido.split('T')[0].split('-').reverse().join('/');
+        const fechaPedidoISO = consolidados[0].FechaPedido.split('T')[0];
         const totalPlatos = consolidados.length;
         const counts: Record<string, number> = {};
         consolidados.forEach(p => { counts[p.TipoDieta] = (counts[p.TipoDieta] || 0) + 1; });
         const dietasText = Object.entries(counts).map(([dieta, cant]) => `${dieta} (${cant})`).join(' | ');
-        const sIdMatch = consolidados[0].ServicioId || consolidados[0].Personal?.ServicioId || consolidados[0].PersonalReemplazado?.ServicioId || consolidados[0].SolicitadoPor?.ServicioId;
-        const qrData = encodeURIComponent(sIdMatch ? `SERVICE_ORDER:${sIdMatch}:${tipo}` : `${servicio}-${tipo}-${date}-Total:${totalPlatos}`);
+        const sIdMatch = consolidados[0].Servicio?.Id || consolidados[0].ServicioId || consolidados[0].Personal?.ServicioId || consolidados[0].PersonalReemplazado?.ServicioId || consolidados[0].SolicitadoPor?.ServicioId;
+        const qrData = encodeURIComponent(sIdMatch ? `SERVICE_ORDER:${sIdMatch}:${tipo}:${servicio}:${fechaPedidoISO}` : `${servicio}-${tipo}-${fechaPedidoISO}-Total:${totalPlatos}`);
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
 
         vouchersHTML += `
@@ -2179,9 +2523,10 @@ function JefePanel({
 
       individuales.forEach((p, idx) => {
         const date = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
+        const fechaPedidoISO = p.FechaPedido.split('T')[0];
         const nombreAgente = p.Personal ? `${p.Personal.NombreCompleto}` : `${p.EmergenciaNombreCompleto}`;
         const dniAgente = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
-        const qrData = encodeURIComponent(`${nombreAgente}-${dniAgente}-${servicio}-${tipo}-${p.TipoDieta}-${date}`);
+        const qrData = encodeURIComponent(`${nombreAgente}-${dniAgente}-${servicio}-${tipo}-${p.TipoDieta}-${fechaPedidoISO}`);
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
 
         vouchersHTML += `
@@ -2279,8 +2624,15 @@ function JefePanel({
     { id: "Planilla", label: "Planilla", icon: <Users className="w-4 h-4 mr-2" /> },
     { id: "Emergencias", label: "Emergencias", icon: <AlertTriangle className="w-4 h-4 mr-2" /> },
     { id: "Plantel", label: "Configurar Plantel", icon: <Users className="w-4 h-4 mr-2" /> },
+    { id: "Observaciones", label: "Observaciones / Sugerencias", icon: <FileText className="w-4 h-4 mr-2 text-purple-500" /> },
     { id: "Reportes", label: "Reportes", icon: <Search className="w-4 h-4 mr-2" /> }
   ];
+
+  useEffect(() => {
+    if (activeTab === "Observaciones" && token) {
+      fetchObservaciones();
+    }
+  }, [activeTab, token]);
 
   const hasUnsavedChanges = Object.keys(selections).some(idStr => {
     const id = Number(idStr);
@@ -2308,10 +2660,14 @@ function JefePanel({
       const originalInStaff = staff.find(s => s.DNI === p.DNI);
       const existsInPadron = padron.find(pad => pad.DNI === p.DNI);
 
-      const requestedRacion = getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
+      const requestedRacion = p.racion !== undefined ? Number(p.racion) : getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
 
       if (originalInStaff) {
-        const originalRacion = getRacionNum(originalInStaff.Horario, originalInStaff.ConVianda !== false, originalInStaff.Activo !== false);
+        const originalRacion = originalInStaff.maxRaciones !== undefined 
+          ? originalInStaff.maxRaciones 
+          : (originalInStaff.RacionesMaximasDia !== undefined 
+            ? originalInStaff.RacionesMaximasDia 
+            : getRacionNum(originalInStaff.Horario, originalInStaff.ConVianda !== false, originalInStaff.Activo !== false));
         const cambioDeRaciones = originalRacion !== requestedRacion;
         return cambioDeRaciones || Boolean(p.isModificado);
       }
@@ -2326,11 +2682,7 @@ function JefePanel({
     const hasRemovedStaff = staff.some(s => {
       if (pendingDnisInDB.includes(s.DNI)) return false;
       const inDraft = plantelDraft.find(p => p.DNI === s.DNI);
-      if (!inDraft) {
-        const originalRacion = getRacionNum(s.Horario, s.ConVianda !== false, s.Activo !== false);
-        return originalRacion > 0;
-      }
-      return false;
+      return !inDraft;
     });
 
     if (hasRemovedStaff) return true;
@@ -2750,29 +3102,93 @@ function JefePanel({
             </thead>
             <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800/50">
               {staff.map((p) => {
-                const pSelections = (p.bajaProvisoriaHoy || p.bajaDefinitivaHoy) ? { almuerzo: null, cena: null } : (selections[p.Id] || { almuerzo: null, cena: null });
-                const currentSelection = (p.bajaProvisoriaHoy || p.bajaDefinitivaHoy) ? null : (planillaTab === 'almuerzo' ? pSelections.almuerzo : pSelections.cena);
+                const esSinRacion = p.ConVianda === false || p.ConVianda === 0 || p.maxRaciones === 0;
+                const pSelections = (p.bajaProvisoriaHoy || p.bajaDefinitivaHoy || esSinRacion) ? { almuerzo: null, cena: null } : (selections[p.Id] || { almuerzo: null, cena: null });
+                const currentSelection = (p.bajaProvisoriaHoy || p.bajaDefinitivaHoy || esSinRacion) ? null : (planillaTab === 'almuerzo' ? pSelections.almuerzo : pSelections.cena);
                 const isDisabled = fechaPlanilla === getTodayStr() ? (planillaTab === 'almuerzo' ? isPastAlmuerzo : isPastCena) : false;
+                const deliveredOrder = allOrdersForDate.find((r: any) => {
+                  const pId = r.PersonalId || (r.Personal ? r.Personal.Id : null) || (r.EmergenciaReemplazaId ? Number(r.EmergenciaReemplazaId) : null);
+                  const pDni = r.EmergenciaDNI || (r.Personal ? r.Personal.DNI : null);
+                  const matches = (pId && pId === p.Id) || (pDni && pDni === p.DNI);
+                  return matches && r.TipoComida?.toLowerCase() === planillaTab && Boolean(r.FechaEntregado);
+                });
+                const isDelivered = Boolean(deliveredOrder);
                 return (
                   <tr key={p.Id} id={`fila-agente-${p.Id}`} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors scroll-mt-12">
                     <td className="px-6 py-4 whitespace-nowrap sticky left-0 bg-white dark:bg-gray-900 z-10 border-r border-gray-100 dark:border-gray-800">
                       <div className="flex flex-col">
                         <div className="flex items-center">
-                          <span className={`text-sm font-bold ${p.bajaProvisoriaHoy ? 'text-red-500 line-through' : 'text-gray-900 dark:text-gray-100'}`}>{p.NombreCompleto || `${p.Nombre || ''} ${p.Apellido || ''}`}</span>
+                          <span className={`text-sm font-bold ${p.bajaProvisoriaHoy ? 'text-red-500 line-through' : esSinRacion ? 'text-gray-500 dark:text-gray-400' : 'text-gray-900 dark:text-gray-100'}`}>
+                            {p.NombreCompleto || `${p.Nombre || ''} ${p.Apellido || ''}`}
+                          </span>
                           {p.bajaProvisoriaHoy && p.bajaMotivo && (
                             <span className="text-[10px] uppercase font-bold text-red-600 bg-red-100 dark:bg-red-900/30 dark:text-red-400 px-1.5 py-0.5 rounded ml-2 border border-red-200 dark:border-red-800">
                               {p.bajaMotivo}
                             </span>
                           )}
+                          {esSinRacion && (
+                            <span className="text-[10px] uppercase font-black text-red-700 bg-red-100 dark:bg-red-950/70 dark:text-red-300 px-2 py-0.5 rounded ml-2 border border-red-300 dark:border-red-800 flex items-center gap-1 shadow-sm">
+                              🚫 RACIÓN 0
+                            </span>
+                          )}
+                          {isDelivered && (
+                            <span className="text-[10px] uppercase font-black text-emerald-700 bg-emerald-100 dark:bg-emerald-950/70 dark:text-emerald-300 px-2 py-0.5 rounded ml-2 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1 shadow-sm">
+                              ✅ RETIRADO
+                            </span>
+                          )}
                         </div>
-                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">DNI: {p.DNI} • {getRacionLabel(p.Horario)}</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center flex-wrap gap-1">
+                          <span>DNI: {p.DNI}</span>
+                          <span>•</span>
+                          {esSinRacion ? (
+                            <span className="text-red-500 dark:text-red-400 font-bold">Sin Ración Asignada</span>
+                          ) : (
+                            <span>{getRacionLabel(p.Horario, p.ConVianda, p.maxRaciones)}</span>
+                          )}
+                        </span>
                       </div>
                     </td>
                     {dietas.map(d => {
                       const isSelected = currentSelection === d;
-                      const cellDisabled = isDisabled || p.bajaProvisoriaHoy;
+                      const cellDisabled = isDisabled || p.bajaProvisoriaHoy || esSinRacion || isDelivered;
                       const handleClick = () => {
                         if (cellDisabled) {
+                          if (isDelivered) {
+                            Swal.fire({
+                              title: "Vianda ya entregada",
+                              html: `
+                                <div style="text-align: left; font-size: 13px;">
+                                  <p style="margin-bottom: 8px;">La vianda de <strong>${planillaTab === 'almuerzo' ? 'Almuerzo' : 'Cena'}</strong> para <strong>${p.NombreCompleto || p.Nombre}</strong> ya fue <strong>retirada y entregada en comedor</strong>.</p>
+                                  <p style="color: #6b7280; font-size: 12px;">Por razones de control y auditoría, no es posible cancelarla ni modificar su tipo de dieta.</p>
+                                </div>
+                              `,
+                              icon: "info",
+                              background: theme === 'dark' ? '#1f2937' : '#fff', 
+                              color: theme === 'dark' ? '#fff' : '#000'
+                            });
+                            return;
+                          }
+                          if (esSinRacion) {
+                            Swal.fire({
+                              title: "Agente Sin Ración Habilitada",
+                              html: `
+                                <div style="text-align: left; font-size: 13px;">
+                                  <p style="margin-bottom: 8px;">El agente <strong>${p.NombreCompleto || p.Nombre}</strong> (DNI: ${p.DNI}) tiene asignada <strong>Ración 0 (Sin ración)</strong>.</p>
+                                  <p style="color: #6b7280; font-size: 12px; margin-bottom: 10px;">No es posible solicitarle comida en la planilla.</p>
+                                  <div style="background: ${theme === 'dark' ? '#1e3a8a' : '#eff6ff'}; border: 1px solid ${theme === 'dark' ? '#3b82f6' : '#bfdbfe'}; padding: 10px; border-radius: 8px; font-size: 12px; color: ${theme === 'dark' ? '#93c5fd' : '#1e40af'};">
+                                    <strong>¿Cómo habilitarlo?</strong><br/>
+                                    El Jefe de Servicio debe ingresar a la pestaña <em>"Plantel"</em>, asignarle la ración correspondiente (1 Ración / Guardia 12h o 2 Raciones / Guardia 24h) y enviar la solicitud a Gerencia para su aprobación.
+                                  </div>
+                                </div>
+                              `,
+                              icon: "info",
+                              confirmButtonText: "Entendido",
+                              confirmButtonColor: "#2563eb",
+                              background: theme === 'dark' ? '#1f2937' : '#fff', 
+                              color: theme === 'dark' ? '#fff' : '#000'
+                            });
+                            return;
+                          }
                           const msg = p.bajaProvisoriaHoy ? "Este agente está inhabilitado por hoy." : `El horario límite para solicitar ${planillaTab} (${planillaTab === 'almuerzo' ? limiteAlmuerzo : limiteCena}hs) ya ha pasado.`;
                           Swal.fire({
                             title: p.bajaProvisoriaHoy ? "Agente Inhabilitado" : "Horario Vencido",
@@ -2790,14 +3206,14 @@ function JefePanel({
                         toggleSelection(p.Id, planillaTab, d);
                       };
                       return (
-                        <td key={`${p.Id}-${d}`} className={`px-4 py-4 text-center ${cellDisabled ? 'cursor-not-allowed bg-gray-50 dark:bg-gray-800/40 opacity-70' : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors'}`} onClick={handleClick}>
+                        <td key={`${p.Id}-${d}`} className={`px-4 py-4 text-center ${cellDisabled ? 'cursor-not-allowed bg-gray-50 dark:bg-gray-800/40 opacity-50' : 'cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800/70 transition-colors'}`} onClick={handleClick}>
                           <input 
                             type="radio" 
                             name={`dieta-${p.Id}`} 
                             checked={isSelected}
                             readOnly
                             disabled={cellDisabled}
-                            className={`w-5 h-5 accent-blue-600 ${cellDisabled ? 'cursor-not-allowed grayscale' : 'cursor-pointer'}`}
+                            className={`w-5 h-5 ${isDelivered ? 'accent-emerald-600 cursor-not-allowed' : cellDisabled ? 'accent-blue-600 cursor-not-allowed grayscale' : 'accent-blue-600 cursor-pointer'}`}
                           />
                         </td>
                       );
@@ -3215,13 +3631,33 @@ function JefePanel({
                               <button
                                 type="button"
                                 onClick={() => deleteEmergency(h.Id)}
-                                className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
+                                className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors cursor-pointer"
                                 title="Eliminar / Cancelar Solicitud de Emergencia"
                               >
                                 <Trash2 className="w-4 h-4" />
                               </button>
                             )}
+                            {h.EsExcepcional && h.Estado === 'Aprobado' && !h.FechaEntregado && (
+                              <button
+                                type="button"
+                                onClick={() => revertirReemplazoExcepcional(h)}
+                                className="p-1 text-purple-600 hover:text-purple-800 hover:bg-purple-50 dark:hover:bg-purple-900/30 rounded-lg transition-colors cursor-pointer"
+                                title="Revertir Reemplazo Excepcional (Restaurar vianda al titular)"
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </button>
+                            )}
+                            {h.EsExcepcional && h.Estado === 'Aprobado' && h.FechaEntregado && (
+                              <span className="text-[10px] text-green-700 dark:text-green-300 font-semibold px-1.5 py-0.5 bg-green-100 dark:bg-green-900/40 rounded border border-green-200 dark:border-green-800" title="La vianda ya fue entregada en comedor y no puede revertirse">
+                                Entregado
+                              </span>
+                            )}
                           </div>
+                          {h.Estado === 'Rechazado' && (
+                            <div className="text-xs text-red-600 dark:text-red-400 italic mt-1 max-w-xs">
+                              <span className="font-semibold">Motivo:</span> {h.JustificacionResolucion || h.JustificacionSolicitud || 'Sin motivo especificado'}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
@@ -3260,7 +3696,12 @@ function JefePanel({
                     <UserPlus className="w-5 h-5 mr-2" /> Solicitar Autorización de Nuevo Agente
                   </h3>
                   <button
-                    onClick={() => setShowNewAgentModal(false)}
+                    onClick={() => {
+                      setShowNewAgentModal(false);
+                      setNewAgentDni("");
+                      setNewAgentNombre("");
+                      setDniCheckStatus({ loading: false, exists: false, globalMatch: null, message: null });
+                    }}
                     className="text-indigo-200 hover:text-white transition-colors"
                   >
                     <X className="w-5 h-5" />
@@ -3289,44 +3730,93 @@ function JefePanel({
                       </p>
                     )}
                     {dniCheckStatus.message && (
-                      <p className={`text-xs mt-1.5 font-bold ${dniCheckStatus.exists ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                      <p className={`text-xs mt-1.5 font-bold ${
+                        dniCheckStatus.exists 
+                          ? 'text-red-600 dark:text-red-400' 
+                          : dniCheckStatus.globalMatch
+                          ? 'text-indigo-600 dark:text-indigo-400'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}>
                         {dniCheckStatus.message}
                       </p>
                     )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1">
-                      Apellido y Nombres Completos <span className="text-red-500">*</span>
-                    </label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                        Apellido y Nombres Completos <span className="text-red-500">*</span>
+                      </label>
+                      {dniCheckStatus.globalMatch && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 ${
+                          dniCheckStatus.alreadyInHospital
+                            ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-950/60 border border-emerald-300 dark:border-emerald-700'
+                            : 'text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700'
+                        }`}>
+                          {dniCheckStatus.alreadyInHospital ? '✓ Padrón de este Hospital' : `🔒 Padrón Central (${dniCheckStatus.globalMatch.HospitalNombre})`}
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={newAgentNombre}
                       onChange={e => setNewAgentNombre(e.target.value)}
                       placeholder="Ej. GONZALEZ JUAN CARLOS"
                       required
-                      className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 uppercase"
+                      readOnly={Boolean(dniCheckStatus.globalMatch)}
+                      className={`w-full rounded-xl border border-gray-300 dark:border-gray-700 ${
+                        dniCheckStatus.globalMatch 
+                          ? 'bg-gray-100 dark:bg-gray-800/80 text-gray-700 dark:text-gray-300 cursor-not-allowed border-amber-400/60' 
+                          : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+                      } px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500 uppercase`}
                     />
+                    {dniCheckStatus.globalMatch && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                        El nombre oficial no puede editarse para mantener la integridad en el sistema central.
+                      </p>
+                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1">
-                      Ración Solicitada <span className="text-red-500">*</span>
-                    </label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300">
+                        Ración Solicitada <span className="text-red-500">*</span>
+                      </label>
+                      {dniCheckStatus.globalMatch && (
+                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                          🔒 Cupo Oficial: {dniCheckStatus.globalMatch.RacionesMaximasDia === 2 || dniCheckStatus.globalMatch.EsGuardia24h ? '2 Raciones (24h)' : '1 Ración (12h)'}
+                        </span>
+                      )}
+                    </div>
                     <select
                       value={newAgentHorario}
                       onChange={e => setNewAgentHorario(e.target.value)}
-                      className="w-full rounded-xl border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
+                      disabled={Boolean(dniCheckStatus.globalMatch)}
+                      className={`w-full rounded-xl border border-gray-300 dark:border-gray-700 ${
+                        dniCheckStatus.globalMatch 
+                          ? 'bg-gray-100 dark:bg-gray-800/80 text-gray-700 dark:text-gray-300 cursor-not-allowed border-amber-400/60' 
+                          : 'bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100'
+                      } px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500`}
                     >
                       <option value="Almuerzo o Cena">Almuerzo o Cena (12h - 1 ración)</option>
                       <option value="Almuerzo y Cena">Almuerzo y Cena (24h - 2 raciones)</option>
                     </select>
+                    {dniCheckStatus.globalMatch && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1 font-medium">
+                        La ración está asignada según su cupo oficial en el Padrón Central y no puede degradarse ni modificarse.
+                      </p>
+                    )}
                   </div>
 
                   <div className="pt-3 border-t border-gray-200 dark:border-gray-800 flex justify-end gap-3">
                     <button
                       type="button"
-                      onClick={() => setShowNewAgentModal(false)}
+                      onClick={() => {
+                        setShowNewAgentModal(false);
+                        setNewAgentDni("");
+                        setNewAgentNombre("");
+                        setDniCheckStatus({ loading: false, exists: false, globalMatch: null, message: null });
+                      }}
                       className="px-4 py-2 text-xs font-bold rounded-xl border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                     >
                       Cancelar
@@ -3336,7 +3826,7 @@ function JefePanel({
                       disabled={dniCheckStatus.exists || !newAgentDni || !newAgentNombre}
                       className="px-5 py-2 text-xs font-bold rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white shadow-md transition-all flex items-center cursor-pointer"
                     >
-                      <UserPlus className="w-4 h-4 mr-1.5" /> Grabar
+                      <UserPlus className="w-4 h-4 mr-1.5" /> {dniCheckStatus.alreadyInHospital ? 'Incorporar al Plantel' : 'Grabar'}
                     </button>
                   </div>
                 </form>
@@ -3348,8 +3838,20 @@ function JefePanel({
             {/* IZQUIERDA: Padrón General */}
             <div className="border border-gray-200 dark:border-gray-800 rounded-xl flex flex-col bg-gray-50/30 dark:bg-gray-800/10">
               <div className="p-4 border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-800/50">
-                <h3 className="font-bold text-gray-700 dark:text-gray-300">Padrón de Agentes</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Click para agregar al plantel</p>
+                <div className="flex justify-between items-center mb-1">
+                  <div>
+                    <h3 className="font-bold text-gray-700 dark:text-gray-300">Padrón de Agentes</h3>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Click para agregar al plantel</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => fetchPadron()}
+                    className="p-1.5 text-gray-500 hover:text-indigo-600 dark:text-gray-400 dark:hover:text-indigo-400 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors cursor-pointer"
+                    title="Actualizar padrón"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
                 <div className="mt-3 relative">
                   <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
                   <input
@@ -3375,45 +3877,56 @@ function JefePanel({
                 {(() => {
                   const renderAgentRow = (p: any, showServicioBadge = false) => {
                     const draftEntry = plantelDraft.find(draft => draft.DNI === p.DNI);
-                    const isDraftActive = Boolean(draftEntry && draftEntry.ConVianda !== false && draftEntry.Horario !== "Sin Ración");
-                    const isSelected = isDraftActive;
+                    const isSelected = Boolean(draftEntry);
                     const dbAssigned = staff.find(s => s.DNI === p.DNI);
                     
-                    const getRacionesCount = (h: string) => (h && (h.toLowerCase().includes("24") || h.toLowerCase().includes("y cena"))) ? 2 : 1;
-
-                    const dbAssignedRaciones = dbAssigned ? getRacionesCount(dbAssigned.Horario) : 0;
-                    const totalExternalRaciones = (p.has24h ? 2 : (p.count12h || 0)) - dbAssignedRaciones;
-
-                    const isAssignedElsewhere = !isSelected && totalExternalRaciones > 0;
                     const isGuardia24h = Boolean(p.EsGuardia24h);
-                    const maxAllowedRaciones = isGuardia24h ? 2 : 1;
+                    const isDbSinVianda = dbAssigned ? (dbAssigned.ConVianda === false || dbAssigned.maxRaciones === 0 || dbAssigned.Horario === "Sin Ración") : false;
 
-                    const disable12h = isDraftActive;
-                    const disable24h = !isGuardia24h || isDraftActive;
-
-                    const isDraft12h = draftEntry?.Horario === "Almuerzo o Cena" && draftEntry?.ConVianda !== false;
-                    const isDraft24h = draftEntry?.Horario === "Almuerzo y Cena" && draftEntry?.ConVianda !== false;
+                    let rGlobales = 1;
+                    if (p.Activo === false || p.allSinVianda || isDbSinVianda || p.RacionesGlobales === 0 || p.RacionesMaximasDia === 0) {
+                      rGlobales = 0;
+                    } else if (p.RacionesGlobales !== undefined && p.RacionesGlobales !== null) {
+                      rGlobales = Number(p.RacionesGlobales);
+                    } else if (p.RacionesMaximasDia === 2 || isGuardia24h || p.has24h) {
+                      rGlobales = 2;
+                    } else {
+                      rGlobales = 1;
+                    }
 
                     let containerClass = "p-3 text-sm flex justify-between items-center transition-colors group ";
                     if (isSelected) {
                       containerClass += "bg-gray-50/80 dark:bg-gray-800/80";
-                    } else if (isAssignedElsewhere) {
-                      containerClass += "bg-blue-50/50 dark:bg-blue-900/10 border-l-2 border-blue-300 dark:border-blue-700";
                     } else {
                       containerClass += "hover:bg-blue-50 dark:hover:bg-blue-900/20";
                     }
 
                     let textClass = "font-semibold ";
                     if (isSelected) textClass += "text-gray-500 opacity-60";
-                    else if (isAssignedElsewhere) textClass += "text-blue-700 dark:text-blue-300";
                     else textClass += "text-gray-900 dark:text-gray-100";
 
                     return (
                       <div key={p.DNI} className={containerClass}>
-                        <div>
-                          <p className={textClass}>{p.NombreCompleto}</p>
+                        <div className="flex-1 min-w-0 pr-3">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className={textClass}>{p.NombreCompleto}</p>
+                            {/* BADGE CON LA CANTIDAD DE RACIONES GLOBALES DEL AGENTE */}
+                            {rGlobales === 2 ? (
+                              <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 tracking-tight shrink-0">
+                                2 Raciones
+                              </span>
+                            ) : rGlobales === 1 ? (
+                              <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 dark:bg-blue-950/80 dark:text-blue-300 border border-blue-200 dark:border-blue-800 tracking-tight shrink-0">
+                                1 Ración
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-red-100 text-red-800 dark:bg-red-950/80 dark:text-red-300 border border-red-200 dark:border-red-800 tracking-tight shrink-0">
+                                0 Raciones
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center flex-wrap gap-1.5 text-xs mt-0.5">
-                            <span className={isSelected ? 'text-gray-400 opacity-60' : 'text-gray-500 dark:text-gray-400'}>
+                            <span className={isSelected ? 'text-gray-400 opacity-60' : 'text-gray-500 dark:text-gray-400 font-mono'}>
                               DNI: {p.DNI}
                             </span>
                             {showServicioBadge && p.Servicio?.Nombre && (
@@ -3421,31 +3934,35 @@ function JefePanel({
                                 {p.Servicio.Nombre}
                               </span>
                             )}
-                            {isAssignedElsewhere && (
-                              <span className="text-blue-600 dark:text-blue-400 text-[10px] uppercase font-bold tracking-wider">
-                                ({totalExternalRaciones} {totalExternalRaciones === 1 ? 'Ración' : 'Raciones'})
-                              </span>
-                            )}
                           </div>
                         </div>
-                        <div className="flex space-x-2">
+                        <div className="shrink-0">
                           <button
                             type="button"
-                            onClick={() => addAgent(p, "Almuerzo o Cena")}
-                            disabled={disable12h || isDraft12h}
-                            className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable12h || isDraft12h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-blue-100 hover:bg-blue-200 dark:bg-blue-900/40 dark:hover:bg-blue-800/60 text-blue-700 dark:text-blue-300 cursor-pointer'}`}
-                            title="Asignar 1 Ración (Almuerzo o Cena)"
+                            onClick={() => {
+                              const defaultHorario = rGlobales === 2 ? "Almuerzo y Cena" : (rGlobales === 1 ? "Almuerzo o Cena" : "Sin Ración");
+                              const defaultConVianda = rGlobales > 0;
+                              addAgent(p, defaultHorario, defaultConVianda);
+                            }}
+                            disabled={isSelected}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-lg shadow-xs transition-all flex items-center gap-1.5 ${
+                              isSelected 
+                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-500 border border-gray-200 dark:border-gray-700' 
+                                : 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer active:scale-95 shadow-sm'
+                            }`}
+                            title={isSelected ? "Este agente ya está asignado al servicio" : "Asignar agente a este servicio"}
                           >
-                            {isDraft12h ? '✓ 1 Ración' : '1 Ración'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => addAgent(p, "Almuerzo y Cena")}
-                            disabled={disable24h || isDraft24h}
-                            className={`px-2.5 py-1 text-xs font-bold rounded shadow-sm transition-colors ${disable24h || isDraft24h ? 'bg-gray-100 text-gray-400 cursor-not-allowed dark:bg-gray-800 dark:text-gray-600' : 'bg-indigo-100 hover:bg-indigo-200 dark:bg-indigo-900/40 dark:hover:bg-indigo-800/60 text-indigo-700 dark:text-indigo-300 cursor-pointer'}`}
-                            title="Asignar 2 Raciones (Almuerzo y Cena - Guardia 24h)"
-                          >
-                            {isDraft24h ? '✓ 2 Raciones' : '2 Raciones'}
+                            {isSelected ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500" />
+                                <span>Asignado</span>
+                              </>
+                            ) : (
+                              <>
+                                <UserPlus className="w-3.5 h-3.5" />
+                                <span>Asignar</span>
+                              </>
+                            )}
                           </button>
                         </div>
                       </div>
@@ -3540,8 +4057,14 @@ function JefePanel({
                       return 1;
                     };
 
-                    const origRacion = original ? getRacionNum(original.Horario, original.ConVianda !== false, original.Activo !== false) : 0;
-                    const currentRacion = getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
+                    const origRacion = original 
+                      ? (original.maxRaciones !== undefined 
+                        ? original.maxRaciones 
+                        : (original.RacionesMaximasDia !== undefined 
+                          ? original.RacionesMaximasDia 
+                          : getRacionNum(original.Horario, original.ConVianda !== false, original.Activo !== false))) 
+                      : 0;
+                    const currentRacion = p.racion !== undefined ? Number(p.racion) : getRacionNum(p.Horario, p.ConVianda !== false, p.Activo !== false);
 
                     const is12h = currentRacion === 1;
                     const is24h = currentRacion === 2;
@@ -3553,7 +4076,7 @@ function JefePanel({
 
                     let actionText = "⏳ Cambio de Ración";
                     if (!original || p.isNuevo) {
-                      actionText = `🌟 Alta Nuevo (${currentRacion === 2 ? '2 Raciones' : currentRacion === 1 ? '1 Ración' : 'Sin Ración'})`;
+                      actionText = `🌟 Alta en Plantel (${currentRacion === 2 ? '2 Raciones' : currentRacion === 1 ? '1 Ración' : '0 Raciones'})`;
                     } else if (origRacion === 1 && currentRacion === 2) {
                       actionText = "🔄 Cambio 1 a 2 Raciones";
                     } else if (origRacion === 2 && currentRacion === 1) {
@@ -3563,7 +4086,7 @@ function JefePanel({
                     } else if (origRacion === 0 && currentRacion === 2) {
                       actionText = "🔄 Habilitar 2 Raciones";
                     } else if (currentRacion === 0) {
-                      actionText = "🚫 Inhabilitar Ración";
+                      actionText = "🚫 0 Raciones (Sin vianda)";
                     }
 
                     const changeRacion = (horarioStr: string, conV: boolean) => {
@@ -3583,10 +4106,17 @@ function JefePanel({
                     };
 
                     return (
-                      <div key={p.DNI} className={`p-3 border rounded-xl flex flex-col gap-2 transition-all ${isSinRacion ? 'bg-red-50/40 dark:bg-red-950/20 border-red-200 dark:border-red-900/40' : 'bg-indigo-50/30 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800/60 shadow-xs'}`}>
+                      <div key={p.DNI} className={`p-3 border rounded-xl flex flex-col gap-2 transition-all ${isSinRacion ? 'bg-amber-50/30 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800/60 shadow-xs' : 'bg-indigo-50/30 dark:bg-indigo-900/20 border-indigo-100 dark:border-indigo-800/60 shadow-xs'}`}>
                         {/* LINEA 1: NOMBRE A LA IZQUIERDA, DNI Y CESTO DE BASURA A LA DERECHA */}
                         <div className="flex items-center justify-between gap-2">
-                          <p className={`font-bold text-sm truncate ${isSinRacion ? 'text-red-700 dark:text-red-300 line-through opacity-80' : 'text-gray-900 dark:text-gray-100'}`}>{p.NombreCompleto}</p>
+                          <div className="flex items-center gap-2 truncate min-w-0">
+                            <p className="font-bold text-sm truncate text-gray-900 dark:text-gray-100">{p.NombreCompleto}</p>
+                            {isSinRacion && (
+                              <span className="inline-flex items-center text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-red-100 text-red-800 dark:bg-red-950/80 dark:text-red-300 border border-red-200 dark:border-red-800 shrink-0">
+                                0 Raciones
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center space-x-2 shrink-0">
                             <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">DNI: {p.DNI}</span>
                             <button 
@@ -3607,7 +4137,7 @@ function JefePanel({
                               <div className="inline-flex flex-col justify-center items-center bg-amber-50 text-amber-900 dark:bg-amber-950/80 dark:text-amber-200 border border-amber-300 dark:border-amber-700 px-2 rounded shadow-xs animate-pulse text-center h-[26px] shrink-0">
                                 <span className="text-[9px] font-extrabold uppercase leading-none">{actionText}</span>
                                 <span className={`text-[7.5px] font-black uppercase tracking-tight leading-none mt-[1px] ${p.isPendiente ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
-                                  {p.isPendiente ? "ENVIADO A GERENCIA (AGUARDANDO APROBACIÓN)" : "PENDIENTE DE GRABACIÓN"}
+                                  {p.isPendiente ? "ENVIADO A GERENCIA (AGUARDANDO APROBACIÓN)" : "PENDIENTE DE GUARDAR"}
                                 </span>
                               </div>
                             )}
@@ -3682,25 +4212,25 @@ function JefePanel({
           <div className="flex flex-wrap gap-2">
             <button 
               onClick={() => handleImprimirVouchers('Almuerzo')} 
-              disabled={(repDesde === getTodayStr() && !isPastAuthAlmuerzo) || reportes.length === 0}
+              disabled={reportes.length === 0}
               className={`flex items-center px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all cursor-pointer ${
-                (repDesde === getTodayStr() && !isPastAuthAlmuerzo) || reportes.length === 0
+                reportes.length === 0
                   ? 'bg-gray-200 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed'
                   : 'bg-orange-500 hover:bg-orange-600 text-white transform hover:scale-[1.02] active:scale-95'
               }`}
-              title={repDesde === getTodayStr() && !isPastAuthAlmuerzo ? `Disponible una vez vencido el horario tope de autorización (${limiteAuthAlmuerzo || '11:00'} hs)` : 'Imprimir vouchers de Almuerzo'}
+              title="Imprimir vouchers de Almuerzo (Permite emisión anticipada única por el Jefe de Servicio)"
             >
               <Printer className="w-4 h-4 mr-2" /> Vouchers Alm.
             </button>
             <button 
               onClick={() => handleImprimirVouchers('Cena')} 
-              disabled={(repDesde === getTodayStr() && !isPastAuthCena) || reportes.length === 0}
+              disabled={reportes.length === 0}
               className={`flex items-center px-4 py-2 rounded-lg text-sm font-bold shadow-md transition-all cursor-pointer ${
-                (repDesde === getTodayStr() && !isPastAuthCena) || reportes.length === 0
+                reportes.length === 0
                   ? 'bg-gray-200 text-gray-400 dark:bg-gray-800 dark:text-gray-600 cursor-not-allowed'
                   : 'bg-indigo-600 hover:bg-indigo-700 text-white transform hover:scale-[1.02] active:scale-95'
               }`}
-              title={repDesde === getTodayStr() && !isPastAuthCena ? `Disponible una vez vencido el horario tope de autorización (${limiteAuthCena || '18:00'} hs)` : 'Imprimir vouchers de Cena'}
+              title="Imprimir vouchers de Cena (Permite emisión anticipada única por el Jefe de Servicio)"
             >
               <Printer className="w-4 h-4 mr-2" /> Vouchers Cena
             </button>
@@ -3750,6 +4280,7 @@ function JefePanel({
                   <th onClick={() => handleSort('tipo')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Tipo {sortConfig.key==='tipo' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
                   <th onClick={() => handleSort('nombre')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Personal / Paciente {sortConfig.key==='nombre' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
                   <th onClick={() => handleSort('dni')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">DNI {sortConfig.key==='dni' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                  <th onClick={() => handleSort('origen')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Origen {sortConfig.key==='origen' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
                   <th onClick={() => handleSort('estado')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Estado {sortConfig.key==='estado' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
                 </tr>
               </thead>
@@ -3759,7 +4290,8 @@ function JefePanel({
                   const term = repFiltroEmpleado.toLowerCase();
                   const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
                   const dni = r.Personal ? (r.Personal.DNI || "").toLowerCase() : (r.EmergenciaDNI || "").toLowerCase();
-                  return name.includes(term) || dni.includes(term);
+                  const origen = (r.Origen || "").toLowerCase();
+                  return name.includes(term) || dni.includes(term) || origen.includes(term);
                 }).map((r) => (
                   <tr key={r.Id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                     <td className="px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100">{r.FechaPedido.split('T')[0].split('-').reverse().join('/')}</td>
@@ -3772,9 +4304,25 @@ function JefePanel({
                     <td className="px-6 py-4 text-sm font-bold text-gray-900 dark:text-gray-100">{r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`}</td>
                     <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
                     <td className="px-6 py-4 text-sm">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                        (r.Origen || 'Planilla') === 'Planilla' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' :
+                        r.Origen === 'Emergencia Reemplazo' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300' :
+                        r.Origen === 'Emergencia Extra' ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300' :
+                        r.Origen === 'Emergencia Último Momento' ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300' :
+                        'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300'
+                      }`}>
+                        {r.Origen || 'Planilla'}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.Estado === 'Aprobado' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : r.Estado === 'Rechazado' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
                         {r.Estado}
                       </span>
+                      {r.Estado === 'Rechazado' && (
+                        <div className="text-xs text-red-600 dark:text-red-400 italic mt-1 max-w-xs">
+                          <span className="font-semibold">Motivo:</span> {r.JustificacionResolucion || r.JustificacionSolicitud || 'Sin motivo especificado'}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -3783,6 +4331,134 @@ function JefePanel({
           )}
         </div>
       </div>
+      )}
+
+      {/* SECCION: OBSERVACIONES / SUGERENCIAS (JEFE) */}
+      {activeTab === "Observaciones" && (
+        <div className="space-y-6 animate-in fade-in zoom-in-95 duration-300">
+          
+          {/* FORMULARIO CARGAR OBSERVACIÓN / SUGERENCIA */}
+          <div className="bg-white dark:bg-gray-900 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+              <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              Cargar Nueva Observación / Sugerencia
+            </h3>
+            
+            <form onSubmit={handleCrearObservacion} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div className="md:col-span-1">
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wider">
+                    Tipo de Registro
+                  </label>
+                  <select
+                    value={obsTipo}
+                    onChange={(e) => setObsTipo(e.target.value)}
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="Observación">📝 Observación General</option>
+                    <option value="Sugerencia">💡 Sugerencia</option>
+                  </select>
+                </div>
+                
+                <div className="md:col-span-3">
+                  <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wider">
+                    Detalle de la Observación / Sugerencia
+                  </label>
+                  <textarea
+                    rows={3}
+                    maxLength={1000}
+                    value={obsTexto}
+                    onChange={(e) => setObsTexto(e.target.value)}
+                    placeholder="Describe claramente lo sucedido o la sugerencia para el servicio de Nutrición..."
+                    className="w-full px-3 py-2 bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  />
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="text-[11px] text-gray-400">Máximo 1000 caracteres</span>
+                    <span className="text-[11px] text-gray-400">{obsTexto.length}/1000</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={loadingObs || !obsTexto.trim()}
+                  className="px-5 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center gap-2 disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  {loadingObs ? "Enviando..." : "Enviar a Nutrición"}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* HISTORIAL DE OBSERVACIONES */}
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
+            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 mb-4">
+              <History className="w-5 h-5 text-indigo-500" />
+              Historial de Observaciones Enviadas por mi Servicio
+            </h3>
+
+            {observaciones.length === 0 ? (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
+                No hay observaciones registradas aún.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {observaciones.map((obs) => (
+                  <div
+                    key={obs.Id}
+                    className="p-4 rounded-xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50 space-y-2"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
+                          obs.Tipo === 'Sugerencia'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300'
+                            : 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
+                        }`}>
+                          {obs.Tipo === 'Queja' ? 'Observación' : obs.Tipo}
+                        </span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          {formatAuditDate(obs.Fecha)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {obs.VisibleGerencia ? (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-300 border border-green-200 dark:border-green-800">
+                            <CheckCircle className="w-3 h-3 mr-1" />
+                            Elevado a Gerencia
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300">
+                            Enviado a Nutrición
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-pre-line">
+                      {obs.Observacion}
+                    </p>
+
+                    {obs.RespuestaNutricion && (
+                      <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-950/40 border-l-4 border-purple-500 rounded-r-xl text-xs space-y-1">
+                        <div className="font-bold text-purple-900 dark:text-purple-300 flex items-center gap-1">
+                          💬 Respuesta de Nutrición:
+                        </div>
+                        <p className="text-purple-800 dark:text-purple-200 font-medium">
+                          {obs.RespuestaNutricion}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
       )}
 
       {/* BADGE FLOTANTE DE ADVERTENCIA PARA CAMBIOS SIN GUARDAR EN PLANILLA */}
@@ -3954,6 +4630,29 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
   const [activeTab, setActiveTab] = useState("Bandeja");
   const [solicitudesPlantel, setSolicitudesPlantel] = useState<any[]>([]);
   const [selectedAgents, setSelectedAgents] = useState<{ [solicitudId: number]: { [dni: string]: boolean } }>({});
+
+  // Observaciones / Sugerencias para Gerencia
+  const [observacionesGerencia, setObservacionesGerencia] = useState<any[]>([]);
+
+  const fetchObservacionesGerencia = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/observaciones`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setObservacionesGerencia(data);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "Observaciones" && token) {
+      fetchObservacionesGerencia();
+    }
+  }, [activeTab, token]);
 
   const toggleAgentSelection = (solicitudId: number, dni: string) => {
     setSelectedAgents(prev => {
@@ -4322,6 +5021,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
       Servicio: item.ServicioNombre,
       Comida: item.TipoComida,
       Dieta: item.TipoDieta,
+      "Retirado Por": item.RetiradoPor ? `${item.RetiradoPor.NombreCompleto} (DNI: ${item.RetiradoPor.DNI})` : (item.FechaEntregado ? 'Mismo Agente / Directo' : '-'),
       EstadoEntrega: item.FechaEntregado ? `Entregado el ${new Date(item.FechaEntregado).toLocaleString('es-AR')} por ${item.EntregadoPor}` : 'Sin Entregar / No Reclamada'
     }));
 
@@ -4347,14 +5047,15 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
       item.ServicioNombre,
       item.TipoComida,
       item.TipoDieta,
+      item.RetiradoPor ? `${item.RetiradoPor.NombreCompleto} (${item.RetiradoPor.DNI})` : (item.FechaEntregado ? 'Directo' : '-'),
       item.FechaEntregado ? new Date(item.FechaEntregado).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' hs' : 'Sin Entregar'
     ]);
 
     autoTable(doc, {
-      head: [['Fecha', 'DNI', 'Nombre', 'Servicio', 'Comida', 'Dieta', 'Hora Entrega / Estado']],
+      head: [['Fecha', 'DNI', 'Nombre', 'Servicio', 'Comida', 'Dieta', 'Retirado Por', 'Hora Entrega / Estado']],
       body: tableData,
       startY: 22,
-      styles: { fontSize: 8 },
+      styles: { fontSize: 7.5 },
       headStyles: { fillColor: subTabReporte === "Entregados" ? [16, 185, 129] : [239, 68, 68] }
     });
 
@@ -4782,7 +5483,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
 
   const exportAuditoriaExcel = () => {
     const data = filteredAuditoria.map(a => ({
-      Fecha: new Date(a.Fecha).toLocaleString('es-AR'),
+      Fecha: formatAuditDate(a.Fecha),
       Accion: a.Accion,
       Usuario: a.Usuario ? a.Usuario.NombreUsuario : 'Sistema',
       Servicio: a.Usuario?.Servicio?.Nombre || '-',
@@ -4803,7 +5504,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
     doc.text(`Generado el: ${new Date().toLocaleString('es-AR')}`, 14, 20);
 
     const tableData = filteredAuditoria.map(a => [
-      new Date(a.Fecha).toLocaleString('es-AR'),
+      formatAuditDate(a.Fecha),
       a.Accion,
       a.Usuario ? a.Usuario.NombreUsuario : 'Sistema',
       a.Usuario?.Servicio?.Nombre || '-',
@@ -4837,7 +5538,11 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
         if (d && d.LimiteAutorizacionCena) setConfigAuthCena(d.LimiteAutorizacionCena);
         if (d && d.RolCambioVoucher) setConfigRolCambioVoucher(d.RolCambioVoucher);
         if (d && d.DietasHabilitadas) {
-          const arr = d.DietasHabilitadas.split(',').map((x: string) => x.trim()).filter(Boolean);
+          const arr = d.DietasHabilitadas.split(',').map((x: string) => {
+            const trimmed = x.trim();
+            if (trimmed === 'Gastrica' || trimmed === 'Gástrica' || trimmed === 'Hiposodica') return 'Hiposódica';
+            return trimmed;
+          }).filter(Boolean);
           if (arr.length > 0) setDietasConfig(arr);
         }
       })
@@ -5106,6 +5811,69 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
         Swal.fire({ title: "Error", text: "Error de conexión al transferir agente", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       }
     }
+  };
+
+  const darBajaAgenteModal = async (agenteId: number, nombreAgente: string, servicioNombre: string) => {
+    Swal.fire({
+      title: '¿Eliminar agente del servicio?',
+      html: `
+        <div style="text-align: left; margin-top: 6px;">
+          <p style="font-size: 13px; color: ${theme === 'dark' ? '#d1d5db' : '#374151'}; line-height: 1.5; margin-bottom: 8px;">
+            ¿Desea dar de baja al agente <strong style="color: ${theme === 'dark' ? '#f3f4f6' : '#111827'}; font-weight: 700;">${nombreAgente}</strong> del servicio <strong style="color: #4f46e5; font-weight: 700;">${servicioNombre}</strong>?
+          </p>
+          <p style="font-size: 11px; color: #9ca3af;">
+            El agente dejará de pertenecer a este servicio y no se solicitarán viandas para él a partir de hoy.
+          </p>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Sí, eliminar',
+      cancelButtonText: 'Cancelar',
+      background: theme === 'dark' ? '#1f2937' : '#ffffff',
+      color: theme === 'dark' ? '#ffffff' : '#000000',
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const res = await fetch(`${API_URL}/api/staff/${agenteId}/baja`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ tipo: "DEFINITIVA", motivo: `Baja Gerencia: ${servicioNombre}`.slice(0, 50) })
+          });
+          if (res.ok) {
+            Swal.fire({
+              title: "Agente eliminado",
+              text: `Se dio de baja a ${nombreAgente} del servicio ${servicioNombre}.`,
+              icon: "success",
+              timer: 1800,
+              showConfirmButton: false,
+              background: theme === 'dark' ? '#1f2937' : '#fff',
+              color: theme === 'dark' ? '#fff' : '#000'
+            });
+            fetchServicios();
+          } else {
+            const data = await res.json();
+            Swal.fire({
+              title: "Error",
+              text: data.error || "No se pudo dar de baja al agente",
+              icon: "error",
+              background: theme === 'dark' ? '#1f2937' : '#fff',
+              color: theme === 'dark' ? '#fff' : '#000'
+            });
+          }
+        } catch (e) {
+          Swal.fire({
+            title: "Error",
+            text: "Error de conexión al dar de baja al agente",
+            icon: "error",
+            background: theme === 'dark' ? '#1f2937' : '#fff',
+            color: theme === 'dark' ? '#fff' : '#000'
+          });
+        }
+      }
+    });
   };
 
   const asignarJefeModal = async (servicioId: number, servicioNombre: string) => {
@@ -5805,12 +6573,13 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
       // Vouchers consolidados para este servicio
       if (consolidados.length > 0) {
         const date = consolidados[0].FechaPedido.split('T')[0].split('-').reverse().join('/');
+        const fechaPedidoISO = consolidados[0].FechaPedido.split('T')[0];
         const totalPlatos = consolidados.length;
         const counts: Record<string, number> = {};
         consolidados.forEach(p => { counts[p.TipoDieta] = (counts[p.TipoDieta] || 0) + 1; });
         const dietasText = Object.entries(counts).map(([dieta, cant]) => `${dieta} (${cant})`).join(' | ');
-        const sIdMatch = consolidados[0].ServicioId || consolidados[0].Personal?.ServicioId || consolidados[0].PersonalReemplazado?.ServicioId || consolidados[0].SolicitadoPor?.ServicioId;
-        const qrData = encodeURIComponent(sIdMatch ? `SERVICE_ORDER:${sIdMatch}:${tipo}` : `${servicio}-${tipo}-${date}-Total:${totalPlatos}`);
+        const sIdMatch = consolidados[0].Servicio?.Id || consolidados[0].ServicioId || consolidados[0].Personal?.ServicioId || consolidados[0].PersonalReemplazado?.ServicioId || consolidados[0].SolicitadoPor?.ServicioId;
+        const qrData = encodeURIComponent(sIdMatch ? `SERVICE_ORDER:${sIdMatch}:${tipo}:${servicio}:${fechaPedidoISO}` : `${servicio}-${tipo}-${fechaPedidoISO}-Total:${totalPlatos}`);
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
 
         vouchersHTML += `
@@ -5861,11 +6630,12 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
       // Vouchers individuales para este servicio
       individuales.forEach((p, pIdx) => {
         const date = p.FechaPedido.split('T')[0].split('-').reverse().join('/');
+        const fechaPedidoISO = p.FechaPedido.split('T')[0];
         const agenteNombre = p.Personal ? p.Personal.NombreCompleto : (p.EmergenciaNombreCompleto || "Emergencia/Reemplazo");
         const agenteDNI = p.Personal ? (p.Personal.DNI || "-") : (p.EmergenciaDNI || "-");
         const dieta = p.TipoDieta;
         
-        const qrData = encodeURIComponent(`${servicio}-${tipo}-${date}-Agente:${agenteNombre}-DNI:${agenteDNI}-Dieta:${dieta}`);
+        const qrData = encodeURIComponent(`${servicio}-${tipo}-${fechaPedidoISO}-Agente:${agenteNombre}-DNI:${agenteDNI}-Dieta:${dieta}`);
         const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${qrData}`;
 
         vouchersHTML += `
@@ -6054,6 +6824,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
     { id: "SolicitudesPlantel", label: "Solicitudes Plantel", icon: <Users className="w-4 h-4 mr-2 text-indigo-500" /> },
     { id: "Hospital", label: "Servicios", icon: <Building className="w-4 h-4 mr-2" /> },
     { id: "ReporteEntregas", label: "Reporte de Entregas", icon: <Utensils className="w-4 h-4 mr-2 text-amber-500" /> },
+    { id: "Observaciones", label: "Observaciones / Sugerencias (Nutrición)", icon: <FileText className="w-4 h-4 mr-2 text-purple-500" /> },
     { id: "Reportes", label: "Reportes Generales", icon: <FileText className="w-4 h-4 mr-2" /> },
     { id: "Auditoria", label: "Auditoría", icon: <Shield className="w-4 h-4 mr-2" /> },
     { id: "Configuracion", label: "Configuración", icon: <Settings className="w-4 h-4 mr-2" /> }
@@ -6160,35 +6931,143 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
             </div>
           </div>
 
-          {/* TARJETAS DE INDICADORES / KPI */}
-          {dataReporteEntregas && (
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-4 rounded-xl">
-                <div className="text-xs font-bold text-blue-700 dark:text-blue-400">Total Raciones Solicitadas</div>
-                <div className="text-2xl font-black text-blue-900 dark:text-blue-200 mt-1">
-                  {dataReporteEntregas.totales?.solicitadas ?? dataReporteEntregas.totalPedidos ?? 0}
+          {/* TARJETAS DE INDICADORES / KPI CON DESGLOSE ALMUERZO Y CENA */}
+          {dataReporteEntregas && (() => {
+            const totales = dataReporteEntregas.totales || {};
+            const totSol = totales.solicitadas ?? dataReporteEntregas.totalPedidos ?? 0;
+            const totEnt = totales.entregadas ?? dataReporteEntregas.entregadosCount ?? 0;
+            const totSin = totales.sinEntregar ?? dataReporteEntregas.sinEntregarCount ?? 0;
+            const pctEnt = totales.pctEntregado ?? dataReporteEntregas.porcentajeCumplimiento ?? 0;
+            const pctSin = totales.pctSinEntregar ?? dataReporteEntregas.porcentajeAusentismo ?? 0;
+
+            const listEnt = dataReporteEntregas.listadoEntregados || [];
+            const listSin = dataReporteEntregas.listadoSinEntregar || [];
+            const allList = [...listEnt, ...listSin];
+
+            const almSol = totales.almuerzo?.solicitadas ?? allList.filter((p: any) => (p.TipoComida || '').toLowerCase() === 'almuerzo').length;
+            const almEnt = totales.almuerzo?.entregadas ?? listEnt.filter((p: any) => (p.TipoComida || '').toLowerCase() === 'almuerzo').length;
+            const almSin = totales.almuerzo?.sinEntregar ?? listSin.filter((p: any) => (p.TipoComida || '').toLowerCase() === 'almuerzo').length;
+            const almPctEnt = totales.almuerzo?.pctEntregado ?? (almSol > 0 ? Math.round((almEnt / almSol) * 100) : 0);
+            const almPctSin = totales.almuerzo?.pctSinEntregar ?? (almSol > 0 ? Math.round((almSin / almSol) * 100) : 0);
+            const almPctShare = totales.almuerzo?.pctDelTotal ?? (totSol > 0 ? Math.round((almSol / totSol) * 100) : 0);
+
+            const cenSol = totales.cena?.solicitadas ?? allList.filter((p: any) => (p.TipoComida || '').toLowerCase() === 'cena').length;
+            const cenEnt = totales.cena?.entregadas ?? listEnt.filter((p: any) => (p.TipoComida || '').toLowerCase() === 'cena').length;
+            const cenSin = totales.cena?.sinEntregar ?? listSin.filter((p: any) => (p.TipoComida || '').toLowerCase() === 'cena').length;
+            const cenPctEnt = totales.cena?.pctEntregado ?? (cenSol > 0 ? Math.round((cenEnt / cenSol) * 100) : 0);
+            const cenPctSin = totales.cena?.pctSinEntregar ?? (cenSol > 0 ? Math.round((cenSin / cenSol) * 100) : 0);
+            const cenPctShare = totales.cena?.pctDelTotal ?? (totSol > 0 ? Math.round((cenSol / totSol) * 100) : 0);
+
+            return (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* TARJETA 1: SOLICITADAS */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50/50 dark:from-blue-950/40 dark:to-indigo-950/20 border border-blue-200 dark:border-blue-800/80 p-5 rounded-2xl shadow-sm transition-all hover:shadow-md">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-blue-700 dark:text-blue-400">
+                      Total Solicitadas
+                    </span>
+                    <span className="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-800 dark:text-blue-300">
+                      100% Pedidos
+                    </span>
+                  </div>
+                  <div className="text-3xl font-black text-blue-950 dark:text-blue-100 mt-2 mb-3">
+                    {totSol} <span className="text-sm font-semibold text-blue-600 dark:text-blue-400">raciones</span>
+                  </div>
+
+                  <div className="pt-3 border-t border-blue-200/60 dark:border-blue-800/50 space-y-2 text-xs">
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-gray-800/60 border border-blue-100 dark:border-blue-900/40">
+                      <span className="font-bold text-gray-700 dark:text-gray-300 flex items-center">
+                        ☀️ Almuerzo
+                      </span>
+                      <div className="text-right font-black text-gray-900 dark:text-gray-100">
+                        {almSol} <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">({almPctShare}%)</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-gray-800/60 border border-blue-100 dark:border-blue-900/40">
+                      <span className="font-bold text-gray-700 dark:text-gray-300 flex items-center">
+                        🌙 Cena
+                      </span>
+                      <div className="text-right font-black text-gray-900 dark:text-gray-100">
+                        {cenSol} <span className="text-[11px] font-semibold text-blue-600 dark:text-blue-400">({cenPctShare}%)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TARJETA 2: ENTREGADAS */}
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50/50 dark:from-emerald-950/40 dark:to-teal-950/20 border border-emerald-200 dark:border-emerald-800/80 p-5 rounded-2xl shadow-sm transition-all hover:shadow-md">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                      Total Entregadas
+                    </span>
+                    <span className="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300">
+                      {pctEnt}% Cumplimiento
+                    </span>
+                  </div>
+                  <div className="text-3xl font-black text-emerald-950 dark:text-emerald-100 mt-2 mb-3">
+                    {totEnt} <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">({pctEnt}%)</span>
+                  </div>
+
+                  <div className="pt-3 border-t border-emerald-200/60 dark:border-emerald-800/50 space-y-2 text-xs">
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-gray-800/60 border border-emerald-100 dark:border-emerald-900/40">
+                      <span className="font-bold text-gray-700 dark:text-gray-300 flex items-center">
+                        ☀️ Almuerzo
+                      </span>
+                      <div className="text-right font-black text-gray-900 dark:text-gray-100">
+                        {almEnt} <span className="text-[10px] font-normal text-gray-500">/ {almSol}</span>{' '}
+                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">({almPctEnt}%)</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-gray-800/60 border border-emerald-100 dark:border-emerald-900/40">
+                      <span className="font-bold text-gray-700 dark:text-gray-300 flex items-center">
+                        🌙 Cena
+                      </span>
+                      <div className="text-right font-black text-gray-900 dark:text-gray-100">
+                        {cenEnt} <span className="text-[10px] font-normal text-gray-500">/ {cenSol}</span>{' '}
+                        <span className="text-[11px] font-bold text-emerald-600 dark:text-emerald-400">({cenPctEnt}%)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* TARJETA 3: SIN ENTREGAR */}
+                <div className="bg-gradient-to-br from-rose-50 to-red-50/50 dark:from-rose-950/40 dark:to-red-950/20 border border-rose-200 dark:border-rose-800/80 p-5 rounded-2xl shadow-sm transition-all hover:shadow-md">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-black uppercase tracking-wider text-rose-700 dark:text-rose-400">
+                      Sin Entregar / No Reclamadas
+                    </span>
+                    <span className="px-2.5 py-0.5 text-[10px] font-extrabold rounded-full bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-300">
+                      {pctSin}% Ausentismo
+                    </span>
+                  </div>
+                  <div className="text-3xl font-black text-rose-950 dark:text-rose-100 mt-2 mb-3">
+                    {totSin} <span className="text-sm font-semibold text-rose-600 dark:text-rose-400">({pctSin}%)</span>
+                  </div>
+
+                  <div className="pt-3 border-t border-rose-200/60 dark:border-rose-800/50 space-y-2 text-xs">
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-gray-800/60 border border-rose-100 dark:border-rose-900/40">
+                      <span className="font-bold text-gray-700 dark:text-gray-300 flex items-center">
+                        ☀️ Almuerzo
+                      </span>
+                      <div className="text-right font-black text-gray-900 dark:text-gray-100">
+                        {almSin} <span className="text-[10px] font-normal text-gray-500">/ {almSol}</span>{' '}
+                        <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">({almPctSin}%)</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between p-2 rounded-xl bg-white/70 dark:bg-gray-800/60 border border-rose-100 dark:border-rose-900/40">
+                      <span className="font-bold text-gray-700 dark:text-gray-300 flex items-center">
+                        🌙 Cena
+                      </span>
+                      <div className="text-right font-black text-gray-900 dark:text-gray-100">
+                        {cenSin} <span className="text-[10px] font-normal text-gray-500">/ {cenSol}</span>{' '}
+                        <span className="text-[11px] font-bold text-rose-600 dark:text-rose-400">({cenPctSin}%)</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 rounded-xl">
-                <div className="text-xs font-bold text-emerald-700 dark:text-emerald-400">Total Entregadas (% Cumplimiento)</div>
-                <div className="text-2xl font-black text-emerald-900 dark:text-emerald-200 mt-1">
-                  {dataReporteEntregas.totales?.entregadas ?? dataReporteEntregas.entregadosCount ?? 0}{' '}
-                  <span className="text-sm font-semibold">
-                    ({dataReporteEntregas.totales?.pctEntregado ?? dataReporteEntregas.porcentajeCumplimiento ?? 0}%)
-                  </span>
-                </div>
-              </div>
-              <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 p-4 rounded-xl">
-                <div className="text-xs font-bold text-red-700 dark:text-red-400">Total Sin Entregar (% Ausentismo)</div>
-                <div className="text-2xl font-black text-red-900 dark:text-red-200 mt-1">
-                  {dataReporteEntregas.totales?.sinEntregar ?? dataReporteEntregas.sinEntregarCount ?? 0}{' '}
-                  <span className="text-sm font-semibold">
-                    ({dataReporteEntregas.totales?.pctSinEntregar ?? dataReporteEntregas.porcentajeAusentismo ?? 0}%)
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* SUBTABS ENTREGADOS vs SIN ENTREGAR */}
           <div className="flex border-b border-gray-200 dark:border-gray-800 gap-4">
@@ -6226,6 +7105,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                     <th className="px-4 py-3 text-left">Agente</th>
                     <th className="px-4 py-3 text-left">Servicio</th>
                     <th className="px-4 py-3 text-left">Comida / Dieta</th>
+                    {subTabReporte === "Entregados" && <th className="px-4 py-3 text-left">Retirado Por</th>}
                     <th className="px-4 py-3 text-left">{subTabReporte === "Entregados" ? "Hora Entrega / Entregado Por" : "Estado / Ausentismo"}</th>
                   </tr>
                 </thead>
@@ -6244,6 +7124,24 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                           {item.TipoDieta}
                         </span>
                       </td>
+                      {subTabReporte === "Entregados" && (
+                        <td className="px-4 py-3">
+                          {item.RetiradoPor ? (
+                            <div>
+                              <div className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-1">
+                                <span className="text-emerald-600 dark:text-emerald-400">✓</span> {item.RetiradoPor.NombreCompleto}
+                              </div>
+                              <div className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">
+                                DNI: {item.RetiradoPor.DNI} {item.RetiradoPor.Servicio ? `• ${item.RetiradoPor.Servicio}` : ''}
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-gray-400 dark:text-gray-500 italic text-[11px]">
+                              Mismo agente / Directo
+                            </span>
+                          )}
+                        </td>
+                      )}
                       <td className="px-4 py-3">
                         {item.FechaEntregado ? (
                           <div className="text-emerald-700 dark:text-emerald-400 font-bold">
@@ -6375,7 +7273,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                           const nombre = it.NombreCompleto || it.nombre;
                           const isNuevo = Boolean(it.isNuevo);
                           const racionAnt = it.racionAnterior !== undefined ? it.racionAnterior : '-';
-                          const racionNueva = it.racionNueva !== undefined ? it.racionNueva : (it.ConVianda === false || it.Horario === 'Sin Ración' ? 0 : (it.Horario?.includes('24') || it.Horario?.includes('y Cena') ? 2 : 1));
+                          const racionNueva = it.racionNueva !== undefined ? Number(it.racionNueva) : (it.racion !== undefined ? Number(it.racion) : (it.ConVianda === false || it.Horario === 'Sin Ración' ? 0 : (it.Horario?.includes('24') || it.Horario?.includes('y Cena') || it.Horario?.includes('2 racion') ? 2 : 1)));
 
                           const isChecked = solMap[cleanDni] ?? true;
                           const isItemApproved = isPendiente ? isChecked : (it.EstadoDetalle ? it.EstadoDetalle === 'Aprobado' : s.Estado === 'Aprobado');
@@ -6853,7 +7751,9 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                   p.bajaProvisoriaHoy || p.bajaDefinitivaHoy || p.BajaProvisoriaFecha || p.bajaMotivo || p.BajaMotivo || p.Activo === false
                 );
 
-                const listaAMostrar = gerEmgStaffServicio.filter(p => esInhabilitado(p) && !idsYaReemplazados.has(p.Id));
+                const listaAMostrar = gerEmgTipo === 'reemplazo_excepcional'
+                  ? gerEmgStaffServicio.filter(p => !p.bajaProvisoriaHoy && !idsYaReemplazados.has(p.Id))
+                  : gerEmgStaffServicio.filter(p => esInhabilitado(p) && !idsYaReemplazados.has(p.Id));
 
                 return (
                   <div className="mt-4">
@@ -7090,6 +7990,14 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                                           title="Cambiar de servicio a este agente"
                                         >
                                           <ArrowRightLeft className="w-3 h-3 mr-1" /> Mover Servicio
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => darBajaAgenteModal(p.Id, p.NombreCompleto, s.Nombre)}
+                                          className="p-1 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded border border-transparent hover:border-red-200 dark:hover:border-red-800 transition-colors cursor-pointer"
+                                          title="Eliminar agente de este servicio (baja lógica)"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
                                         </button>
                                       </div>
                                     </div>
@@ -7716,7 +8624,7 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                   {filteredAuditoria.map((log: any) => (
                     <tr key={log.Id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/40 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-300 font-medium">
-                        {new Date(log.Fecha).toLocaleString('es-AR')}
+                        {formatAuditDate(log.Fecha)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
@@ -7747,6 +8655,85 @@ function GerentePanel({ token, hospitalName, username, isPastAuthAlmuerzo = fals
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+        </div>
+      )}
+      {/* SECCION: OBSERVACIONES DERIVADAS A GERENCIA */}
+      {activeTab === "Observaciones" && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  Observaciones Elevadas por Nutrición
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Listado de sugerencias y observaciones de los Servicios que el área de Nutrición consideró relevantes derivar a Gerencia.
+                </p>
+              </div>
+              <button
+                onClick={fetchObservacionesGerencia}
+                className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-indigo-500" />
+                Actualizar Lista
+              </button>
+            </div>
+
+            {observacionesGerencia.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400 text-sm">
+                No hay observaciones derivadas a Gerencia en este momento.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {observacionesGerencia.map((obs) => (
+                  <div
+                    key={obs.Id}
+                    className="p-5 rounded-2xl border border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/40 space-y-3"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
+                          obs.Tipo === 'Sugerencia'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300'
+                            : 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
+                        }`}>
+                          {obs.Tipo === 'Queja' ? 'Observación' : obs.Tipo}
+                        </span>
+                        <span className="text-sm font-extrabold text-indigo-600 dark:text-indigo-400">
+                          {obs.Servicio?.Nombre || 'Servicio'}
+                        </span>
+                        <span className="text-xs text-gray-400">•</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          Enviado por: <strong className="text-gray-700 dark:text-gray-300">{obs.Usuario?.NombreCompleto || obs.Usuario?.Username}</strong> ({formatAuditDate(obs.Fecha)})
+                        </span>
+                      </div>
+
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Derivado por Nutrición
+                      </span>
+                    </div>
+
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-pre-line bg-white dark:bg-gray-900 p-3.5 rounded-xl border border-gray-100 dark:border-gray-800">
+                      {obs.Observacion}
+                    </p>
+
+                    {obs.RespuestaNutricion && (
+                      <div className="p-3 bg-purple-50 dark:bg-purple-950/40 border-l-4 border-purple-500 rounded-r-xl text-xs space-y-1">
+                        <div className="font-bold text-purple-900 dark:text-purple-300 flex items-center gap-1">
+                          💬 Nota / Respuesta de Nutrición:
+                        </div>
+                        <p className="text-purple-800 dark:text-purple-200 font-medium">
+                          {obs.RespuestaNutricion}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -7814,24 +8801,42 @@ function RRHHPanel({ token }: { token: string }) {
   });
   const [costosHasta, setCostosHasta] = useState(getTodayStr());
   const [costosFiltroHospital, setCostosFiltroHospital] = useState("");
+  const [costosFiltroTipoComida, setCostosFiltroTipoComida] = useState("Todos");
   const [costosFiltroDieta, setCostosFiltroDieta] = useState("Todas");
   const [costosPedidos, setCostosPedidos] = useState<any[]>([]);
   const [cargandoCostos, setCargandoCostos] = useState(false);
+  const [costosConsultados, setCostosConsultados] = useState(false);
   const [valoresDieta, setValoresDieta] = useState<{ [dieta: string]: number }>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("sisar_valores_dieta") || localStorage.getItem("sisac_valores_dieta");
-      if (saved) {
-        try { return JSON.parse(saved); } catch (e) {}
-      }
-    }
-    return {
+    const defaultTarifas: { [dieta: string]: number } = {
       "Normal": 2000,
+      "Hiposódica": 2200,
       "Gastrica": 2200,
       "Diabetica": 2200,
       "Hepatico": 2200,
       "Vegetariano": 2000,
-      "Celiaca": 2500
+      "Celiaca": 2500,
+      "Especial": 2500
     };
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("sisar_valores_dieta") || localStorage.getItem("sisac_valores_dieta");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.Gastrica && !parsed["Hiposódica"]) {
+            parsed["Hiposódica"] = parsed.Gastrica;
+          }
+          if (!parsed.Gastrica) {
+            parsed.Gastrica = 2200;
+          }
+          if (!parsed.Especial) {
+            parsed.Especial = 2500;
+          }
+          delete parsed.Hiposodica;
+          return { ...defaultTarifas, ...parsed };
+        } catch (e) {}
+      }
+    }
+    return defaultTarifas;
   });
 
   const handleCambiarCostoDieta = (dieta: string, valor: number) => {
@@ -7846,6 +8851,7 @@ function RRHHPanel({ token }: { token: string }) {
 
   const fetchCostosPedidos = async () => {
     setCargandoCostos(true);
+    setCostosConsultados(true);
     try {
       const res = await fetch(`${API_URL}/api/reports?fechaInicio=${costosDesde}&fechaFin=${costosHasta}`, {
         headers: { Authorization: `Bearer ${token}` }
@@ -7859,12 +8865,6 @@ function RRHHPanel({ token }: { token: string }) {
       setCargandoCostos(false);
     }
   };
-
-  useEffect(() => {
-    if (activeTab === "ReporteCostos") {
-      fetchCostosPedidos();
-    }
-  }, [costosDesde, costosHasta, activeTab]);
 
   const fetchHospitales = async () => {
     try {
@@ -7928,7 +8928,7 @@ function RRHHPanel({ token }: { token: string }) {
     if (filteredAuditoria.length === 0) return;
     const excelData = filteredAuditoria.map((l: any) => ({
       ID: l.Id,
-      "Fecha y Hora": new Date(l.Fecha).toLocaleString('es-AR'),
+      "Fecha y Hora": formatAuditDate(l.Fecha),
       Acción: l.Accion,
       Usuario: l.Usuario ? l.Usuario.NombreUsuario : 'Sistema / Anon',
       Rol: l.Usuario?.Rol?.Nombre || '-',
@@ -7950,7 +8950,7 @@ function RRHHPanel({ token }: { token: string }) {
     doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 22);
 
     const tableRows = filteredAuditoria.map((l: any) => [
-      new Date(l.Fecha).toLocaleString('es-AR'),
+      formatAuditDate(l.Fecha),
       l.Accion,
       l.Usuario ? `${l.Usuario.NombreUsuario} (${l.Usuario?.Rol?.Nombre || ''})` : 'Sistema',
       l.Detalles || '-',
@@ -7971,6 +8971,7 @@ function RRHHPanel({ token }: { token: string }) {
   // Cálculos para el reporte de costos
   const pedidosAprobadosFiltrados = costosPedidos.filter((p: any) => {
     if (p.Estado !== "Aprobado") return false;
+    if (costosFiltroTipoComida !== "Todos" && (p.TipoComida || "").toLowerCase() !== costosFiltroTipoComida.toLowerCase()) return false;
     if (costosFiltroDieta !== "Todas" && p.TipoDieta !== costosFiltroDieta) return false;
     const pIdHospital = p.Personal?.HospitalId || p.SolicitadoPor?.HospitalId;
     if (costosFiltroHospital && pIdHospital !== Number(costosFiltroHospital)) return false;
@@ -8065,7 +9066,8 @@ function RRHHPanel({ token }: { token: string }) {
     
     XLSX.utils.book_append_sheet(workbook, worksheetResumen, "Resumen General");
     XLSX.utils.book_append_sheet(workbook, worksheetDesglose, "Detalle por Sectores");
-    XLSX.writeFile(workbook, `Reporte_Costos_Raciones_${costosDesde}_a_${costosHasta}.xlsx`);
+    const turnoSuffix = costosFiltroTipoComida !== "Todos" ? `_${costosFiltroTipoComida}` : "";
+    XLSX.writeFile(workbook, `Reporte_Costos_Raciones_${costosDesde}_a_${costosHasta}${turnoSuffix}.xlsx`);
   };
 
   const exportarCostosPDF = () => {
@@ -8074,7 +9076,8 @@ function RRHHPanel({ token }: { token: string }) {
     doc.setFontSize(16);
     doc.text("Reporte de Costos de Viandas - SisAR", 14, 15);
     doc.setFontSize(10);
-    doc.text(`Período: ${costosDesde.split('-').reverse().join('/')} al ${costosHasta.split('-').reverse().join('/')}`, 14, 22);
+    const turnoTexto = costosFiltroTipoComida !== "Todos" ? ` | Turno: ${costosFiltroTipoComida}` : "";
+    doc.text(`Período: ${costosDesde.split('-').reverse().join('/')} al ${costosHasta.split('-').reverse().join('/')}${turnoTexto}`, 14, 22);
     doc.text(`Generado: ${new Date().toLocaleString('es-AR')}`, 14, 28);
     
     doc.setFontSize(12);
@@ -8136,7 +9139,8 @@ function RRHHPanel({ token }: { token: string }) {
       }
     });
     
-    doc.save(`Reporte_Costos_Viandas_${costosDesde}_a_${costosHasta}.pdf`);
+    const turnoSuffix = costosFiltroTipoComida !== "Todos" ? `_${costosFiltroTipoComida}` : "";
+    doc.save(`Reporte_Costos_Viandas_${costosDesde}_a_${costosHasta}${turnoSuffix}.pdf`);
   };
 
   const crearHospital = async () => {
@@ -8167,12 +9171,12 @@ function RRHHPanel({ token }: { token: string }) {
       inputLabel: 'Nombre del Efector',
       inputPlaceholder: 'Ej. Hospital Padilla',
       showCancelButton: true,
-      confirmButtonText: 'Crear',
+      confirmButtonText: 'Crear Efector',
       cancelButtonText: 'Cancelar',
       background: theme === 'dark' ? '#1f2937' : '#fff',
       color: theme === 'dark' ? '#fff' : '#000',
       inputValidator: (value) => {
-        if (!value) return 'Debes escribir un nombre para el efector';
+        if (!value || !value.trim()) return 'Debes escribir un nombre para el efector';
       }
     });
 
@@ -8181,14 +9185,14 @@ function RRHHPanel({ token }: { token: string }) {
         const res = await fetch(`${API_URL}/api/hospitals`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ nombre: nombreEfector })
+          body: JSON.stringify({ nombre: nombreEfector.trim() })
         });
         if (res.ok) {
-          Swal.fire({ title: "Éxito", text: "Efector creado", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          Swal.fire({ title: "Éxito", text: "Efector creado exitosamente", icon: "success", timer: 1500, background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
           fetchHospitales();
         } else {
           const data = await res.json();
-          Swal.fire({ title: "Error", text: data.error || "Error al crear", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
+          Swal.fire({ title: "Error", text: data.error || "Error al crear efector", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
         }
       } catch (e) {
         Swal.fire({ title: "Error", text: "Error de conexión", icon: "error", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
@@ -8350,6 +9354,83 @@ function RRHHPanel({ token }: { token: string }) {
 
         if (data.length === 0) {
           Swal.fire('Error', 'El Excel está vacío', 'error');
+          setImportando(false);
+          return;
+        }
+
+        // Pre-validar que el archivo contenga las cabeceras obligatorias
+        const allRowKeys = new Set<string>();
+        for (const row of (data as any[]).slice(0, 20)) {
+          if (row && typeof row === 'object') {
+            Object.keys(row).forEach(k => allRowKeys.add(k));
+          }
+        }
+        const detectedHeaders = Array.from(allRowKeys);
+        const normKey = (k: string) => k.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const hasHeaderMatch = (...patterns: string[]) => {
+          return detectedHeaders.some(h => {
+            const cleanH = normKey(h);
+            return patterns.some(p => {
+              const cleanP = normKey(p);
+              return cleanH === cleanP || cleanH.includes(cleanP) || cleanP.includes(cleanH);
+            });
+          });
+        };
+
+        const hasDni = hasHeaderMatch('documento', 'dni', 'numdoc', 'num_doc', 'nrodoc', 'nro_doc', 'cedula');
+        const hasAgente = hasHeaderMatch('agente', 'nombre', 'nombrecompleto', 'apellido');
+        const hasEfector = hasHeaderMatch('efector', 'hospital', 'establecimiento');
+        const hasServicio = hasHeaderMatch('servicio', 'area', 'sector');
+        const hasRacionVianda = hasHeaderMatch('convianda', 'con_vianda', 'vianda', 'esguardia24', 'guardia24', 'esguardia12', 'guardia12', 'racion', 'raciones', 'horario', 'guardia', 'conracion');
+
+        if (!hasDni || !hasAgente || !hasEfector || !hasServicio) {
+          const missing: string[] = [];
+          if (!hasDni) missing.push('Documento / DNI (ej: "documento", "dni")');
+          if (!hasAgente) missing.push('Nombre / Agente (ej: "agente", "nombre")');
+          if (!hasEfector) missing.push('Efector / Hospital (ej: "efector", "hospital")');
+          if (!hasServicio) missing.push('Servicio / Área (ej: "servicio", "area")');
+          Swal.fire({
+            title: 'Cabeceras Incompletas',
+            html: `
+              <div class="text-left text-sm space-y-2">
+                <p class="text-red-600 font-semibold">El archivo no coincide con las columnas mínimas requeridas:</p>
+                <ul class="list-disc pl-5 text-gray-800">
+                  ${missing.map(m => `<li><strong>${m}</strong></li>`).join('')}
+                </ul>
+                <div class="mt-3 p-2 bg-gray-100 rounded text-xs text-gray-600 break-words">
+                  <strong>Cabeceras detectadas en su archivo:</strong><br/>
+                  ${detectedHeaders.length > 0 ? detectedHeaders.join(', ') : 'Ninguna'}
+                </div>
+              </div>
+            `,
+            icon: 'error'
+          });
+          setImportando(false);
+          return;
+        }
+
+        if (!hasRacionVianda) {
+          Swal.fire({
+            title: 'Falta Columna de Raciones / Vianda',
+            html: `
+              <div class="text-left text-sm space-y-2">
+                <p class="text-red-600 font-semibold">No se detectó ninguna columna de asignación de raciones o guardia en el archivo.</p>
+                <p class="text-gray-700">Debe incluir al menos una columna reconocida:</p>
+                <ul class="list-disc pl-5 text-xs text-gray-800">
+                  <li><code>con_vianda</code> (1 o 0, SI o NO)</li>
+                  <li><code>racion</code> (1 para 12h, 2 para 24h, 0 sin ración)</li>
+                  <li><code>esguardia12</code> y/o <code>esguardia24</code></li>
+                  <li><code>horario</code> (ej: 'Guardia 24h', 'Guardia 12h')</li>
+                </ul>
+                <div class="mt-3 p-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800 break-words">
+                  <strong>Cabeceras detectadas:</strong><br/>
+                  ${detectedHeaders.join(', ')}
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Se canceló la importación para evitar que el personal quede sin raciones asignadas.</p>
+              </div>
+            `,
+            icon: 'warning'
+          });
           setImportando(false);
           return;
         }
@@ -8900,6 +9981,18 @@ function RRHHPanel({ token }: { token: string }) {
                       </select>
                     </div>
                     <div>
+                      <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Tipo de Comida</label>
+                      <select 
+                        value={costosFiltroTipoComida} 
+                        onChange={e => setCostosFiltroTipoComida(e.target.value)} 
+                        className="w-full text-sm rounded-lg border-gray-300 dark:border-gray-700 shadow-sm focus:border-indigo-500 focus:ring-indigo-500/50 px-3 py-2 border bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors"
+                      >
+                        <option value="Todos">Todos los turnos (Almuerzo y Cena)</option>
+                        <option value="Almuerzo">Almuerzo</option>
+                        <option value="Cena">Cena</option>
+                      </select>
+                    </div>
+                    <div>
                       <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Tipo de Dieta</label>
                       <select 
                         value={costosFiltroDieta} 
@@ -8909,6 +10002,24 @@ function RRHHPanel({ token }: { token: string }) {
                         <option value="Todas">Todas las dietas</option>
                         {Object.keys(valoresDieta).map(d => <option key={d} value={d}>{d}</option>)}
                       </select>
+                    </div>
+
+                    <div className="pt-2">
+                      <button 
+                        onClick={fetchCostosPedidos} 
+                        disabled={cargandoCostos} 
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500 text-white py-2.5 px-4 rounded-xl text-sm font-bold shadow-md transition-all flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        {cargandoCostos ? (
+                          <>
+                            <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> Consultando costos...
+                          </>
+                        ) : (
+                          <>
+                            <Search className="w-4 h-4 mr-2" /> Consultar Costos
+                          </>
+                        )}
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -8944,6 +10055,17 @@ function RRHHPanel({ token }: { token: string }) {
                   <div className="bg-gray-50 dark:bg-gray-800/20 rounded-2xl p-16 text-center border border-gray-100 dark:border-gray-800 flex flex-col items-center justify-center">
                     <RefreshCw className="w-10 h-10 text-indigo-500 animate-spin mb-3" />
                     <p className="text-gray-500 dark:text-gray-400 font-bold">Generando reporte de costos...</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Procesando pedidos para el rango de fechas seleccionado.</p>
+                  </div>
+                ) : !costosConsultados ? (
+                  <div className="bg-gray-50 dark:bg-gray-800/20 rounded-2xl p-16 text-center border border-gray-100 dark:border-gray-800 flex flex-col items-center justify-center">
+                    <div className="w-12 h-12 rounded-full bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center mb-3">
+                      <Search className="w-6 h-6 text-indigo-500" />
+                    </div>
+                    <p className="text-gray-900 dark:text-gray-100 font-bold text-base">Reporte Financiero Listo para Consultar</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+                      Indica las fechas y filtros deseados a la izquierda y presiona el botón <strong>"Consultar Costos"</strong> para procesar la información.
+                    </p>
                   </div>
                 ) : pedidosAprobadosFiltrados.length === 0 ? (
                   <div className="bg-gray-50 dark:bg-gray-800/20 rounded-2xl p-16 text-center border border-gray-100 dark:border-gray-800">
@@ -9238,7 +10360,7 @@ function RRHHPanel({ token }: { token: string }) {
                   {filteredAuditoria.map((log: any) => (
                     <tr key={log.Id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/40 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-gray-600 dark:text-gray-300 font-medium">
-                        {new Date(log.Fecha).toLocaleString('es-AR')}
+                        {formatAuditDate(log.Fecha)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`px-2.5 py-1 rounded-md text-xs font-bold ${
@@ -9276,8 +10398,79 @@ function RRHHPanel({ token }: { token: string }) {
 }
 
 function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }: { token: string | null; hospitalName: string | null; username: string | null; dietasHabilitadasProp: string[] }) {
-  const [activeTab, setActiveTab] = useState<"Entregas" | "CrearEmergencia" | "Reportes" | "MenuDia">("Entregas");
+  const [activeTab, setActiveTab] = useState<"Entregas" | "CrearEmergencia" | "Reportes" | "MenuDia" | "Observaciones">("Entregas");
   const { theme } = useTheme();
+
+  // Estado Observaciones Nutrición
+  const [observaciones, setObservaciones] = useState<any[]>([]);
+  const [respuestasNutricion, setRespuestasNutricion] = useState<{ [id: number]: string }>({});
+  const [savingObsId, setSavingObsId] = useState<number | null>(null);
+
+  const fetchObservacionesNutricion = async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/observaciones`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setObservaciones(data);
+        const initResp: { [id: number]: string } = {};
+        data.forEach((obs: any) => {
+          if (obs.RespuestaNutricion) initResp[obs.Id] = obs.RespuestaNutricion;
+        });
+        setRespuestasNutricion(initResp);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSaveObservacionNutricion = async (obsId: number, targetVisibleGerencia: boolean) => {
+    setSavingObsId(obsId);
+    try {
+      const res = await fetch(`${API_URL}/api/observaciones/${obsId}/gerencia-visibility`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          visibleGerencia: targetVisibleGerencia,
+          respuestaNutricion: respuestasNutricion[obsId] || ""
+        })
+      });
+      const data = await res.json();
+      setSavingObsId(null);
+      if (res.ok) {
+        Swal.fire({
+          title: "Actualizado",
+          text: targetVisibleGerencia ? "La observación fue elevada a Gerencia." : "La observación se mantiene privada en Nutrición.",
+          icon: "success",
+          timer: 2000,
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+        fetchObservacionesNutricion();
+      } else {
+        Swal.fire({
+          title: "Error",
+          text: data.error || "Error al actualizar la observación",
+          icon: "error",
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+      }
+    } catch (e) {
+      setSavingObsId(null);
+      console.error(e);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "Observaciones" && token) {
+      fetchObservacionesNutricion();
+    }
+  }, [activeTab, token]);
 
   // Estado Menú del Día
   const [nutriMenuFecha, setNutriMenuFecha] = useState(getTodayStr());
@@ -9354,7 +10547,41 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
   const [historyFilter, setHistoryFilter] = useState("");
   const [mostrarModalConsolidado, setMostrarModalConsolidado] = useState(false);
   const [selectedConsolidadoIds, setSelectedConsolidadoIds] = useState<number[]>([]);
+  const [retiradoPorAgente, setRetiradoPorAgente] = useState<{ id: number; nombreCompleto: string; dni: string; servicio?: string } | null>(null);
+  const [retiradoDniInput, setRetiradoDniInput] = useState("");
+  const [retiradoDniError, setRetiradoDniError] = useState<string | null>(null);
+  const [buscandoAgenteRetira, setBuscandoAgenteRetira] = useState(false);
+  const retiradoInputRef = useRef<HTMLInputElement>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
+
+  const handleBuscarAgenteRetira = async (dniVal?: string) => {
+    const cleanDni = (dniVal !== undefined ? dniVal : retiradoDniInput).trim().replace(/\D/g, '');
+    if (!cleanDni) {
+      setRetiradoDniError("Ingrese el DNI de quien retira las viandas.");
+      return;
+    }
+    setBuscandoAgenteRetira(true);
+    setRetiradoDniError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/deliveries/check-pickup-agent?dni=${encodeURIComponent(cleanDni)}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        setRetiradoPorAgente(null);
+        setRetiradoDniError(data.error || "El DNI no pertenece a ningún agente habilitado del hospital.");
+        playWarningBeep();
+      } else {
+        setRetiradoPorAgente(data);
+        setRetiradoDniError(null);
+        playSuccessBeep();
+      }
+    } catch (e) {
+      setRetiradoDniError("Error de conexión al validar DNI.");
+    } finally {
+      setBuscandoAgenteRetira(false);
+    }
+  };
 
   const playWarningBeep = () => {
     try {
@@ -9425,6 +10652,13 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
     setSortConfig({ key, direction });
   };
 
+  const getServicioNombre = (r: any) => {
+    if (r.SolicitadoPor?.Servicio?.Nombre) return r.SolicitadoPor.Servicio.Nombre;
+    if (r.Personal?.Servicio?.Nombre) return r.Personal.Servicio.Nombre;
+    if (r.PersonalReemplazado?.Servicio?.Nombre) return r.PersonalReemplazado.Servicio.Nombre;
+    return 'Servicio No Especificado';
+  };
+
   const sortedReportes = [...reportes].sort((a, b) => {
     let valA = '';
     let valB = '';
@@ -9438,6 +10672,10 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
       valA = a.Personal ? a.Personal.DNI : a.EmergenciaDNI;
       valB = b.Personal ? b.Personal.DNI : b.EmergenciaDNI;
     }
+    if (sortConfig.key === 'servicio') {
+      valA = getServicioNombre(a);
+      valB = getServicioNombre(b);
+    }
     if (sortConfig.key === 'estado') { valA = a.Estado; valB = b.Estado; }
 
     if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -9447,9 +10685,8 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
 
   const generarReporte = async () => {
     if (!token) return;
-    const today = getTodayStr();
     try {
-      const res = await fetch(`${API_URL}/api/reports?fechaInicio=${today}&fechaFin=${today}`, {
+      const res = await fetch(`${API_URL}/api/reports?fechaInicio=${repDesde}&fechaFin=${repHasta}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
@@ -9468,13 +10705,6 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
     }
   };
 
-  const getServicioNombre = (r: any) => {
-    if (r.SolicitadoPor?.Servicio?.Nombre) return r.SolicitadoPor.Servicio.Nombre;
-    if (r.Personal?.Servicio?.Nombre) return r.Personal.Servicio.Nombre;
-    if (r.PersonalReemplazado?.Servicio?.Nombre) return r.PersonalReemplazado.Servicio.Nombre;
-    return 'Servicio No Especificado';
-  };
-
   const exportExcel = () => {
     if (reportes.length === 0) return;
     const dataToExport = reportes.map(r => ({
@@ -9484,7 +10714,8 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
       Servicio: getServicioNombre(r),
       Comida: r.TipoComida,
       Dieta: r.TipoDieta,
-      Estado: r.Estado
+      Estado: r.Estado,
+      MotivoRechazo: r.Estado === 'Rechazado' ? (r.JustificacionResolucion || r.JustificacionSolicitud || '-') : '-'
     }));
     const worksheet = XLSX.utils.json_to_sheet(dataToExport);
     const workbook = XLSX.utils.book_new();
@@ -9513,7 +10744,7 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
       getServicioNombre(r),
       r.TipoComida,
       r.TipoDieta,
-      r.Estado
+      r.Estado === 'Rechazado' ? `Rechazado (${r.JustificacionResolucion || r.JustificacionSolicitud || 'Sin motivo'})` : r.Estado
     ]);
 
     autoTable(doc, {
@@ -9944,6 +11175,20 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
         // REQUISITO 1: Servicio Consolidado -> Abrir MODAL con checkboxes
         const pendIds = data.pedidos.filter((p: any) => !p.Entregado).map((p: any) => p.Id);
         setSelectedConsolidadoIds(pendIds);
+        if (data.agenteScanned && data.agenteScanned.Id) {
+          setRetiradoPorAgente({
+            id: data.agenteScanned.Id,
+            nombreCompleto: data.agenteScanned.NombreCompleto,
+            dni: data.agenteScanned.DNI,
+            servicio: data.agenteScanned.ServicioNombre
+          });
+          setRetiradoDniInput('');
+          setRetiradoDniError(null);
+        } else {
+          setRetiradoPorAgente(null);
+          setRetiradoDniInput('');
+          setRetiradoDniError(null);
+        }
         setMostrarModalConsolidado(true);
       }
     } catch (err) {
@@ -9958,7 +11203,10 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
       const res = await fetch(`${API_URL}/api/deliveries/confirm-delivery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ pedidoIds: pedidoIdsToConfirm })
+        body: JSON.stringify({ 
+          pedidoIds: pedidoIdsToConfirm,
+          retiradoPorAgenteId: fullData.agenteScanned?.Id || undefined
+        })
       });
       const data = await res.json();
       if (data.error) {
@@ -10002,11 +11250,26 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
       Swal.fire({ title: "Atención", text: "Seleccione al menos un integrante para entregar ración.", icon: "warning", background: theme === 'dark' ? '#1f2937' : '#fff', color: theme === 'dark' ? '#fff' : '#000' });
       return;
     }
+    if (!retiradoPorAgente?.id) {
+      playWarningBeep();
+      Swal.fire({
+        title: "Identificación Obligatoria",
+        text: "Debe escanear o ingresar el DNI de la persona habilitada que retira las viandas del servicio.",
+        icon: "warning",
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+      setTimeout(() => retiradoInputRef.current?.focus(), 150);
+      return;
+    }
     try {
       const res = await fetch(`${API_URL}/api/deliveries/confirm-delivery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ pedidoIds: selectedConsolidadoIds })
+        body: JSON.stringify({ 
+          pedidoIds: selectedConsolidadoIds,
+          retiradoPorAgenteId: retiradoPorAgente.id
+        })
       });
       const data = await res.json();
       if (data.error) {
@@ -10019,13 +11282,21 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
       fetchDeliverySummary();
       setMostrarModalConsolidado(false);
       setScanResult(null);
+      setRetiradoPorAgente(null);
+      setRetiradoDniInput('');
+      setRetiradoDniError(null);
 
       const cantConfirmed = selectedConsolidadoIds.length;
       setSelectedConsolidadoIds([]);
 
       Swal.fire({
         title: "✅ ¡ENTREGA CONSOLIDADA REGISTRADA!",
-        text: `Se registraron exitosamente ${cantConfirmed} ración(es) para el servicio ${scanResult?.servicio?.Nombre || ''}.`,
+        html: `
+          <div style="text-align: left; background: ${theme === 'dark' ? '#064e3b' : '#f0fdf4'}; border: 1px solid ${theme === 'dark' ? '#059669' : '#86efac'}; border-radius: 12px; padding: 14px; margin-top: 10px; color: ${theme === 'dark' ? '#ecfdf5' : '#14532d'}; font-size: 13px;">
+            <p>Se registraron exitosamente <strong>${cantConfirmed}</strong> ración(es) para el servicio <strong>${scanResult?.servicio?.Nombre || ''}</strong>.</p>
+            <p style="margin-top: 6px;">Retirado por: <strong>${retiradoPorAgente.nombreCompleto}</strong> (DNI: ${retiradoPorAgente.dni})</p>
+          </div>
+        `,
         icon: "success",
         timer: 2500,
         confirmButtonText: "OK (Enter)",
@@ -10065,6 +11336,427 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const handleReimprimirTicket = async (pedidoId: number) => {
+    try {
+      Swal.fire({
+        title: 'Generando Ticket para Reimpresión...',
+        allowOutsideClick: false,
+        didOpen: () => Swal.showLoading()
+      });
+
+      const res = await fetch(`${API_URL}/api/deliveries/${pedidoId}/ticket`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        Swal.fire({
+          title: 'Error',
+          text: data.error || 'No se pudo generar el ticket para reimpresión.',
+          icon: 'error',
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+        return;
+      }
+
+      const t = data.ticket;
+      const printWindow = window.open('', '_blank', 'width=380,height=600');
+      if (printWindow) {
+        printWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>Comprobante #${t.id} - ${t.agenteNombre}</title>
+              <style>
+                @page { size: 80mm auto; margin: 0; }
+                body {
+                  font-family: 'Courier New', Courier, monospace, sans-serif;
+                  width: 76mm;
+                  margin: 0 auto;
+                  padding: 4mm 2mm;
+                  color: #000;
+                  font-size: 12px;
+                  line-height: 1.25;
+                  text-align: center;
+                }
+                .border-line { border-top: 1px dashed #000; margin: 5px 0; }
+                .box { border: 1px solid #000; padding: 4px; margin: 5px 0; }
+              </style>
+            </head>
+            <body>
+              <div style="font-weight: bold; font-size: 14px; text-transform: uppercase;">${t.hospital}</div>
+              <div style="font-size: 11px; margin: 2px 0;">SISTEMA DE ADMINISTRACIÓN DE RACIONES</div>
+              <div class="border-line"></div>
+              <div style="font-size: 14px; font-weight: bold;">*** REIMPRESIÓN TICKET ***</div>
+              <div style="font-size: 12px; font-weight: bold; margin-top: 2px;">TURNO: ${t.turno}</div>
+              <div style="font-size: 11px; margin: 2px 0;">Fecha: ${t.fecha} | Hora: ${t.hora}</div>
+              <div class="border-line"></div>
+              <div style="text-align: left; font-size: 12px; margin: 6px 0;">
+                <div><strong>AGENTE:</strong> ${t.agenteNombre}</div>
+                <div><strong>DNI:</strong> ${t.agenteDni}</div>
+                <div><strong>SERVICIO:</strong> ${t.servicio}</div>
+              </div>
+              <div class="box" style="font-size: 16px; font-weight: 900; border: 2px dashed #000;">
+                DIETA: *** ${t.tipoDieta.toUpperCase()} ***
+              </div>
+              <div class="box">
+                <div style="font-size: 10px; font-weight: bold;">${t.validezTexto}</div>
+                <div style="font-size: 12px; font-weight: 900; margin-top: 2px;">VENCE: ${t.horaVencimiento} HS</div>
+              </div>
+              <div style="font-size: 10px; font-weight: 900; margin: 5px 0;">*** ${t.avisoCocina} ***</div>
+              <div class="border-line"></div>
+              <div style="font-size: 11px; font-weight: bold;">${t.pie}</div>
+              <div style="font-size: 9px; margin-top: 6px;">Comprobante #${t.id} - SisAR Nutrición</div>
+              <script>
+                window.onload = function() {
+                  window.print();
+                  setTimeout(function() { window.close(); }, 600);
+                };
+              <\/script>
+            </body>
+          </html>
+        `);
+        printWindow.document.close();
+        Swal.close();
+      } else {
+        Swal.fire({
+          title: 'Impresión bloqueada',
+          text: 'Por favor habilite ventanas emergentes para imprimir.',
+          icon: 'warning',
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+      }
+    } catch (err: any) {
+      Swal.fire({
+        title: 'Error',
+        text: err?.message || 'Error de comunicación',
+        icon: 'error',
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+    }
+  };
+
+  const handleDesmarcarEntrega = async (pedidoId: number, agenteNombre: string) => {
+    const result = await Swal.fire({
+      title: '¿Desmarcar Entrega?',
+      html: `
+        <div style="text-align: left; font-size: 13px;">
+          <p>¿Confirma anular la entrega registrada para <strong>${agenteNombre}</strong>?</p>
+          <div style="background: #fff1f2; border: 1px solid #fecdd3; color: #be123c; padding: 8px 10px; border-radius: 8px; font-size: 12px; margin-top: 10px;">
+            ⚠️ Utilice esta opción si la impresora del tótem tuvo un <strong>atasco de papel</strong>, falta de rollo o falla de ticket. La ración volverá a quedar pendiente para que el agente pueda retirarla nuevamente.
+          </div>
+        </div>
+      `,
+      input: 'select',
+      inputOptions: {
+        'Falla o atasco de papel en tótem': 'Falla o atasco de papel en tótem',
+        'Comprobante no impreso por falta de rollo': 'Comprobante no impreso por falta de rollo',
+        'Error de escaneo / Entrega errónea': 'Error de escaneo / Entrega errónea',
+        'Otro motivo autorizado': 'Otro motivo autorizado'
+      },
+      inputPlaceholder: 'Seleccione motivo...',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Sí, Desmarcar Ración',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#e11d48',
+      background: theme === 'dark' ? '#1f2937' : '#fff',
+      color: theme === 'dark' ? '#fff' : '#000'
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const res = await fetch(`${API_URL}/api/deliveries/${pedidoId}/unmark-delivery`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ motivo: result.value || 'Falla o atasco de papel en tótem' })
+      });
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        Swal.fire({
+          title: 'Entrega Revertida',
+          text: 'La ración vuelve a figurar como pendiente y puede ser retirada nuevamente.',
+          icon: 'success',
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+        fetchDeliverySummary();
+      } else {
+        Swal.fire({
+          title: 'Error',
+          text: data.error || 'No fue posible desmarcar la entrega.',
+          icon: 'error',
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+      }
+    } catch (err: any) {
+      Swal.fire({
+        title: 'Error',
+        text: err?.message || 'Error de comunicación',
+        icon: 'error',
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
+    }
+  };
+
+  const handleOpenTotemModal = async () => {
+    try {
+      Swal.fire({
+        title: 'Cargando Terminales y Código de Activación...',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+
+      const [resToken, resTerminals] = await Promise.all([
+        fetch(`${API_URL}/api/totem/activation-token`, { headers: { Authorization: `Bearer ${token}` } }),
+        fetch(`${API_URL}/api/totem/terminals`, { headers: { Authorization: `Bearer ${token}` } })
+      ]);
+
+      const data = await resToken.json();
+      const terminals = resTerminals.ok ? await resTerminals.json() : [];
+
+      if (!resToken.ok || data.error) {
+        Swal.fire({
+          title: 'Error',
+          text: data.error || 'No fue posible generar el código de activación del tótem.',
+          icon: 'error',
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+        return;
+      }
+
+      const renderTerminalRows = (terms: any[]) => {
+        if (!terms || terms.length === 0) {
+          return `<tr><td colspan="3" style="padding: 12px; text-align: center; color: #94a3b8; font-style: italic;">No hay terminales vinculadas en este hospital actualmente.</td></tr>`;
+        }
+        return terms.map(t => {
+          const actDate = t.UltimaActividad ? new Date(t.UltimaActividad).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) + ' hs' : '-';
+          const safeName = (t.Nombre || 'Terminal').replace(/'/g, "\\'");
+          return `
+            <tr style="border-bottom: 1px solid ${theme === 'dark' ? '#374151' : '#e2e8f0'}; font-size: 11px;">
+              <td style="padding: 8px; text-align: left; font-weight: bold;">
+                <div>${t.Nombre}</div>
+                <div style="font-size: 10px; color: #94a3b8; font-family: monospace;">IP: ${t.IpAddress || '-'}</div>
+              </td>
+              <td style="padding: 8px; text-align: center; color: #64748b; font-size: 10px;">${actDate}</td>
+              <td style="padding: 8px; text-align: right;">
+                <button 
+                  onclick="window.deleteTotemTerminal(${t.Id}, '${safeName}')" 
+                  style="padding: 5px 12px; font-size: 10px; font-weight: bold; border-radius: 6px; cursor: pointer; border: none; background: #e11d48; color: white;"
+                  title="Desvincular esta terminal y reiniciar su pantalla">
+                  🗑️ Desvincular
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      };
+
+      (window as any).deleteTotemTerminal = async (termId: number, termName: string) => {
+        const result = await Swal.fire({
+          title: '¿Desvincular Terminal?',
+          html: `
+            <div style="font-size: 13px; text-align: center; color: ${theme === 'dark' ? '#cbd5e1' : '#334155'};">
+              <p style="margin-bottom: 8px;">¿Confirma que desea desvincular la terminal <strong>"${termName}"</strong>?</p>
+              <div style="background: ${theme === 'dark' ? '#451a03' : '#fffbeb'}; border: 1px solid #f59e0b; color: #b45309; padding: 8px 12px; border-radius: 8px; font-size: 11px; font-weight: 600; text-align: left;">
+                ⚠️ <strong>Consecuencias:</strong><br/>
+                • Se eliminará de esta lista de terminales autorizadas.<br/>
+                • La pantalla del tótem volverá automáticamente al estado 'Desvinculada'.<br/>
+                • El tótem generará un nuevo PIN para su vinculación.
+              </div>
+            </div>
+          `,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#e11d48',
+          cancelButtonColor: '#64748b',
+          confirmButtonText: 'Sí, desvincular',
+          cancelButtonText: 'Cancelar',
+          background: theme === 'dark' ? '#1f2937' : '#fff',
+          color: theme === 'dark' ? '#fff' : '#000'
+        });
+
+        if (!result.isConfirmed) {
+          handleOpenTotemModal();
+          return;
+        }
+
+        try {
+          const delRes = await fetch(`${API_URL}/api/totem/terminals/${termId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          const delData = await delRes.json();
+          if (delRes.ok) {
+            await Swal.fire({
+              title: '¡Terminal Desvinculada!',
+              text: `La terminal "${termName}" ha sido desvinculada exitosamente y ha vuelto a su pantalla de espera.`,
+              icon: 'success',
+              confirmButtonColor: '#0284c7',
+              confirmButtonText: 'Entendido',
+              background: theme === 'dark' ? '#1f2937' : '#fff',
+              color: theme === 'dark' ? '#fff' : '#000'
+            });
+            handleOpenTotemModal();
+          } else {
+            await Swal.fire({
+              title: 'Error',
+              text: delData.error || 'Error al desvincular terminal',
+              icon: 'error',
+              confirmButtonColor: '#0284c7',
+              background: theme === 'dark' ? '#1f2937' : '#fff',
+              color: theme === 'dark' ? '#fff' : '#000'
+            });
+            handleOpenTotemModal();
+          }
+        } catch (e: any) {
+          await Swal.fire({
+            title: 'Error',
+            text: 'Error de comunicación al desvincular terminal',
+            icon: 'error',
+            confirmButtonColor: '#0284c7',
+            background: theme === 'dark' ? '#1f2937' : '#fff',
+            color: theme === 'dark' ? '#fff' : '#000'
+          });
+          handleOpenTotemModal();
+        }
+      };
+
+      (window as any).authorizeTotemClaim = async () => {
+        const pinInput = document.getElementById('totem-claim-pin-input') as HTMLInputElement;
+        const cleanPin = (pinInput?.value || '').replace(/\D/g, '');
+        if (cleanPin.length !== 6) {
+          alert('Por favor ingrese el PIN de 6 dígitos que figura en la pantalla del tótem.');
+          return;
+        }
+        const btn = document.getElementById('btn-totem-claim');
+        if (btn) btn.innerText = 'Vinculando...';
+        try {
+          const claimRes = await fetch(`${API_URL}/api/totem/authorize-claim`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${token}`
+            },
+            body: JSON.stringify({ code: cleanPin })
+          });
+          const claimData = await claimRes.json();
+          if (claimRes.ok) {
+            if (pinInput) pinInput.value = '';
+            if (btn) btn.innerText = '🔗 Vincular Tótem';
+
+            // Actualizar tabla de terminales vinculadas
+            const refreshRes = await fetch(`${API_URL}/api/totem/terminals`, { headers: { Authorization: `Bearer ${token}` } });
+            if (refreshRes.ok) {
+              const updatedTerms = await refreshRes.json();
+              const tbody = document.getElementById('totem-terminals-tbody');
+              if (tbody) tbody.innerHTML = renderTerminalRows(updatedTerms);
+            }
+
+            Swal.fire({
+              title: '¡Tótem Vinculado!',
+              text: claimData.message || 'La terminal ha sido vinculada y se activará automáticamente en la pantalla del tótem.',
+              icon: 'success',
+              background: theme === 'dark' ? '#1f2937' : '#fff',
+              color: theme === 'dark' ? '#fff' : '#000'
+            });
+          } else {
+            alert(claimData.error || 'No se pudo vincular con el PIN ingresado.');
+            if (btn) btn.innerText = '🔗 Vincular Tótem';
+          }
+        } catch (err: any) {
+          alert('Error de conexión al vincular tótem.');
+          if (btn) btn.innerText = '🔗 Vincular Tótem';
+        }
+      };
+
+      Swal.fire({
+        title: '🖥️ GESTIÓN Y VINCULACIÓN DE TÓTEM',
+        html: `
+          <div style="font-size: 13px; color: ${theme === 'dark' ? '#cbd5e1' : '#334155'};">
+            <p style="margin-bottom: 12px; font-weight: 700; font-size: 14px;">
+              Hospital: <strong style="color: #0284c7;">${data.hospitalName || 'Hospital'}</strong>
+            </p>
+
+            <!-- VINCULACIÓN DIRECTA POR PIN -->
+            <div style="background: ${theme === 'dark' ? '#0f172a' : '#f8fafc'}; border: 1.5px solid #0284c7; border-radius: 14px; padding: 14px; margin-bottom: 16px; text-align: center;">
+              <div style="font-weight: 800; font-size: 13px; color: #0284c7; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px;">
+                Vincular Terminal Tótem por PIN
+              </div>
+              <p style="font-size: 12px; margin: 0 0 10px 0; color: ${theme === 'dark' ? '#94a3b8' : '#64748b'};">
+                Ingrese el <strong>PIN de 6 dígitos</strong> que figura actualmente en la pantalla del tótem:
+              </p>
+              <div style="display: flex; gap: 8px; justify-content: center; align-items: center;">
+                <input 
+                  id="totem-claim-pin-input" 
+                  type="text" 
+                  maxlength="6" 
+                  placeholder="Ej: 489120" 
+                  style="width: 140px; padding: 8px 12px; font-size: 17px; font-weight: bold; text-align: center; letter-spacing: 3px; border-radius: 8px; border: 1.5px solid #0284c7; background: ${theme === 'dark' ? '#1e293b' : '#fff'}; color: ${theme === 'dark' ? '#fff' : '#000'}; font-family: monospace;" 
+                />
+                <button 
+                  id="btn-totem-claim" 
+                  onclick="window.authorizeTotemClaim()" 
+                  style="background: #0284c7; color: white; padding: 8px 16px; border-radius: 8px; font-weight: bold; font-size: 12px; border: none; cursor: pointer; transition: background 0.2s;">
+                  🔗 Vincular Tótem
+                </button>
+              </div>
+            </div>
+
+            <div style="text-align: left; margin-top: 10px;">
+              <div style="font-weight: 700; font-size: 12px; margin-bottom: 6px; display: flex; justify-content: space-between; align-items: center;">
+                <span>Terminales Tótem Vinculadas</span>
+                <span style="font-size: 10px; color: #64748b;">Terminales autorizadas</span>
+              </div>
+              <div style="max-height: 160px; overflow-y: auto; border: 1px solid ${theme === 'dark' ? '#374151' : '#e2e8f0'}; border-radius: 8px;">
+                <table style="width: 100%; border-collapse: collapse;">
+                  <thead>
+                    <tr style="background: ${theme === 'dark' ? '#1e293b' : '#f8fafc'}; border-bottom: 1px solid ${theme === 'dark' ? '#374151' : '#e2e8f0'}; font-size: 10px; color: #64748b; text-transform: uppercase;">
+                      <th style="padding: 6px 8px; text-align: left;">Terminal / IP</th>
+                      <th style="padding: 6px 8px; text-align: center;">Última Actividad</th>
+                      <th style="padding: 6px 8px; text-align: right;">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody id="totem-terminals-tbody">
+                    ${renderTerminalRows(terminals)}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        `,
+        showConfirmButton: true,
+        confirmButtonText: 'Cerrar',
+        confirmButtonColor: '#0284c7',
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000',
+        width: 500
+      });
+    } catch (err: any) {
+      Swal.fire({
+        title: 'Error',
+        text: err?.message || 'Error de comunicación',
+        icon: 'error',
+        background: theme === 'dark' ? '#1f2937' : '#fff',
+        color: theme === 'dark' ? '#fff' : '#000'
+      });
     }
   };
 
@@ -10156,6 +11848,17 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
         >
           <Search className="w-4 h-4 mr-2 text-indigo-500" />
           Reportes y Consultas
+        </button>
+        <button
+          onClick={() => setActiveTab("Observaciones")}
+          className={`flex items-center px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === "Observaciones"
+              ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 shadow-sm'
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+          }`}
+        >
+          <FileText className="w-4 h-4 mr-2 text-purple-500" />
+          Observaciones y Sugerencias de Servicios
         </button>
       </div>
 
@@ -10255,6 +11958,16 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                     🌙 Cena
                   </button>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={handleOpenTotemModal}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold rounded-xl shadow-sm transition-all"
+                  title="Vincular o abrir terminal de autoservicio (Tótem)"
+                >
+                  <QrCode className="w-4 h-4" />
+                  <span>Vincular Tótem</span>
+                </button>
               </div>
             </div>
 
@@ -10361,7 +12074,13 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                               </div>
                               {pendingCount > 0 && (
                                 <button
-                                  onClick={() => handleConfirmDeliveryBatch(allP.filter((p: any) => !p.Entregado).map((p: any) => p.Id))}
+                                  onClick={() => {
+                                    if (scanResult.mode === 'servicio') {
+                                      setMostrarModalConsolidado(true);
+                                    } else {
+                                      handleConfirmDeliveryBatch(allP.filter((p: any) => !p.Entregado).map((p: any) => p.Id));
+                                    }
+                                  }}
                                   className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-black rounded-xl shadow-lg flex items-center cursor-pointer transition-transform transform active:scale-95"
                                 >
                                   <CheckCircle className="w-4 h-4 mr-2" />
@@ -10426,7 +12145,14 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                                 <td className="px-4 py-3 text-center">
                                   {!p.Entregado ? (
                                     <button
-                                      onClick={() => handleConfirmDeliveryBatch([p.Id])}
+                                      onClick={() => {
+                                        if (scanResult.mode === 'servicio') {
+                                          setSelectedConsolidadoIds([p.Id]);
+                                          setMostrarModalConsolidado(true);
+                                        } else {
+                                          handleConfirmDeliveryBatch([p.Id]);
+                                        }
+                                      }}
                                       className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm transition-all cursor-pointer"
                                     >
                                       Entregar
@@ -10490,7 +12216,9 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                     <th className="px-4 py-3">Agente / DNI</th>
                     <th className="px-4 py-3">Servicio</th>
                     <th className="px-4 py-3">Comida / Dieta</th>
+                    <th className="px-4 py-3">Retirado Por</th>
                     <th className="px-4 py-3">Registrado Por</th>
+                    <th className="px-4 py-3 text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-xs">
@@ -10502,14 +12230,16 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                       return (
                         (item.AgenteNombre || '').toLowerCase().includes(q) ||
                         (item.AgenteDNI || '').toLowerCase().includes(q) ||
-                        (item.ServicioNombre || '').toLowerCase().includes(q)
+                        (item.ServicioNombre || '').toLowerCase().includes(q) ||
+                        (item.RetiradoPor?.NombreCompleto || '').toLowerCase().includes(q) ||
+                        (item.RetiradoPor?.DNI || '').toLowerCase().includes(q)
                       );
                     });
 
                     if (filteredList.length === 0) {
                       return (
                         <tr>
-                          <td colSpan={5} className="py-8 text-center text-gray-400 dark:text-gray-500 italic">
+                          <td colSpan={7} className="py-8 text-center text-gray-400 dark:text-gray-500 italic">
                             Sin entregas registradas para este turno o filtro.
                           </td>
                         </tr>
@@ -10549,8 +12279,44 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                               {item.TipoDieta}
                             </span>
                           </td>
+                          <td className="px-4 py-3">
+                            {item.RetiradoPor ? (
+                              <div>
+                                <div className="font-bold text-gray-900 dark:text-gray-100 flex items-center gap-1">
+                                  <span className="text-emerald-600 dark:text-emerald-400">✓</span> {item.RetiradoPor.NombreCompleto}
+                                </div>
+                                <div className="text-[10px] text-gray-500 dark:text-gray-400 font-mono">
+                                  DNI: {item.RetiradoPor.DNI} {item.RetiradoPor.Servicio ? `• ${item.RetiradoPor.Servicio}` : ''}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 dark:text-gray-500 italic text-[11px]">
+                                Mismo agente / Directo
+                              </span>
+                            )}
+                          </td>
                           <td className="px-4 py-3 text-gray-500 dark:text-gray-400 font-medium">
                             {item.EntregadoPor || 'Nutrición'}
+                          </td>
+                          <td className="px-4 py-3 text-right whitespace-nowrap">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleReimprimirTicket(item.Id)}
+                                title="Reimprimir Comprobante Térmico (Atasco o Falla)"
+                                className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:hover:bg-blue-900 dark:text-blue-300 rounded-lg border border-blue-200 dark:border-blue-800 transition-colors inline-flex items-center gap-1 text-[11px] font-bold"
+                              >
+                                <Printer className="w-3.5 h-3.5" />
+                                <span>Ticket</span>
+                              </button>
+                              <button
+                                onClick={() => handleDesmarcarEntrega(item.Id, item.AgenteNombre)}
+                                title="Desmarcar Entrega por Falla de Impresora / Atasco"
+                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:hover:bg-rose-900 dark:text-rose-300 rounded-lg border border-rose-200 dark:border-rose-800 transition-colors inline-flex items-center gap-1 text-[11px] font-bold"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                                <span>Desmarcar</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -10706,22 +12472,42 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
         </div>
       )}
 
-      {/* PESTAÑA 3: REPORTES Y CONSULTAS (SOLO DÍA ACTUAL) */}
+      {/* PESTAÑA 3: REPORTES Y CONSULTAS */}
       {activeTab === "Reportes" && (
         <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden animate-in fade-in zoom-in-95 duration-300">
           <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/30 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <h2 className="text-lg font-bold text-gray-900 dark:text-gray-100 flex items-center">
-                <Search className="w-5 h-5 mr-2 text-indigo-500" /> Reportes del Día Actual ({getTodayStr().split('-').reverse().join('/')})
+                <Search className="w-5 h-5 mr-2 text-indigo-500" /> Reportes y Consultas de Raciones
               </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Consola de reportes de producción de cocina y planillas de entrega de raciones del día de hoy.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Consola de reportes de producción de cocina y planillas de entrega por rango de fechas.</p>
             </div>
-            <button
-              onClick={generarReporte}
-              className="flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl shadow-xs font-bold text-xs transition-colors cursor-pointer"
-            >
-              <RefreshCw className="w-4 h-4 mr-1.5" /> Actualizar Datos
-            </button>
+            <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-gray-600 dark:text-gray-400">Desde:</label>
+                <input
+                  type="date"
+                  value={repDesde}
+                  onChange={(e) => setRepDesde(e.target.value)}
+                  className="px-2.5 py-1.5 border border-gray-300 dark:border-gray-700 rounded-lg text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-xs"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-gray-600 dark:text-gray-400">Hasta:</label>
+                <input
+                  type="date"
+                  value={repHasta}
+                  onChange={(e) => setRepHasta(e.target.value)}
+                  className="px-2.5 py-1.5 border border-gray-300 dark:border-gray-700 rounded-lg text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-xs"
+                />
+              </div>
+              <button
+                onClick={generarReporte}
+                className="flex items-center justify-center bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl shadow-xs font-bold text-xs transition-colors cursor-pointer"
+              >
+                <RefreshCw className="w-4 h-4 mr-1.5" /> Buscar
+              </button>
+            </div>
           </div>
           <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-wrap gap-4 items-center bg-white dark:bg-gray-900">
             <div className="flex flex-wrap gap-2 w-full lg:w-auto">
@@ -10758,7 +12544,7 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
             {reportes.length === 0 ? (
               <div className="text-center text-gray-500 dark:text-gray-400 py-12 flex flex-col items-center">
                 <FileText className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
-                No hay raciones solicitadas registradas para el día de hoy ({getTodayStr().split('-').reverse().join('/')}).
+                No hay raciones solicitadas registradas para el rango seleccionado ({repDesde.split('-').reverse().join('/')} al {repHasta.split('-').reverse().join('/')}).
               </div>
             ) : (
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
@@ -10768,12 +12554,12 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                     <th onClick={() => handleSort('tipo')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Tipo {sortConfig.key==='tipo' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
                     <th onClick={() => handleSort('nombre')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Personal / Paciente {sortConfig.key==='nombre' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
                     <th onClick={() => handleSort('dni')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">DNI {sortConfig.key==='dni' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
+                    <th onClick={() => handleSort('servicio')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Servicio {sortConfig.key==='servicio' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
                     <th onClick={() => handleSort('estado')} className="px-6 py-4 text-left text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Estado {sortConfig.key==='estado' && (sortConfig.direction==='asc'?'↑':'↓')}</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-900 divide-y divide-gray-100 dark:divide-gray-800">
                   {sortedReportes.filter(r => {
-                    if (r.Estado !== 'Aprobado') return false;
                     if (!repFiltroEmpleado) return true;
                     const term = repFiltroEmpleado.toLowerCase();
                     const name = r.Personal ? `${r.Personal.NombreCompleto}`.toLowerCase() : `${r.EmergenciaNombreCompleto}`.toLowerCase();
@@ -10790,15 +12576,131 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                       </td>
                       <td className="px-6 py-4 text-sm font-bold text-gray-900 dark:text-gray-100">{r.Personal ? `${r.Personal.NombreCompleto}` : `${r.EmergenciaNombreCompleto}`}</td>
                       <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">{r.Personal ? r.Personal.DNI : r.EmergenciaDNI}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-700 dark:text-gray-300">{getServicioNombre(r)}</td>
                       <td className="px-6 py-4 text-sm">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold ${r.Estado === 'Aprobado' ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : r.Estado === 'Rechazado' ? 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
                           {r.Estado}
                         </span>
+                        {r.Estado === 'Rechazado' && (
+                          <div className="text-xs text-red-600 dark:text-red-400 italic mt-1 max-w-xs">
+                            <span className="font-semibold">Motivo:</span> {r.JustificacionResolucion || r.JustificacionSolicitud || 'Sin motivo especificado'}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* PESTAÑA OBSERVACIONES Y SUGERENCIAS */}
+      {activeTab === "Observaciones" && (
+        <div className="space-y-6 animate-in fade-in duration-300">
+          <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+              <div>
+                <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                  Observaciones y Sugerencias de los Servicios
+                </h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  Gestiona las notas enviadas por los Jefes de Servicio y selecciona cuáles deben ser visibles para Gerencia.
+                </p>
+              </div>
+              <button
+                onClick={fetchObservacionesNutricion}
+                className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-indigo-500" />
+                Actualizar Lista
+              </button>
+            </div>
+
+            {observaciones.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 dark:text-gray-400 text-sm">
+                No hay observaciones registradas por los Jefes de Servicio.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {observaciones.map((obs) => (
+                  <div
+                    key={obs.Id}
+                    className={`p-5 rounded-2xl border transition-all ${
+                      obs.VisibleGerencia
+                        ? 'bg-purple-50/40 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800/60'
+                        : 'bg-gray-50/60 dark:bg-gray-800/40 border-gray-200 dark:border-gray-800'
+                    }`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wider ${
+                          obs.Tipo === 'Sugerencia'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300'
+                            : 'bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-300'
+                        }`}>
+                          {obs.Tipo === 'Queja' ? 'Observación' : obs.Tipo}
+                        </span>
+                        <span className="text-sm font-extrabold text-indigo-600 dark:text-indigo-400">
+                          {obs.Servicio?.Nombre || 'Servicio'}
+                        </span>
+                        <span className="text-xs text-gray-400">•</span>
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          Por: <strong className="text-gray-700 dark:text-gray-300">{obs.Usuario?.NombreCompleto || obs.Usuario?.Username}</strong> ({formatAuditDate(obs.Fecha)})
+                        </span>
+                      </div>
+
+                      {/* CONTROLES DE VISIBILIDAD DE GERENCIA */}
+                      <div className="flex items-center gap-3">
+                        <label className="flex items-center gap-2 cursor-pointer bg-white dark:bg-gray-900 px-3 py-1.5 rounded-xl border border-gray-300 dark:border-gray-700 shadow-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(obs.VisibleGerencia)}
+                            onChange={(e) => handleSaveObservacionNutricion(obs.Id, e.target.checked)}
+                            disabled={savingObsId === obs.Id}
+                            className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                          />
+                          <span className="text-xs font-bold text-gray-700 dark:text-gray-300 select-none">
+                            {obs.VisibleGerencia ? '🟢 Visible para Gerencia' : '⚪ Privado para Nutrición'}
+                          </span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 whitespace-pre-line mb-4 bg-white dark:bg-gray-900 p-3.5 rounded-xl border border-gray-100 dark:border-gray-800">
+                      {obs.Observacion}
+                    </p>
+
+                    {/* RESPUESTA O NOTA DE NUTRICION */}
+                    <div className="space-y-2 pt-2 border-t border-gray-200/60 dark:border-gray-800">
+                      <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 uppercase tracking-wider">
+                        Respuesta / Nota de Nutrición (Opcional):
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="text"
+                          maxLength={1000}
+                          placeholder="Escribe una respuesta o nota para el Servicio / Gerencia..."
+                          value={respuestasNutricion[obs.Id] ?? ''}
+                          onChange={(e) => setRespuestasNutricion({ ...respuestasNutricion, [obs.Id]: e.target.value })}
+                          className="flex-1 px-3 py-1.5 text-xs bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleSaveObservacionNutricion(obs.Id, Boolean(obs.VisibleGerencia))}
+                          disabled={savingObsId === obs.Id}
+                          className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-sm transition-all flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <Save className="w-3.5 h-3.5" />
+                          Guardar
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
@@ -10836,7 +12738,7 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                         Servicio: {scanResult.servicio?.Nombre || 'Servicio'}
                       </h3>
                       <p className="text-xs text-purple-100 mt-1">
-                        Agente que retira: <strong>{scanResult.agenteScanned?.NombreCompleto || 'Agente'}</strong> (DNI: {scanResult.agenteScanned?.DNI || scanInput})
+                        Agente que retira: <strong>{retiradoPorAgente?.nombreCompleto || scanResult.agenteScanned?.NombreCompleto || 'Pendiente de identificación'}</strong> {retiradoPorAgente?.dni ? `(DNI: ${retiradoPorAgente.dni})` : ''}
                       </p>
                     </div>
 
@@ -10861,6 +12763,9 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                           setMostrarModalConsolidado(false);
                           setScanResult(null);
                           setSelectedConsolidadoIds([]);
+                          setRetiradoPorAgente(null);
+                          setRetiradoDniInput('');
+                          setRetiradoDniError(null);
                           setTimeout(() => scanInputRef.current?.focus(), 100);
                         }}
                         className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors cursor-pointer ml-1"
@@ -10868,6 +12773,98 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                         <X className="w-5 h-5" />
                       </button>
                     </div>
+                  </div>
+
+                  {/* SECCIÓN IDENTIFICACIÓN OBLIGATORIA DEL AGENTE QUE RETIRA */}
+                  <div className="p-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800">
+                    {retiradoPorAgente ? (
+                      <div className="flex items-center justify-between p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-xl">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
+                            ✓
+                          </div>
+                          <div>
+                            <div className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                              <span>Agente que Retira las Viandas</span>
+                              <span className="text-[10px] bg-emerald-200 dark:bg-emerald-900 text-emerald-900 dark:text-emerald-100 px-2 py-0.5 rounded-full font-black">HABILITADO</span>
+                            </div>
+                            <div className="font-extrabold text-sm text-gray-900 dark:text-gray-100 mt-0.5">
+                              {retiradoPorAgente.nombreCompleto}
+                            </div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400">
+                              DNI: <strong className="font-mono">{retiradoPorAgente.dni}</strong> • Servicio: <strong>{retiradoPorAgente.servicio || 'Hospital'}</strong>
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setRetiradoPorAgente(null);
+                            setRetiradoDniInput('');
+                            setRetiradoDniError(null);
+                            setTimeout(() => retiradoInputRef.current?.focus(), 150);
+                          }}
+                          className="px-3.5 py-1.5 text-xs font-bold text-gray-600 hover:text-red-600 dark:text-gray-400 dark:hover:text-red-400 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg hover:border-red-400 transition-colors shadow-2xs"
+                        >
+                          Cambiar Agente
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border-2 border-dashed border-amber-300 dark:border-amber-700/80 rounded-xl space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-2">
+                            <span className="text-lg">⚠️</span>
+                            <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-200">
+                              IDENTIFICACIÓN OBLIGATORIA DE QUIEN RETIRA
+                            </span>
+                          </div>
+                          <span className="text-[11px] font-bold text-amber-700 dark:text-amber-400">
+                            Debe pertenecer al Padrón de Agentes del Hospital
+                          </span>
+                        </div>
+                        <div className="flex gap-2">
+                          <input
+                            ref={retiradoInputRef}
+                            type="text"
+                            value={retiradoDniInput}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setRetiradoDniInput(val);
+                              if (retiradoDniError) setRetiradoDniError(null);
+                              if (val.length === 7 || val.length === 8) {
+                                handleBuscarAgenteRetira(val);
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleBuscarAgenteRetira();
+                              }
+                            }}
+                            placeholder="Escanee o ingrese DNI de quien retira..."
+                            disabled={buscandoAgenteRetira}
+                            className="flex-1 px-4 py-2.5 text-sm bg-white dark:bg-gray-800 border-2 border-amber-300 dark:border-amber-600 rounded-xl text-gray-900 dark:text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-amber-500 font-mono font-bold shadow-2xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleBuscarAgenteRetira()}
+                            disabled={buscandoAgenteRetira || !retiradoDniInput.trim()}
+                            className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                          >
+                            {buscandoAgenteRetira ? 'Validando...' : 'Validar DNI'}
+                          </button>
+                        </div>
+                        {retiradoDniError && (
+                          <div className="text-xs font-bold text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-950/70 p-2.5 rounded-lg border border-red-300 dark:border-red-800 flex items-center gap-2">
+                            <span>🚫</span>
+                            <span>{retiradoDniError}</span>
+                          </div>
+                        )}
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 italic">
+                          El botón de entrega permanecerá bloqueado hasta validar un agente habilitado en el padrón.
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* BARRA DE ACCIONES RAPIDAS DE SELECCION */}
@@ -10983,15 +12980,22 @@ function NutricionPanel({ token, hospitalName, username, dietasHabilitadasProp }
                 Cancelar
               </button>
 
-              <button
-                type="button"
-                disabled={selectedConsolidadoIds.length === 0}
-                onClick={handleConfirmDeliveryConsolidado}
-                className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center cursor-pointer"
-              >
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Registrar Entrega de Seleccionados ({selectedConsolidadoIds.length})
-              </button>
+              <div className="flex items-center gap-3">
+                {!retiradoPorAgente && (
+                  <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5 animate-pulse">
+                    <span>⚠️</span> Identifique quién retira para habilitar la entrega
+                  </span>
+                )}
+                <button
+                  type="button"
+                  disabled={selectedConsolidadoIds.length === 0 || !retiradoPorAgente}
+                  onClick={handleConfirmDeliveryConsolidado}
+                  className="px-6 py-2.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-extrabold text-xs rounded-xl shadow-lg transition-all flex items-center cursor-pointer"
+                >
+                  <CheckCircle className="w-4 h-4 mr-2" />
+                  Registrar Entrega de Seleccionados ({selectedConsolidadoIds.length})
+                </button>
+              </div>
             </div>
           </div>
         </div>

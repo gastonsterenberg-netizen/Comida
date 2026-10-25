@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Esquema de Base de Datos - Módulo Oficinas Públicas y Catering Versátil (Versión Imprimible)</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'base',
+      themeVariables: {
+        darkMode: false,
+        background: '#ffffff',
+        primaryColor: '#ffffff',
+        primaryTextColor: '#111827',
+        primaryBorderColor: '#1f2937',
+        lineColor: '#1f2937',
+        secondaryColor: '#f3f4f6',
+        tertiaryColor: '#ffffff',
+        fontFamily: 'Segoe UI, Helvetica, Arial, sans-serif',
+        fontSize: '12.5px'
+      }
+    });
+  </script>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 1.2cm;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+      background-color: #ffffff;
+      color: #111827;
+      margin: 0;
+      padding: 24px;
+      line-height: 1.45;
+    }
+
+    .header {
+      border-bottom: 2px solid #111827;
+      padding-bottom: 12px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+
+    .title {
+      font-size: 20px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 0;
+      color: #000000;
+    }
+
+    .subtitle {
+      font-size: 13px;
+      color: #374151;
+      margin-top: 4px;
+    }
+
+    .badge-print {
+      display: inline-block;
+      padding: 4px 10px;
+      border: 1px solid #111827;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+
+    .btn-print {
+      background-color: #111827;
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 13px;
+      transition: background-color 0.2s;
+    }
+
+    .btn-print:hover {
+      background-color: #374151;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
+      text-transform: uppercase;
+      border-bottom: 1.5px solid #374151;
+      padding-bottom: 4px;
+      margin-top: 22px;
+      margin-bottom: 12px;
+      color: #000000;
+    }
+
+    .diagram-container {
+      background-color: #ffffff;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 22px;
+      display: flex;
+      justify-content: center;
+      overflow-x: auto;
+    }
+
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+
+    .table-card {
+      border: 1.5px solid #111827;
+      border-radius: 6px;
+      background: #ffffff;
+      page-break-inside: avoid;
+    }
+
+    .table-header {
+      background-color: #f3f4f6;
+      border-bottom: 1.5px solid #111827;
+      padding: 6px 12px;
+      font-weight: 700;
+      font-size: 12.5px;
+      display: flex;
+      justify-content: space-between;
+      color: #000000;
+    }
+
+    .table-header.new-table {
+      background-color: #e5e7eb;
+      border-left: 4px solid #111827;
+    }
+
+    .table-body {
+      padding: 8px 12px;
+      font-size: 11px;
+    }
+
+    .table-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2.5px 0;
+      border-bottom: 1px dashed #e5e7eb;
+    }
+
+    .table-row:last-child {
+      border-bottom: none;
+    }
+
+    .col-name {
+      font-weight: 600;
+      color: #111827;
+    }
+
+    .col-pk {
+      color: #b91c1c;
+      font-weight: 700;
+      margin-right: 4px;
+    }
+
+    .col-fk {
+      color: #1d4ed8;
+      font-weight: 700;
+      margin-right: 4px;
+    }
+
+    .col-tag-office {
+      background-color: #111827;
+      color: #ffffff;
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 700;
+      margin-left: 6px;
+    }
+
+    .col-tag-reuse {
+      background-color: #e5e7eb;
+      color: #111827;
+      border: 1px solid #9ca3af;
+      font-size: 9px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-weight: 700;
+      margin-left: 6px;
+    }
+
+    .col-type {
+      color: #4b5563;
+      font-family: Consolas, monospace;
+      font-size: 10px;
+    }
+
+    .workflow-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .workflow-card {
+      border: 1px solid #374151;
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: #fafafa;
+      font-size: 11px;
+    }
+
+    .workflow-card strong {
+      display: block;
+      margin-bottom: 4px;
+      color: #000000;
+      font-size: 12px;
+    }
+
+    .example-box {
+      border: 1px dashed #4b5563;
+      border-radius: 6px;
+      padding: 10px 14px;
+      margin-bottom: 20px;
+      background-color: #ffffff;
+      font-size: 11.5px;
+    }
+
+    .rules-box {
+      border: 1.5px solid #111827;
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-top: 16px;
+      background-color: #f9fafb;
+      font-size: 11.5px;
+      page-break-inside: avoid;
+    }
+
+    .rules-box ul {
+      margin: 6px 0 0 0;
+      padding-left: 18px;
+    }
+
+    .rules-box li {
+      margin-bottom: 3.5px;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .no-print {
+        display: none !important;
+      }
+      .diagram-container {
+        border: 1px solid #6b7280;
+      }
+      .table-card {
+        border: 1.5px solid #000000;
+      }
+      .table-header {
+        background-color: #e5e7eb !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+      .workflow-card {
+        border: 1px solid #000000;
+        background: #ffffff !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1 class="title">Esquema Extendido: Catering Versátil para Oficinas</h1>
+      <div class="subtitle">Base de Datos: <strong>ComidaDB</strong> — Soporte Híbrido: Platos Fijos del Día + Menús para Armar (Principal + Guarnición)</div>
+    </div>
+    <div style="text-align: right;">
+      <span class="badge-print">Versión Imprimible (Alto Contraste)</span>
+      <div style="margin-top: 8px;" class="no-print">
+        <button class="btn-print" onclick="window.print()">🖨️ Imprimir Esquema (Ctrl + P)</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="example-box">
+    <strong>🍴 Modelo de Catering Comercial Real (Rotisería / Proveedor):</strong>
+    <div style="display: flex; gap: 24px; margin-top: 6px;">
+      <div>
+        <strong>A. Platos del Día Completos (Fijos):</strong>
+        <div>• Opción 1: Pastel de papa casero</div>
+        <div>• Opción 2: Cazuela de lentejas</div>
+      </div>
+      <div>
+        <strong>B. Menú para Armar (Principal + Guarnición a elección):</strong>
+        <div>• Principal: <em>Milanesa de ternera</em> o <em>Pechuga a la plancha</em></div>
+        <div>• Guarnición a elección: <em>Puré de papas</em>, <em>Papas fritas</em> o <em>Ensalada mixta</em></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title">1. Diagrama Entidad-Relación Extendido (Catering Versátil)</div>
+
+  <div class="diagram-container">
+    <pre class="mermaid">
+erDiagram
+    HOSPITALES ||--o{ SERVICIOS : "sectores / pisos"
+    HOSPITALES ||--o{ PADRON_HABILITADOS : "comensales asignados"
+    HOSPITALES ||--o{ MENU_OFICINA_OPCIONES : "1 a N (Platos del día)"
+    HOSPITALES ||--o{ MENU_OFICINA_GUARNICIONES : "1 a N (Acompañamientos)"
+    HOSPITALES ||--o{ CONSOLIDADOS_PROVEEDOR : "1 a N (Remitos diarios)"
+    
+    SERVICIOS ||--o{ PADRON_HABILITADOS : "sector / piso asignado"
+    
+    PADRON_HABILITADOS ||--o{ PEDIDOS_COMIDA : "1 a N (AgenteId - Quien consume)"
+    PADRON_HABILITADOS ||--o{ PERSONAL : "1 a N (AgenteId - Asignación)"
+    
+    MENU_OFICINA_OPCIONES ||--o{ PEDIDOS_COMIDA : "0 a N (PlatoOpcionId)"
+    MENU_OFICINA_GUARNICIONES ||--o{ PEDIDOS_COMIDA : "0 a N (GuarnicionId - Opcional)"
+    
+    USUARIOS ||--o{ PEDIDOS_COMIDA : "SolicitadoPorUsuarioId"
+    USUARIOS ||--o{ MENU_OFICINA_OPCIONES : "CreadoPorUsuarioId (Rol=4)"
+    USUARIOS ||--o{ MENU_OFICINA_GUARNICIONES : "CreadoPorUsuarioId (Rol=4)"
+    USUARIOS ||--o{ CONSOLIDADOS_PROVEEDOR : "GeneradoPorUsuarioId (Rol=4)"
+    ROLES ||--o{ USUARIOS : "RolId"
+
+    HOSPITALES {
+        int Id PK
+        string Nombre "Efector u Organismo"
+        string TipoEntidad "NUEVO: 'HOSPITAL' | 'OFICINA'"
+        string LimiteAlmuerzo "REUTILIZADO: Cierre pedidos (ej. 10:30)"
+        string ProveedorNombre "NUEVO: Empresa de catering"
+        string ProveedorTelefono "NUEVO: WhatsApp proveedor"
+    }
+
+    SERVICIOS {
+        int Id PK
+        int HospitalId FK
+        string Nombre "REUTILIZADO: Piso 1, Sector A, Mesa Entrada"
+    }
+
+    ROLES {
+        int Id PK "1:Admin, 2:Gerente, 3:Jefe, 4:Encargado_Oficina (Reutiliza RRHH), 5:Nutricion"
+        string Nombre "Nombre Rol"
+    }
+
+    PADRON_HABILITADOS {
+        int Id PK "Agente físico único"
+        string DNI UK "Documento"
+        string NombreCompleto "Apellido y Nombre"
+        string PinAcceso "NUEVO OFICINA: PIN 4 dígitos login"
+        int RacionesMaximasDia "Cupo (1 ración almuerzo)"
+        boolean Activo "Habilitado"
+        int HospitalId FK "Organismo u Hospital"
+        int ServicioId FK "REUTILIZADO: Sector o Piso"
+    }
+
+    MENU_OFICINA_OPCIONES {
+        int Id PK "NUEVA TABLA"
+        int HospitalId FK "Oficina pública"
+        date Fecha "Fecha del menú"
+        string TipoPlato "NUEVO: 'FIJO_COMPLETO' | 'PRINCIPAL'"
+        int NumeroOpcion "Opción 1, 2, 3..."
+        string NombrePlato "Ej. Milanesa / Pastel de papa"
+        string Descripcion "Opcional: detalles"
+        boolean PermiteGuarnicion "1 si elige guarnición, 0 si viene armado"
+    }
+
+    MENU_OFICINA_GUARNICIONES {
+        int Id PK "NUEVA TABLA (ACOMPAÑAMIENTOS)"
+        int HospitalId FK "Oficina pública"
+        date Fecha "Fecha del día"
+        string NombreGuarnicion "Ej. Puré / Papas fritas / Ensalada"
+    }
+
+    PEDIDOS_COMIDA {
+        int Id PK
+        date FechaPedido "Día de consumo"
+        string TipoComida "'Almuerzo'"
+        int AgenteId FK "PadronHabilitados(Id)"
+        int PlatoOpcionId FK "NUEVO OFICINA: Plato elegido"
+        int GuarnicionId FK "NUEVO OFICINA: Guarnición elegida (NULL si plato fijo)"
+        string CanalPedido "NUEVO: 'PORTAL_EMPLEADO' | 'PANEL_ENCARGADO' | 'HOSPITAL'"
+        string TipoDieta "Normal, Diabética (Hospital)"
+        int SolicitadoPorUsuarioId FK "Usuario que registró"
+        string Estado "'Aprobado' | 'Pendiente'"
+    }
+
+    CONSOLIDADOS_PROVEEDOR {
+        int Id PK "NUEVA TABLA (REMITO CATERING)"
+        int HospitalId FK "Oficina"
+        date Fecha "Fecha de entrega"
+        int TotalViandas "Cantidad total viandas"
+        string ResumenPlatosJson "Ej: 10 Milanesa c/Puré, 5 c/Fritas, 12 Pastel"
+        datetime FechaGenerado "Hora de cierre"
+        int GeneradoPorUsuarioId FK "Encargado que emitió remito"
+        string Estado "'Generado' | 'Enviado' | 'Entregado'"
+    }
+    </pre>
+  </div>
+
+  <div class="section-title">2. Dinámica Operativa del Menú Versátil</div>
+
+  <div class="workflow-grid">
+    <div class="workflow-card">
+      <strong>PASO 1: Carga Matutina (08:00 AM)</strong>
+      El <strong>Encargado de Oficina (Rol = 4 - Reutilizado)</strong> carga según lo enviado por el proveedor:<br>
+      • <strong>Platos del Día / Completos (1 sola cosa):</strong> 1. Pastel de papa, 2. Cazuela de lentejas (cerrados, no piden guarnición).<br>
+      • <strong>Menú para Armar (Principales):</strong> 1. Milanesa de ternera, 2. Pechuga grillé.<br>
+      • <strong>Acompañamientos / Guarniciones:</strong> Puré de papas, Papas fritas, Ensalada mixta.
+    </div>
+    <div class="workflow-card">
+      <strong>PASO 2: Elección Dinámica (08:00 - 10:30)</strong>
+      • <em>Plato del Día:</em> El empleado elige <em>Pastel de papa</em> ➔ Confirmación inmediata en 1 clic.<br>
+      • <em>Menú para Armar:</em> Elige <em>Milanesa</em> ➔ Se despliegan opciones: <code>[ Puré ]</code> <code>[ Fritas ]</code> <code>[ Ensalada ]</code> ➔ Elige puré ➔ Confirmado.
+    </div>
+    <div class="workflow-card">
+      <strong>PASO 3: Remito Desglosado y Reparto</strong>
+      Al cierre (10:30 AM), se genera el remito exacto para el WhatsApp del delivery:<br>
+      <em>"Total: 30 viandas: 12 Pasteles de papa, 10 Milanesas c/Puré, 5 Milanesas c/Fritas, 3 Pechugas c/Ensalada"</em>.<br>
+      Y emite la <strong>Planilla de Reparto Interno</strong> desglosada por piso y empleado.
+    </div>
+  </div>
+
+  <div class="section-title">3. Diccionario de Datos: Estructura Versátil para Oficinas</div>
+
+  <div class="cards-grid">
+
+    <!-- MenuOficinaOpciones -->
+    <div class="table-card">
+      <div class="table-header new-table">
+        <span>MenuOficinaOpciones (Platos y Principales)</span>
+        <span class="col-tag-office">OFICINAS</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span></span>
+          <span class="col-type">INT IDENTITY(1,1)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">HospitalId</span></span>
+          <span class="col-type">INT ➔ Hospitales(Id) [Oficina]</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Fecha</span></span>
+          <span class="col-type">DATE</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">TipoPlato</span> <span class="col-tag-office">NUEVO</span></span>
+          <span class="col-type">NVARCHAR(20) ('FIJO_COMPLETO' | 'PRINCIPAL')</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">NumeroOpcion</span></span>
+          <span class="col-type">INT (1, 2, 3...)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">NombrePlato</span></span>
+          <span class="col-type">NVARCHAR(150) (Ej. Milanesa de ternera)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">PermiteGuarnicion</span> <span class="col-tag-office">NUEVO</span></span>
+          <span class="col-type">BIT (1: Despliega acompañamientos)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Descripcion</span></span>
+          <span class="col-type">NVARCHAR(300) NULL</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MenuOficinaGuarniciones -->
+    <div class="table-card">
+      <div class="table-header new-table">
+        <span>MenuOficinaGuarniciones (Acompañamientos)</span>
+        <span class="col-tag-office">NUEVA TABLA</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span></span>
+          <span class="col-type">INT IDENTITY(1,1)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">HospitalId</span></span>
+          <span class="col-type">INT ➔ Hospitales(Id) [Oficina]</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Fecha</span></span>
+          <span class="col-type">DATE (Día disponible)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">NombreGuarnicion</span></span>
+          <span class="col-type">NVARCHAR(100) (Ej. Puré de papas, Papas fritas, Ensalada)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PedidosComida -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>PedidosComida (Transacciones)</span>
+        <span class="col-tag-office">SOPORTE GUARNICIÓN</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span> | <span class="col-name">FechaPedido</span></span>
+          <span class="col-type">INT | DATE</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">AgenteId</span></span>
+          <span class="col-type">INT ➔ PadronHabilitados(Id)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-fk">FK</span><span class="col-name">PlatoOpcionId</span> <span class="col-tag-office">NUEVO</span></span>
+          <span class="col-type">INT NULL ➔ MenuOficinaOpciones(Id)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-fk">FK</span><span class="col-name">GuarnicionId</span> <span class="col-tag-office">NUEVO</span></span>
+          <span class="col-type">INT NULL ➔ MenuOficinaGuarniciones(Id)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-name">CanalPedido</span> <span class="col-tag-office">NUEVO</span></span>
+          <span class="col-type">NVARCHAR(30) ('PORTAL'|'ENCARGADO')</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">TipoComida</span></span>
+          <span class="col-type">NVARCHAR(20) ('Almuerzo')</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Estado</span></span>
+          <span class="col-type">NVARCHAR(20) ('Aprobado')</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ConsolidadosProveedor -->
+    <div class="table-card">
+      <div class="table-header new-table">
+        <span>ConsolidadosProveedor (Remito Proveedor)</span>
+        <span class="col-tag-office">REPORTE CATERING</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span></span>
+          <span class="col-type">INT IDENTITY(1,1)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">HospitalId</span></span>
+          <span class="col-type">INT ➔ Hospitales(Id) [Oficina]</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Fecha</span></span>
+          <span class="col-type">DATE</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">TotalViandas</span></span>
+          <span class="col-type">INT (Suma total de viandas)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">ResumenPlatosJson</span></span>
+          <span class="col-type">NVARCHAR(MAX) (Desglose: Plato + Guarnición)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">GeneradoPorUsuarioId</span></span>
+          <span class="col-type">INT ➔ Usuarios(Id) [Rol=4: Encargado]</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">Estado</span></span>
+          <span class="col-type">NVARCHAR(30) ('Generado'|'Enviado')</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- PadronHabilitados (Adaptado) -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>PadronHabilitados (Comensales)</span>
+        <span class="col-tag-reuse">REUTILIZA SERVICIOID</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span> | <span class="col-name">DNI</span> (Único)</span>
+          <span class="col-type">INT | NVARCHAR(20)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">NombreCompleto</span></span>
+          <span class="col-type">NVARCHAR(200)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-name">PinAcceso</span> <span class="col-tag-office">NUEVO</span></span>
+          <span class="col-type">NVARCHAR(10) NULL (PIN 4 dígitos login)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">ServicioId</span> <span class="col-tag-reuse">REUTILIZADO</span></span>
+          <span class="col-type">INT ➔ Servicios(Id) [Piso o Sector]</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">RacionesMaximasDia</span></span>
+          <span class="col-type">INT DEFAULT 1 (1 ración almuerzo)</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-fk">FK</span><span class="col-name">HospitalId</span></span>
+          <span class="col-type">INT ➔ Hospitales(Id)</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hospitales (Reutilizando LimiteAlmuerzo) -->
+    <div class="table-card">
+      <div class="table-header">
+        <span>Hospitales / Entidades</span>
+        <span class="col-tag-reuse">REUTILIZA LIMITEALMUERZO</span>
+      </div>
+      <div class="table-body">
+        <div class="table-row">
+          <span><span class="col-pk">PK</span><span class="col-name">Id</span> | <span class="col-name">Nombre</span></span>
+          <span class="col-type">INT | NVARCHAR(100)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-name">TipoEntidad</span> <span class="col-tag-office">NUEVO</span></span>
+          <span class="col-type">NVARCHAR(20) ('HOSPITAL'|'OFICINA')</span>
+        </div>
+        <div class="table-row">
+          <span><span class="col-name">LimiteAlmuerzo</span> <span class="col-tag-reuse">REUTILIZADO</span></span>
+          <span class="col-type">NVARCHAR(10) (Cierre pedidos ej. "10:30")</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-name">ProveedorNombre</span> <span class="col-tag-office">NUEVO</span></span>
+          <span class="col-type">NVARCHAR(100) NULL (Empresa catering)</span>
+        </div>
+        <div class="table-row" style="background-color: #f9fafb;">
+          <span><span class="col-name">ProveedorTelefono</span> <span class="col-tag-office">NUEVO</span></span>
+          <span class="col-type">NVARCHAR(50) NULL (WhatsApp pedido)</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="rules-box">
+    <strong>Síntesis del Modelo de Catering Versátil:</strong>
+    <ul>
+      <li><strong>Platos Fijos vs Para Armar:</strong> En <code>MenuOficinaOpciones</code>, el flag <code>PermiteGuarnicion</code> indica si es un plato completo que viene cerrado (ej. Pastel de papa, Lasagna) o si es un plato principal que requiere elegir guarnición (ej. Milanesa, Pechuga).</li>
+      <li><strong>Acompañamientos Centralizados:</strong> La tabla <code>MenuOficinaGuarniciones</code> almacena las opciones de guarnición del día (ej. Puré, Fritas, Ensalada) para no repetirlas plato por plato.</li>
+      <li><strong>Consolidado sin Errores:</strong> Al generar el remito a las 10:30 AM, el delivery recibe el conteo exacto por combinación (ej. <em>10 Milanesas con Puré, 5 con Fritas, 12 Pasteles de Papa</em>), evitando que el repartidor entregue guarniciones al azar.</li>
+      <li><strong>Planilla de Reparto Interno:</strong> Al mediodía, el encargado tiene la lista ordenada por empleado, piso y la combinación exacta que eligió cada uno.</li>
+    </ul>
+  </div>
+
+</body>
+</html>

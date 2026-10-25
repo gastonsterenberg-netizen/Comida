@@ -15,8 +15,11 @@ model Hospitales {
   LimiteCena                 String      @default("17:00") @db.NVarChar(10)
   LimiteAutorizacionAlmuerzo String?     @default("11:00") @db.NVarChar(10)
   LimiteAutorizacionCena     String?     @default("18:00") @db.NVarChar(10)
-  DietasHabilitadas          String?     @default("Normal,Gastrica,Diabetica,Hepatico,Vegetariano,Celiaca") @db.NVarChar(500)
+  DietasHabilitadas          String?     @default("Normal,Hiposódica,Diabetica,Hepatico,Vegetariano,Celiaca,Especial") @db.NVarChar(500)
   RolCambioVoucher           String      @default("JEFE") @db.NVarChar(20)
+  TipoEntidad                String      @default("HOSPITAL") @db.NVarChar(20)
+  ProveedorNombre            String?     @db.NVarChar(100)
+  ProveedorTelefono          String?     @db.NVarChar(50)
   Servicios         Servicios[]
   Personal          Personal[]
   Usuarios          Usuarios[]
@@ -24,6 +27,12 @@ model Hospitales {
   FechasAnticipadas FechasAnticipadasHabilitadas[]
   SolicitudesPlantel SolicitudesPlantel[]
   MenuDia           MenuDia[]
+  Observaciones     ObservacionesServicio[]
+  ImpresionesVoucher ImpresionesVoucher[]
+  MenuOficinaOpciones     MenuOficinaOpciones[]
+  MenuOficinaGuarniciones MenuOficinaGuarniciones[]
+  ConsolidadosProveedor   ConsolidadosProveedor[]
+  TerminalesTotem         TerminalesTotem[]
 }
 
 model Servicios {
@@ -36,6 +45,8 @@ model Servicios {
   Usuarios          Usuarios[]
   Padron            PadronHabilitados[]
   SolicitudesPlantel SolicitudesPlantel[]
+  Observaciones     ObservacionesServicio[]
+  ImpresionesVoucher ImpresionesVoucher[]
 
   @@unique([HospitalId, Nombre])
 }
@@ -62,11 +73,14 @@ model Personal {
   EsGuardia24         Boolean         @default(false)
   Hospital                  Hospitales      @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   Servicio                  Servicios       @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  AgenteId                  Int?
+  Agente                    PadronHabilitados? @relation(fields: [AgenteId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   PedidosComida             PedidosComida[] @relation("PedidosPersonales")
   EmergenciasReemplazadas   PedidosComida[] @relation("Reemplazos")
 
   @@unique([HospitalId, ServicioId, DNI])
   @@index([HospitalId, DNI])
+  @@index([AgenteId])
 }
 
 model Roles {
@@ -95,6 +109,12 @@ model Usuarios {
   PedidosEntregados   PedidosComida[] @relation("PedidosEntregados")
   Auditorias          Auditoria[]
   PlantelSolicitados  SolicitudesPlantel[] @relation("PlantelSolicitadoPor")
+  ObservacionesCreadas ObservacionesServicio[] @relation("ObservacionesCreadas")
+  ObservacionesEvaluadas ObservacionesServicio[] @relation("ObservacionesEvaluadas")
+  VouchersImpresos    ImpresionesVoucher[]    @relation("VouchersImpresos")
+  MenuOficinaOpcionesCreadas     MenuOficinaOpciones[]
+  MenuOficinaGuarnicionesCreadas MenuOficinaGuarniciones[]
+  ConsolidadosProveedorGenerados ConsolidadosProveedor[]
 }
 
 model PedidosComida {
@@ -117,26 +137,48 @@ model PedidosComida {
   EvaluadoPorUsuarioId    Int?
   FechaEntregado          DateTime?
   EntregadoPorUsuarioId   Int?
+  AgenteId                Int?
+  ReemplazaAgenteId       Int?
+  RetiradoPorAgenteId     Int?
+  PlatoOpcionId           Int?
+  GuarnicionId            Int?
+  CanalPedido             String?    @default("HOSPITAL") @db.NVarChar(30)
   Personal                Personal?  @relation("PedidosPersonales", fields: [PersonalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   PersonalReemplazado     Personal?  @relation("Reemplazos", fields: [EmergenciaReemplazaId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Agente                  PadronHabilitados? @relation("PedidosAgentes", fields: [AgenteId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  ReemplazaAgente         PadronHabilitados? @relation("ReemplazosAgentes", fields: [ReemplazaAgenteId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  RetiradoPorAgente       PadronHabilitados? @relation("PedidosRetiradosAgentes", fields: [RetiradoPorAgenteId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  PlatoOpcion             MenuOficinaOpciones?     @relation(fields: [PlatoOpcionId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Guarnicion              MenuOficinaGuarniciones? @relation(fields: [GuarnicionId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   SolicitadoPor           Usuarios   @relation("PedidosSolicitados", fields: [SolicitadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   EvaluadoPor             Usuarios?  @relation("PedidosEvaluados", fields: [EvaluadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
   EntregadoPor            Usuarios?  @relation("PedidosEntregados", fields: [EntregadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([FechaPedido, Estado, SolicitadoPorUsuarioId])
+  @@index([AgenteId, FechaPedido, Estado])
+  @@index([RetiradoPorAgenteId])
+  @@index([PlatoOpcionId])
+  @@index([GuarnicionId])
 }
 
 model PadronHabilitados {
-  Id             Int         @id @default(autoincrement())
-  DNI            String      @unique @db.NVarChar(20)
-  NombreCompleto String      @db.NVarChar(200)
-  EsGuardia24h   Boolean     @default(false)
-  Activo         Boolean     @default(true)
-  FechaCreacion  DateTime    @default(now())
-  HospitalId     Int?
-  ServicioId     Int?
-  Hospital       Hospitales? @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
-  Servicio       Servicios?  @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Id                 Int         @id @default(autoincrement())
+  DNI                String      @unique @db.NVarChar(20)
+  NombreCompleto     String      @db.NVarChar(200)
+  EsGuardia24h       Boolean     @default(false)
+  RacionesMaximasDia Int         @default(1)
+  PinAcceso          String?     @db.NVarChar(10)
+  OrigenAlta         String      @default("PADRON_RRHH") @db.NVarChar(50)
+  Activo             Boolean     @default(true)
+  FechaCreacion      DateTime    @default(now())
+  HospitalId         Int?
+  ServicioId         Int?
+  Hospital           Hospitales? @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Servicio           Servicios?  @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Personal           Personal[]
+  PedidosAgente      PedidosComida[] @relation("PedidosAgentes")
+  ReemplazosAgente   PedidosComida[] @relation("ReemplazosAgentes")
+  PedidosRetirados   PedidosComida[] @relation("PedidosRetiradosAgentes")
 
   @@index([HospitalId, DNI])
 }
@@ -193,3 +235,108 @@ model MenuDia {
 
   @@unique([HospitalId, Fecha])
 }
+
+model ObservacionesServicio {
+  Id                      Int        @id @default(autoincrement())
+  HospitalId              Int
+  ServicioId              Int
+  UsuarioId               Int
+  Tipo                    String     @default("Observación") @db.NVarChar(50)
+  Observacion             String     @db.NVarChar(1000)
+  Fecha                   DateTime   @default(now())
+  VisibleGerencia         Boolean    @default(false)
+  RespuestaNutricion      String?    @db.NVarChar(1000)
+  FechaEvaluadoNutricion DateTime?
+  EvaluadoPorUsuarioId    Int?
+
+  Hospital                Hospitales @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Servicio                Servicios  @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Usuario                 Usuarios   @relation("ObservacionesCreadas", fields: [UsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  EvaluadoPor             Usuarios?  @relation("ObservacionesEvaluadas", fields: [EvaluadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([HospitalId, VisibleGerencia])
+}
+
+model ImpresionesVoucher {
+  Id                  Int        @id @default(autoincrement())
+  HospitalId          Int
+  ServicioId          Int
+  FechaPedido         DateTime   @db.Date
+  TipoComida          String     @db.NVarChar(20)
+  ImpresoPorUsuarioId Int
+  FechaImpresion      DateTime   @default(now())
+
+  Hospital            Hospitales @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Servicio            Servicios  @relation(fields: [ServicioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  Usuario             Usuarios   @relation("VouchersImpresos", fields: [ImpresoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([ServicioId, FechaPedido, TipoComida])
+  @@index([HospitalId, FechaPedido])
+}
+
+model MenuOficinaOpciones {
+  Id                 Int         @id @default(autoincrement())
+  HospitalId         Int
+  Fecha              DateTime    @db.Date
+  TipoPlato          String      @default("PLATO_DEL_DIA") @db.NVarChar(20)
+  NumeroOpcion       Int         @default(1)
+  NombrePlato        String      @db.NVarChar(150)
+  PermiteGuarnicion  Boolean     @default(false)
+  Descripcion        String?     @db.NVarChar(300)
+  CreadoPorUsuarioId Int?
+  FechaCreacion      DateTime    @default(now())
+
+  Hospital           Hospitales  @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  CreadoPor          Usuarios?   @relation(fields: [CreadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  PedidosComida      PedidosComida[]
+
+  @@index([HospitalId, Fecha])
+}
+
+model MenuOficinaGuarniciones {
+  Id                 Int         @id @default(autoincrement())
+  HospitalId         Int
+  Fecha              DateTime    @db.Date
+  NombreGuarnicion   String      @db.NVarChar(100)
+  CreadoPorUsuarioId Int?
+  FechaCreacion      DateTime    @default(now())
+
+  Hospital           Hospitales  @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  CreadoPor          Usuarios?   @relation(fields: [CreadoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  PedidosComida      PedidosComida[]
+
+  @@index([HospitalId, Fecha])
+}
+
+model ConsolidadosProveedor {
+  Id                   Int         @id @default(autoincrement())
+  HospitalId           Int
+  Fecha                DateTime    @db.Date
+  TotalViandas         Int         @default(0)
+  ResumenPlatosJson    String?     @db.NVarChar(Max)
+  FechaGenerado        DateTime    @default(now())
+  GeneradoPorUsuarioId Int
+  Estado               String      @default("Generado") @db.NVarChar(30)
+
+  Hospital             Hospitales  @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+  GeneradoPor          Usuarios    @relation(fields: [GeneradoPorUsuarioId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([HospitalId, Fecha])
+}
+
+model TerminalesTotem {
+  Id               Int         @id @default(autoincrement())
+  HospitalId       Int
+  Nombre           String      @db.NVarChar(100)
+  IpAddress        String?     @db.NVarChar(50)
+  TokenHash        String      @db.NVarChar(128)
+  Activo           Boolean     @default(true)
+  FechaVinculacion DateTime    @default(now())
+  UltimaActividad  DateTime    @default(now())
+
+  Hospital         Hospitales  @relation(fields: [HospitalId], references: [Id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([HospitalId, Activo])
+}
+
+

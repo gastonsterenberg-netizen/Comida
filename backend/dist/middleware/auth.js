@@ -12,7 +12,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.isNutricion = exports.isJefeServicio = exports.isGerente = exports.authenticateToken = void 0;
+exports.isTotem = exports.isNutricion = exports.isJefeServicio = exports.isGerente = exports.authenticateToken = void 0;
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const JWT_SECRET = process.env.JWT_SECRET || 'secret';
 const client_1 = require("@prisma/client");
@@ -37,6 +37,17 @@ const authenticateToken = (req, res, next) => __awaiter(void 0, void 0, void 0, 
             if (!dbUser || dbUser.Activo === false) {
                 res.status(401).json({ error: 'Usuario inhabilitado. Sesión rechazada.' });
                 return;
+            }
+            // Si el token pertenece a una terminal física tótem, verificar que no esté revocada
+            if (decodedUser.terminalId) {
+                const terminal = yield prisma.terminalesTotem.findUnique({
+                    where: { Id: decodedUser.terminalId },
+                    select: { Activo: true }
+                });
+                if (!terminal || terminal.Activo === false) {
+                    res.status(403).json({ error: 'Terminal de autoservicio desactivada o revocada por Nutrición.' });
+                    return;
+                }
             }
             req.user = decodedUser;
             next();
@@ -78,3 +89,13 @@ const isNutricion = (req, res, next) => {
     }
 };
 exports.isNutricion = isNutricion;
+const isTotem = (req, res, next) => {
+    // roleId 6: TOTEM, roleId 5: NUTRICION, roleId 2: GERENTE, roleId 1: ADMIN/RRHH
+    if (req.user && (req.user.roleId === 6 || req.user.roleId === 5 || req.user.roleId === 2 || req.user.roleId === 1)) {
+        next();
+    }
+    else {
+        res.status(403).json({ error: 'Acceso denegado: Requiere rol de TÓTEM o Administrador' });
+    }
+};
+exports.isTotem = isTotem;

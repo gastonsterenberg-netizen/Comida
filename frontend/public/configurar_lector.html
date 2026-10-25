@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Configuración Lector OCOM OCBS-2087 - Modo Auto-Inducción</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+      padding: 30px 20px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 16px;
+      max-width: 780px;
+      width: 100%;
+      padding: 30px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+    }
+    h1 {
+      margin-top: 0;
+      font-size: 22px;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .badge {
+      background: #0284c7;
+      color: white;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-weight: bold;
+    }
+    p {
+      line-height: 1.6;
+      color: #cbd5e1;
+      font-size: 15px;
+    }
+    .steps {
+      background: #0f172a;
+      border-left: 4px solid #38bdf8;
+      padding: 15px 20px;
+      border-radius: 0 12px 12px 0;
+      margin: 20px 0;
+    }
+    .steps ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .steps li {
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+    .canvas-container {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      margin-top: 25px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    canvas {
+      max-width: 100%;
+      height: auto;
+    }
+    .tip {
+      background: rgba(245, 158, 11, 0.1);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+      color: #fbbf24;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 15px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Lector OCOM OCBS-2087 <span class="badge">Configuración Auto-Sensing</span></h1>
+    <p>
+      Para que el lector se encienda solo al acercar un DNI o voucher (sin apretar el gatillo), apunta tu lector directamente a esta pantalla y escanea los códigos de la <strong>Página 11</strong> del manual que se muestra abajo.
+    </p>
+
+    <div class="steps">
+      <ol>
+        <li><strong>(Opcional):</strong> Escanea el código <strong>Code Programming ON</strong> (arriba a la izquierda).</li>
+        <li><strong>Activar Auto-Sensing:</strong> Escanea el código que dice <strong>Auto Mode</strong> (abajo a la izquierda). El lector emitirá un pitido.</li>
+        <li><strong>(Opcional):</strong> Escanea <strong>Code Programming OFF</strong> (arriba a la derecha) para cerrar el modo de configuración.</li>
+      </ol>
+    </div>
+
+    <div class="tip">
+      💡 <strong>Nota sobre los modos:</strong><br>
+      • <strong>Auto Mode:</strong> Se enciende automáticamente al detectar variación de luz / movimiento al acercar un DNI o voucher.<br>
+      • <strong>Continuous Mode:</strong> Mantiene la luz encendida permanentemente escaneando de continuo.<br>
+      • <strong>Hand-held Mode:</strong> Vuelve al modo original de gatillo manual.
+    </div>
+
+    <div class="canvas-container">
+      <div style="color: #64748b; font-size: 12px; font-weight: bold; margin-bottom: 10px; width: 100%; text-align: left;">
+        📄 Manual Oficial OCOM 2D - Página 11: Reading Mode
+      </div>
+      <canvas id="pdf-canvas"></canvas>
+    </div>
+  </div>
+
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    async function loadPage() {
+      try {
+        const loadingTask = pdfjsLib.getDocument('/ocbs_manual.pdf');
+        const pdf = await loadingTask.promise;
+        // Página 11 del manual físico (indice de página 11 o 13 según carátula)
+        // Buscamos la página que contiene Reading Mode
+        let targetPageNum = 11;
+        for (let i = 1; i <= Math.min(20, pdf.numPages); i++) {
+          const p = await pdf.getPage(i);
+          const textContent = await p.getTextContent();
+          const str = textContent.items.map(item => item.str).join(' ');
+          if (str.includes('Reading Mode') && str.includes('Auto Mode')) {
+            targetPageNum = i;
+            break;
+          }
+        }
+
+        const page = await pdf.getPage(targetPageNum);
+        const viewport = page.getViewport({ scale: 2.2 });
+        const canvas = document.getElementById('pdf-canvas');
+        const context = canvas.getContext('2d');
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+
+        await page.render({ canvasContext: context, viewport: viewport }).promise;
+      } catch (err) {
+        console.error('Error cargando PDF:', err);
+      }
+    }
+
+    loadPage();
+  </script>
+</body>
+</html>

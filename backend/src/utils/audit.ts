@@ -17,9 +17,13 @@ export async function logAudit(
       rawIp = '127.0.0.1';
     }
 
+    // Guardar directamente la hora local de Argentina (UTC-3) en la columna datetime2 de SQL Server
+    const fechaLocalArgentina = new Date(Date.now() - 3 * 3600 * 1000);
+
     // @ts-ignore
     await prisma.auditoria.create({
       data: {
+        Fecha: fechaLocalArgentina,
         Accion: accion,
         Detalles: detalles || null,
         UsuarioId: finalUsuarioId,
